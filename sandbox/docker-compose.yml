@@ -1,0 +1,160 @@
+# DeepBook Sandbox - Docker Compose
+#
+# Usage:
+#   Testnet/Mainnet (full stack with indexer):
+#     docker compose --profile remote up -d     # Start postgres + indexer + server
+#     docker compose --profile remote down      # Stop services
+#     docker compose --profile remote down -v   # Stop and remove volumes
+#
+#   Localnet (Sui node only - indexer doesn't support localnet):
+#     docker compose --profile localnet up -d   # Start postgres + sui-localnet
+#     docker compose --profile localnet down    # Stop services
+#
+#   Stop all services (any profile):
+#     docker compose --profile remote --profile localnet down
+#
+#   View logs:
+#     docker compose logs -f
+#
+# Architecture note (localnet only):
+#   Set SUI_TOOLS_IMAGE in .env based on your CPU:
+#   - ARM64 (Apple Silicon): SUI_TOOLS_IMAGE=mysten/sui-tools:compat-arm64
+#   - x86_64 (Intel/AMD):    SUI_TOOLS_IMAGE=mysten/sui-tools:compat
+
+networks:
+  deepbook-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  sui_data:
+
+services:
+  # ============================================================
+  # PostgreSQL Database
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: deepbook-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: deepbook
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - deepbook-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d deepbook"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # ============================================================
+  # Sui Localnet (Optional - for Sui-only testing)
+  # Start with: docker compose --profile localnet up -d
+  # Note: DeepBook Indexer does not support localnet (hardcoded testnet/mainnet only)
+  # ============================================================
+  sui-localnet:
+    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env (compat-arm64 for ARM, compat for x86)}
+    container_name: sui-localnet
+    profiles:
+      - localnet
+    environment:
+      FORCE_REGENESIS: ${FORCE_REGENESIS:-true}
+    command: >
+      sh -c 'RUST_LOG="off,sui_node=info" sui start --with-faucet ${FORCE_REGENESIS:+--force-regenesis}' 
+    ports:
+      - "9000:9000"   # RPC
+      - "9123:9123"   # Faucet
+    volumes:
+      - sui_data:/root/.sui
+    networks:
+      - deepbook-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  # ============================================================
+  # DeepBook Indexer
+  # Indexes DeepBook events from Sui testnet/mainnet
+  # Note: Only supports testnet/mainnet (hardcoded checkpoint URLs)
+  # ============================================================
+  deepbook-indexer:
+    profiles:
+      - remote
+    build:
+      context: ../external/deepbook
+      dockerfile: docker/deepbook-indexer/Dockerfile
+      args:
+        PROFILE: release
+        GIT_REVISION: ${GIT_REVISION:-local}
+    container_name: deepbook-indexer
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
+      NETWORK: ${NETWORK:-testnet}
+      RUST_LOG: ${RUST_LOG:-info}
+      FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-}
+    ports:
+      - "9184:9184"  # Prometheus metrics
+    networks:
+      - deepbook-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+  # ============================================================
+  # DeepBook Server (REST API)
+  # Provides HTTP API for querying indexed DeepBook data
+  # Requires indexer to populate database
+  # ============================================================
+  deepbook-server:
+    profiles:
+      - remote
+    build:
+      context: ../external/deepbook
+      dockerfile: docker/deepbook-server/Dockerfile
+      args:
+        PROFILE: release
+        GIT_REVISION: ${GIT_REVISION:-local}
+    container_name: deepbook-server
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
+      RPC_URL: ${RPC_URL:-https://fullnode.testnet.sui.io:443}
+      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-0x22be4cade64bf2d02412c7e8d0e8beea2f78828b948118d46735315409371a3c}
+      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270}
+      DEEP_TREASURY_ID: ${DEEP_TREASURY_ID:-0x032abf8948dda67a271bcc18e776dbbcfb0d58c8d288a700ff0d5521e57a1ffe}
+      MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "9008:9008"  # REST API
+      - "9185:9184"  # Prometheus metrics (offset to avoid conflict with indexer)
+    networks:
+      - deepbook-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      deepbook-indexer:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9008/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
