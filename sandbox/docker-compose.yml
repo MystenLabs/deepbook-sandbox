@@ -1,16 +1,22 @@
 # DeepBook Sandbox - Docker Compose
-# Default: connects to Sui testnet
 #
 # Usage:
-#   docker compose up -d           # Start all services
-#   docker compose logs -f         # View logs
-#   docker compose down            # Stop services
-#   docker compose down -v         # Stop and remove volumes (fresh start)
+#   Testnet/Mainnet (full stack with indexer):
+#     docker compose --profile remote up -d     # Start postgres + indexer + server
+#     docker compose --profile remote down      # Stop services
+#     docker compose --profile remote down -v   # Stop and remove volumes
 #
-# Optional localnet (Sui only, no indexer support):
-#   docker compose --profile localnet up -d
+#   Localnet (Sui node only - indexer doesn't support localnet):
+#     docker compose --profile localnet up -d   # Start postgres + sui-localnet
+#     docker compose --profile localnet down    # Stop services
 #
-# Architecture note:
+#   Stop all services (any profile):
+#     docker compose --profile remote --profile localnet down
+#
+#   View logs:
+#     docker compose logs -f
+#
+# Architecture note (localnet only):
 #   Set SUI_TOOLS_IMAGE in .env based on your CPU:
 #   - ARM64 (Apple Silicon): SUI_TOOLS_IMAGE=mysten/sui-tools:compat-arm64
 #   - x86_64 (Intel/AMD):    SUI_TOOLS_IMAGE=mysten/sui-tools:compat
@@ -37,7 +43,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres_data:/var/lib/postgresql/data
     networks:
       - deepbook-net
     healthcheck:
@@ -78,8 +84,11 @@ services:
   # ============================================================
   # DeepBook Indexer
   # Indexes DeepBook events from Sui testnet/mainnet
+  # Note: Only supports testnet/mainnet (hardcoded checkpoint URLs)
   # ============================================================
   deepbook-indexer:
+    profiles:
+      - remote
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-indexer/Dockerfile
@@ -110,8 +119,11 @@ services:
   # ============================================================
   # DeepBook Server (REST API)
   # Provides HTTP API for querying indexed DeepBook data
+  # Requires indexer to populate database
   # ============================================================
   deepbook-server:
+    profiles:
+      - remote
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-server/Dockerfile

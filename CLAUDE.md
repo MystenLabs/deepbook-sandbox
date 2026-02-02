@@ -39,20 +39,34 @@ Docker compose file: `./sandbox/docker-compose.yml`
 
 Services in the stack:
 
-| Service | Description | Default Port |
-|---------|-------------|--------------|
-| **Sui Localnet** | Local Sui blockchain for testing | 9000 (RPC), 9123 (faucet) |
-| **PostgreSQL** | Database for the indexer | 5432 |
-| **DeepBook Indexer** | Indexes DeepBook events from chain | 9184 (metrics) |
-| **DeepBook API** | REST API for querying indexed data | TBD |
+| Service | Profile | Description | Ports |
+|---------|---------|-------------|-------|
+| **PostgreSQL** | (always) | Database for the indexer | 5432 |
+| **Sui Localnet** | `localnet` | Local Sui blockchain for testing | 9000 (RPC), 9123 (faucet) |
+| **DeepBook Indexer** | `remote` | Indexes DeepBook events (testnet/mainnet only) | 9184 (metrics) |
+| **DeepBook Server** | `remote` | REST API for querying indexed data | 9008 |
+
+> **Note:** The indexer only supports testnet/mainnet (hardcoded checkpoint URLs). It cannot index a local Sui node.
 
 ### Running the Stack
 
 ```bash
 cd sandbox
-docker compose up -d        # Start all services
-docker compose logs -f      # Follow logs
-docker compose down         # Stop all services
+
+# Testnet/Mainnet (full indexer stack)
+docker compose --profile remote up -d
+docker compose --profile remote down      # Stop services
+docker compose --profile remote down -v   # Fresh start (remove volumes)
+
+# Localnet (Sui node only - for Move development)
+docker compose --profile localnet up -d
+docker compose --profile localnet down
+
+# Stop all services (any profile)
+docker compose --profile remote --profile localnet down
+
+# View logs
+docker compose logs -f
 ```
 
 ## Development Commands

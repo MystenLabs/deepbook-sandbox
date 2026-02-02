@@ -138,4 +138,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# ./sandbox/docker/
+# Docker data directories
+sandbox/docker/postgres_data/
+sandbox/docker/sui_localnet_data/
