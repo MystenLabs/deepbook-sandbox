@@ -43,7 +43,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./docker/postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - deepbook-net
     healthcheck:
@@ -70,7 +70,7 @@ services:
       - "9000:9000"   # RPC
       - "9123:9123"   # Faucet
     volumes:
-      - ./docker/sui_localnet_data:/root/.sui
+      - sui_data:/root/.sui
     networks:
       - deepbook-net
     healthcheck:
