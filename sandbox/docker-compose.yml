@@ -65,7 +65,7 @@ services:
     profiles:
       - localnet
     command: >
-      sh -c "RUST_LOG="off,sui_node=info" sui start --with-faucet --force-regenesis" 
+      sh -c 'RUST_LOG="off,sui_node=info" sui start --with-faucet --force-regenesis' 
     ports:
       - "9000:9000"   # RPC
       - "9123:9123"   # Faucet
