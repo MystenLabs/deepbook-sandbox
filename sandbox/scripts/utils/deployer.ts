@@ -124,7 +124,7 @@ export class MoveDeployer {
 				deployed.set(pkg.name, result);
 
 				// Wait a bit between deployments
-				await new Promise((resolve) => setTimeout(resolve, 1000));
+				await new Promise((resolve) => setTimeout(resolve, 2000));
 			} finally {
 				// Restore original Move.toml
 				if (pkg.name === 'deepbook' || pkg.name === 'deepbook_margin') {

@@ -5,13 +5,13 @@
   "private": true,
   "description": "DeepBook V3 localnet deployment sandbox",
   "scripts": {
-    "deploy-all": "tsx scripts/deploy-all.ts"
+    "deploy-all": "tsx scripts/deploy-all.ts",
+    "down": "tsx scripts/down.ts"
   },
   "dependencies": {
     "@mysten/sui": "^1.45.0",
-    "@testcontainers/postgresql": "^11.11.0",
     "dotenv": "^17.2.3",
-    "testcontainers": "^11.11.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^20.17.6",

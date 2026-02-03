@@ -142,5 +142,5 @@ vite.config.ts.timestamp-*
 sandbox/docker/postgres_data/
 sandbox/docker/sui_localnet_data/
 
-# DeepBook deployment config
-sandbox/scripts/config/deployed.json
+# DeepBook deployment outputs
+sandbox/deployments/

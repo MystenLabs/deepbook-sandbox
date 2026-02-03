@@ -6,56 +6,88 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Secp256k1Keypair } from '@mysten/sui/keypairs/secp256k1';
 import { Secp256r1Keypair } from '@mysten/sui/keypairs/secp256r1';
 import type { Keypair } from '@mysten/sui/cryptography';
+import { z } from 'zod';
 
-export type Network = 'testnet' | 'devnet' | 'localnet';
+export type Network = 'testnet' | 'localnet';
 
-const DEFAULT_NETWORK: Network = 'localnet';
+const networkSchema = z.enum(['testnet', 'localnet']);
 
-/**
- * Get the network from env (NETWORK) or default.
- */
-export function getNetwork(): Network {
-	const env = process.env.NETWORK?.toLowerCase();
-	if (env === 'testnet' || env === 'devnet' || env === 'localnet') {
-		return env;
+const envSchema = z
+	.object({
+		PRIVATE_KEY: z.string().min(1, 'PRIVATE_KEY is required'),
+		NETWORK: z.string().optional(),
+		RPC_URL: z.string().optional(),
+		SUI_TOOLS_IMAGE: z.string().min(1, 'SUI_TOOLS_IMAGE is required (e.g. mysten/sui-tools:compat-arm64 or :compat for x86)'),
+	})
+	.transform((raw) => {
+		const network = raw.NETWORK?.toLowerCase();
+		const validNetwork =
+			network && networkSchema.safeParse(network).success
+				? (networkSchema.parse(network) as Network)
+				: undefined;
+		return {
+			privateKey: raw.PRIVATE_KEY.trim(),
+			network: validNetwork,
+			rpcUrl: raw.RPC_URL?.trim() || undefined,
+			suiToolsImage: raw.SUI_TOOLS_IMAGE.trim(),
+		};
+	});
+
+export type EnvConfig = z.infer<typeof envSchema>;
+
+export class ConfigurationLoader {
+	private config: EnvConfig | null = null;
+
+	load(): EnvConfig {
+		if (this.config) return this.config;
+		const parsed = envSchema.safeParse(process.env);
+		if (!parsed.success) {
+			throw new Error(`Invalid env config: ${parsed.error.message}`);
+		}
+		this.config = parsed.data;
+		return this.config;
 	}
-	return DEFAULT_NETWORK;
+
+	getConfig(): EnvConfig {
+		return this.load();
+	}
+
+	getNetwork(): Network {
+		const cfg = this.getConfig();
+		return cfg.network ?? 'localnet';
+	}
+
+	getRpcUrl(network?: Network): string {
+		const cfg = this.getConfig();
+		return cfg.rpcUrl ?? getFullnodeUrl(network ?? this.getNetwork());
+	}
+
+	getFaucetUrl(network?: Network): string {
+		return getFaucetHost(network ?? this.getNetwork());
+	}
 }
 
-/**
- * Get RPC URL from env (RPC_URL) or the default for the network.
- */
+const loader = new ConfigurationLoader();
+
+export function getNetwork(): Network {
+	return loader.getNetwork();
+}
+
 export function getRpcUrl(network?: Network): string {
-	return process.env.RPC_URL ?? getFullnodeUrl(network ?? getNetwork());
+	return loader.getRpcUrl(network);
 }
 
-/**
- * Get faucet host from env (FAUCET_URL) or the default for the network.
- */
 export function getFaucetUrl(network?: Network): string {
-	return process.env.FAUCET_URL ?? getFaucetHost(network ?? getNetwork());
+	return loader.getFaucetUrl(network);
 }
 
-/**
- * Create a SuiClient. Uses RPC_URL from env if set, otherwise the network default.
- */
 export function getClient(network?: Network): SuiClient {
 	return new SuiClient({ url: getRpcUrl(network) });
 }
 
-/**
- * Create a signer from PRIVATE_KEY in env.
- * Supports ED25519, Secp256k1, and Secp256r1 (suiprivkey1... or 0x... formats).
- * @throws if PRIVATE_KEY is not set or key format is unsupported
- */
 export function getSigner(): Keypair {
-	const privateKey = process.env.PRIVATE_KEY;
-	if (!privateKey?.trim()) {
-		throw new Error(
-			'PRIVATE_KEY is not set. Set it in .env or pass it when running the script.',
-		);
-	}
-	const { schema, secretKey } = decodeSuiPrivateKey(privateKey.trim());
+	const privateKey = loader.getConfig().privateKey;
+	const { schema, secretKey } = decodeSuiPrivateKey(privateKey);
 	switch (schema) {
 		case 'ED25519':
 			return Ed25519Keypair.fromSecretKey(secretKey);
@@ -66,11 +98,4 @@ export function getSigner(): Keypair {
 		default:
 			throw new Error(`Unsupported key schema: ${schema}`);
 	}
-}
-
-/**
- * Get the Sui binary path from env (SUI_BINARY) or default 'sui'.
- */
-export function getSuiBinary(): string {
-	return process.env.SUI_BINARY ?? 'sui';
 }

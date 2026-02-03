@@ -1,3 +1,4 @@
+import path from 'path';
 import { getClient, getFaucetUrl, getNetwork, getRpcUrl, getSigner } from './utils/config';
 import { getSandboxRoot, startLocalnet } from './utils/docker-compose';
 import { MoveDeployer } from './utils/deployer';
@@ -98,13 +99,15 @@ async function main() {
 			deployerAddress: signerAddress,
 		};
 
-		await fs.mkdir('./scripts/config', { recursive: true });
-		await fs.writeFile(
-			'./scripts/config/deployed.json',
-			JSON.stringify(config, null, 2),
-		);
+		const now = new Date();
+		const date = now.toISOString().slice(0, 10);
+		const time = now.toISOString().slice(11, 19).replace(/:/g, '-');
+		const deploymentsDir = path.join(getSandboxRoot(), 'deployments');
+		const deploymentPath = path.join(deploymentsDir, `${date}_${time}_${network}.json`);
+		await fs.mkdir(deploymentsDir, { recursive: true });
+		await fs.writeFile(deploymentPath, JSON.stringify(config, null, 2));
 
-		console.log('  ✅ Config written to scripts/config/deployed.json\n');
+		console.log(`  ✅ Deployment written to ${deploymentPath}\n`);
 
 		// Phase 8: Success!
 		console.log('✨ DeepBook environment ready!\n');
@@ -113,15 +116,9 @@ async function main() {
 		console.log(`  • Faucet URL: ${getFaucetUrl(network)}`);
 		console.log(`  • Deployer Address: ${signerAddress}`);
 		console.log(`  • DEEP/SUI Pool: ${pool.poolId}`);
-		console.log(`  • Config File: scripts/config/deployed.json\n`);
-
-		if (network === 'localnet') {
-			console.log('⚠️  Localnet is running. Stop with:');
-			console.log('   docker compose --profile localnet down\n');
-		} else if (network === 'testnet') {
-			console.log('⚠️  Containers are running. Stop them with:');
-			console.log('   docker stop $(docker ps -q)\n');
-		}
+		console.log(`  • Deployment File: ${deploymentPath}\n`);
+		console.log('⚠️  Containers are running. Stop with:');
+		console.log('   pnpm down\n');
 	} catch (error) {
 		console.error('\n❌ Deployment failed:');
 		console.error(error);

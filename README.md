@@ -29,7 +29,7 @@ This repository provides a complete local development environment for DeepBook V
 2. **Deploy the full stack:**
 
    ```bash
-   pnpm deploy
+   pnpm deploy-all
    ```
 
    This single command will:
@@ -45,11 +45,11 @@ This repository provides a complete local development environment for DeepBook V
    After deployment completes, you'll have:
    - **RPC endpoint**: `http://localhost:9000`
    - **Faucet**: `http://localhost:9123`
-   - **Deployment config**: `scripts/config/deployed.json`
+   - **Deployment config**: `deployments/{DATE}_{TIME}_{NETWORK}.json` (e.g. `deployments/2025-01-30_14-30-45_localnet.json`)
 
 ## Configuration
 
-The deployment script generates a `scripts/config/deployed.json` file containing:
+The deployment script writes a JSON file to the `deployments/` folder with the format `{DATE}_{TIME}_{NETWORK}.json`, for example:
 
 ```json
 {
@@ -65,8 +65,8 @@ The deployment script generates a `scripts/config/deployed.json` file containing
   },
   "pool": {
     "poolId": "0x...",
-    "baseCoin": "0x2::sui::SUI",
-    "quoteCoin": "0x...::deep::DEEP"
+    "baseCoin": "0x...::deep::DEEP",
+    "quoteCoin": "0x2::sui::SUI"
   }
 }
 ```
@@ -97,11 +97,11 @@ curl http://localhost:9000 -X POST \
 
 ### Using the Deployed Packages
 
-The deployed package IDs and object IDs are available in `scripts/config/deployed.json`. Use them with the Sui SDK:
+The deployed package IDs and object IDs are in the latest file under `deployments/` (e.g. `deployments/2025-01-30_14-30-45_localnet.json`). Use them with the Sui SDK:
 
 ```typescript
 import { SuiClient } from '@mysten/sui/client';
-import config from './scripts/config/deployed.json';
+import config from './deployments/2025-01-30_14-30-45_localnet.json';
 
 const client = new SuiClient({ url: config.network.rpcUrl });
 
@@ -111,11 +111,3 @@ const pool = await client.getObject({
   options: { showContent: true }
 });
 ```
-
-## Contributing
-
-Contributions are welcome! Please open an issue or pull request.
-
-## License
-
-Apache-2.0
