@@ -60,7 +60,7 @@ services:
   # Note: DeepBook Indexer does not support localnet (hardcoded testnet/mainnet only)
   # ============================================================
   sui-localnet:
-    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env (compat-arm64 for ARM, compat for x86)}
+    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:compat-arm64 (ARM) or mysten/sui-tools:compat (x86)}
     container_name: sui-localnet
     profiles:
       - localnet

@@ -1,0 +1,21 @@
+{
+  "name": "deepbook-sandbox",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "DeepBook V3 localnet deployment sandbox",
+  "scripts": {
+    "deploy-all": "tsx scripts/deploy-all.ts"
+  },
+  "dependencies": {
+    "@mysten/sui": "^1.45.0",
+    "@testcontainers/postgresql": "^11.11.0",
+    "dotenv": "^17.2.3",
+    "testcontainers": "^11.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "tsx": "^4.21.0",
+    "typescript": "^5.6.3"
+  }
+}
