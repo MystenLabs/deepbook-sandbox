@@ -160,6 +160,9 @@ pub fn is_margin_supported(env: DeepbookEnv) -> bool {
     match env {
         DeepbookEnv::Mainnet => is_valid_margin_packages(MAINNET_MARGIN_PACKAGES),
         DeepbookEnv::Testnet => is_valid_margin_packages(TESTNET_MARGIN_PACKAGES),
+        DeepbookEnv::Localnet => panic!(
+            "Use NetworkConfig for localnet instead of DeepbookEnv directly"
+        ),
     }
 }
 
@@ -168,6 +171,9 @@ pub fn get_margin_package_addresses(env: DeepbookEnv) -> &'static [&'static str]
     match env {
         DeepbookEnv::Mainnet => MAINNET_MARGIN_PACKAGES,
         DeepbookEnv::Testnet => TESTNET_MARGIN_PACKAGES,
+        DeepbookEnv::Localnet => panic!(
+            "Use NetworkConfig for localnet instead of DeepbookEnv directly"
+        ),
     }
 }
 
@@ -194,13 +200,17 @@ pub fn get_core_package_addresses(env: DeepbookEnv) -> &'static [&'static str] {
     match env {
         DeepbookEnv::Mainnet => MAINNET_PACKAGES,
         DeepbookEnv::Testnet => TESTNET_PACKAGES,
+        DeepbookEnv::Localnet => panic!(
+            "Use NetworkConfig for localnet instead of DeepbookEnv directly"
+        ),
     }
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum DeepbookEnv {
     Mainnet,
     Testnet,
+    Localnet,
 }
 
 impl DeepbookEnv {
@@ -208,6 +218,10 @@ impl DeepbookEnv {
         let url = match self {
             DeepbookEnv::Mainnet => MAINNET_REMOTE_STORE_URL,
             DeepbookEnv::Testnet => TESTNET_REMOTE_STORE_URL,
+            DeepbookEnv::Localnet => panic!(
+                "Localnet does not use a remote store URL. \
+                Use --local-ingestion-path to specify the checkpoint directory instead."
+            ),
         };
         Url::parse(url).unwrap()
     }
@@ -217,6 +231,9 @@ impl DeepbookEnv {
         let (packages, margin_packages) = match self {
             DeepbookEnv::Mainnet => (MAINNET_PACKAGES, MAINNET_MARGIN_PACKAGES),
             DeepbookEnv::Testnet => (TESTNET_PACKAGES, TESTNET_MARGIN_PACKAGES),
+            DeepbookEnv::Localnet => panic!(
+                "Use NetworkConfig for localnet instead of DeepbookEnv directly"
+            ),
         };
 
         let mut all_packages = packages.to_vec();
