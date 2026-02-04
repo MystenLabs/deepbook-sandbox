@@ -1,4 +1,4 @@
-use crate::DeepbookEnv;
+use crate::NetworkConfig;
 use std::sync::Arc;
 use sui_indexer_alt_framework::types::full_checkpoint_content::{
     Checkpoint, ExecutedTransaction, ObjectSet,
@@ -96,12 +96,12 @@ macro_rules! define_handler {
         map_event: |$ev:ident, $meta:ident| $body:expr
     } => {
         pub struct $handler {
-            env: $crate::DeepbookEnv,
+            config: std::sync::Arc<$crate::NetworkConfig>,
         }
 
         impl $handler {
-            pub fn new(env: $crate::DeepbookEnv) -> Self {
-                Self { env }
+            pub fn new(config: std::sync::Arc<$crate::NetworkConfig>) -> Self {
+                Self { config }
             }
         }
 
@@ -119,7 +119,7 @@ macro_rules! define_handler {
 
                 let mut results = vec![];
                 for tx in &checkpoint.transactions {
-                    if !is_deepbook_tx(tx, &checkpoint.object_set, self.env) {
+                    if !is_deepbook_tx(tx, &checkpoint.object_set, &self.config) {
                         continue;
                     }
                     let Some(events) = &tx.events else { continue };
@@ -127,7 +127,7 @@ macro_rules! define_handler {
                     let base_meta = EventMeta::from_checkpoint_tx(checkpoint, tx);
 
                     for (index, ev) in events.data.iter().enumerate() {
-                        if <$event>::matches_event_type(&ev.type_, self.env) {
+                        if <$event>::matches_event_type(&ev.type_, &self.config) {
                             let $ev: $event = bcs::from_bytes(&ev.contents)?;
                             let $meta = base_meta.with_index(index);
                             results.push($body);
@@ -199,10 +199,10 @@ pub mod withdraw_collateral_handler;
 pub(crate) fn is_deepbook_tx(
     tx: &ExecutedTransaction,
     checkpoint_objects: &ObjectSet,
-    env: DeepbookEnv,
+    config: &NetworkConfig,
 ) -> bool {
-    let deepbook_addresses = env.package_addresses();
-    let deepbook_packages = env.package_ids();
+    let deepbook_addresses = config.package_addresses();
+    let deepbook_packages = config.package_ids();
 
     // Check input objects against all known package versions
     let has_deepbook_input = tx.input_objects(checkpoint_objects).any(|obj| {

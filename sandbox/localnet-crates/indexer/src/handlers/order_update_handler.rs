@@ -2,7 +2,7 @@ use crate::handlers::{is_deepbook_tx, try_extract_move_call_package};
 use crate::models::deepbook::order::{OrderCanceled, OrderModified};
 use crate::models::deepbook::order_info::{OrderExpired, OrderPlaced};
 use crate::traits::MoveStruct;
-use crate::DeepbookEnv;
+use crate::NetworkConfig;
 use async_trait::async_trait;
 use deepbook_schema::models::{OrderUpdate, OrderUpdateStatus};
 use deepbook_schema::schema::order_updates;
@@ -18,12 +18,12 @@ use tracing::debug;
 type TransactionMetadata = (String, u64, u64, String, String);
 
 pub struct OrderUpdateHandler {
-    env: DeepbookEnv,
+    config: Arc<NetworkConfig>,
 }
 
 impl OrderUpdateHandler {
-    pub fn new(env: DeepbookEnv) -> Self {
-        Self { env }
+    pub fn new(config: Arc<NetworkConfig>) -> Self {
+        Self { config }
     }
 }
 
@@ -36,7 +36,7 @@ impl Processor for OrderUpdateHandler {
         let mut results = vec![];
 
         for tx in &checkpoint.transactions {
-            if !is_deepbook_tx(tx, &checkpoint.object_set, self.env) {
+            if !is_deepbook_tx(tx, &checkpoint.object_set, &self.config) {
                 continue;
             }
             let Some(events) = &tx.events else {
@@ -53,19 +53,19 @@ impl Processor for OrderUpdateHandler {
             );
 
             for (index, ev) in events.data.iter().enumerate() {
-                if OrderPlaced::matches_event_type(&ev.type_, self.env) {
+                if OrderPlaced::matches_event_type(&ev.type_, &self.config) {
                     let event = bcs::from_bytes(&ev.contents)?;
                     results.push(process_order_placed(event, metadata.clone(), index));
                     debug!("Observed Deepbook Order Placed {:?}", tx);
-                } else if OrderModified::matches_event_type(&ev.type_, self.env) {
+                } else if OrderModified::matches_event_type(&ev.type_, &self.config) {
                     let event = bcs::from_bytes(&ev.contents)?;
                     results.push(process_order_modified(event, metadata.clone(), index));
                     debug!("Observed Deepbook Order Modified {:?}", tx);
-                } else if OrderCanceled::matches_event_type(&ev.type_, self.env) {
+                } else if OrderCanceled::matches_event_type(&ev.type_, &self.config) {
                     let event = bcs::from_bytes(&ev.contents)?;
                     results.push(process_order_canceled(event, metadata.clone(), index));
                     debug!("Observed Deepbook Order Canceled {:?}", tx);
-                } else if OrderExpired::matches_event_type(&ev.type_, self.env) {
+                } else if OrderExpired::matches_event_type(&ev.type_, &self.config) {
                     let event = bcs::from_bytes(&ev.contents)?;
                     results.push(process_order_expired(event, metadata.clone(), index));
                     debug!("Observed Deepbook Order Expired {:?}", tx);

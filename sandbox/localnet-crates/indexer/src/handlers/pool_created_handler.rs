@@ -2,7 +2,7 @@ use crate::handlers::{is_deepbook_tx, try_extract_move_call_package};
 use crate::models::deepbook::pool::PoolCreated as PoolCreatedEvent;
 use crate::models::sui::sui::SUI;
 use crate::traits::MoveStruct;
-use crate::DeepbookEnv;
+use crate::NetworkConfig;
 use async_trait::async_trait;
 use deepbook_schema::models::PoolCreated;
 use deepbook_schema::schema::pool_created;
@@ -16,12 +16,12 @@ use sui_types::transaction::TransactionDataAPI;
 use tracing::debug;
 
 pub struct PoolCreatedHandler {
-    env: DeepbookEnv,
+    config: Arc<NetworkConfig>,
 }
 
 impl PoolCreatedHandler {
-    pub fn new(env: DeepbookEnv) -> Self {
-        Self { env }
+    pub fn new(config: Arc<NetworkConfig>) -> Self {
+        Self { config }
     }
 }
 
@@ -34,7 +34,7 @@ impl Processor for PoolCreatedHandler {
         let mut results = vec![];
 
         for tx in &checkpoint.transactions {
-            if !is_deepbook_tx(tx, &checkpoint.object_set, self.env) {
+            if !is_deepbook_tx(tx, &checkpoint.object_set, &self.config) {
                 continue;
             }
             let Some(events) = &tx.events else {
@@ -47,7 +47,7 @@ impl Processor for PoolCreatedHandler {
             let digest = tx.transaction.digest();
 
             for (index, ev) in events.data.iter().enumerate() {
-                if !PoolCreatedEvent::<SUI, SUI>::matches_event_type(&ev.type_, self.env) {
+                if !PoolCreatedEvent::<SUI, SUI>::matches_event_type(&ev.type_, &self.config) {
                     continue;
                 }
 

@@ -2,7 +2,7 @@ use crate::handlers::{is_deepbook_tx, try_extract_move_call_package};
 use crate::models::deepbook::pool::DeepBurned as DeepBurnedEvent;
 use crate::models::sui::sui::SUI;
 use crate::traits::MoveStruct;
-use crate::DeepbookEnv;
+use crate::NetworkConfig;
 use async_trait::async_trait;
 use deepbook_schema::models::DeepBurned;
 use deepbook_schema::schema::deep_burned;
@@ -16,12 +16,12 @@ use sui_types::transaction::TransactionDataAPI;
 use tracing::debug;
 
 pub struct DeepBurnedHandler {
-    env: DeepbookEnv,
+    config: Arc<NetworkConfig>,
 }
 
 impl DeepBurnedHandler {
-    pub fn new(env: DeepbookEnv) -> Self {
-        Self { env }
+    pub fn new(config: Arc<NetworkConfig>) -> Self {
+        Self { config }
     }
 }
 
@@ -34,7 +34,7 @@ impl Processor for DeepBurnedHandler {
         let mut results = vec![];
 
         for tx in &checkpoint.transactions {
-            if !is_deepbook_tx(tx, &checkpoint.object_set, self.env) {
+            if !is_deepbook_tx(tx, &checkpoint.object_set, &self.config) {
                 continue;
             }
             let Some(events) = &tx.events else {
@@ -48,7 +48,7 @@ impl Processor for DeepBurnedHandler {
 
             for (index, ev) in events.data.iter().enumerate() {
                 // Match base type (ignore type parameters)
-                if !DeepBurnedEvent::<SUI, SUI>::matches_event_type(&ev.type_, self.env) {
+                if !DeepBurnedEvent::<SUI, SUI>::matches_event_type(&ev.type_, &self.config) {
                     continue;
                 }
 

@@ -59,6 +59,7 @@ use deepbook_schema::MIGRATIONS;
 use prometheus::Registry;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use sui_indexer_alt_framework::ingestion::ingestion_client::IngestionClientArgs;
 use sui_indexer_alt_framework::ingestion::{ClientArgs, IngestionConfig};
 use sui_indexer_alt_framework::{Indexer, IndexerArgs};
@@ -225,155 +226,158 @@ async fn main() -> Result<(), anyhow::Error> {
     )
     .await?;
 
+    // Wrap config in Arc for sharing across handlers
+    let config = Arc::new(config);
+
     // Register handlers based on selected packages
     for package in &packages {
         match package {
             Package::Deepbook => {
                 // DeepBook core event handlers
                 indexer
-                    .concurrent_pipeline(BalancesHandler::new(env), Default::default())
+                    .concurrent_pipeline(BalancesHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(DeepBurnedHandler::new(env), Default::default())
+                    .concurrent_pipeline(DeepBurnedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(FlashLoanHandler::new(env), Default::default())
+                    .concurrent_pipeline(FlashLoanHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(OrderFillHandler::new(env), Default::default())
+                    .concurrent_pipeline(OrderFillHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(OrderUpdateHandler::new(env), Default::default())
+                    .concurrent_pipeline(OrderUpdateHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(PoolPriceHandler::new(env), Default::default())
+                    .concurrent_pipeline(PoolPriceHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(ProposalsHandler::new(env), Default::default())
+                    .concurrent_pipeline(ProposalsHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(RebatesHandler::new(env), Default::default())
+                    .concurrent_pipeline(RebatesHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(ReferralFeeEventHandler::new(env), Default::default())
+                    .concurrent_pipeline(ReferralFeeEventHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(StakesHandler::new(env), Default::default())
+                    .concurrent_pipeline(StakesHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(TradeParamsUpdateHandler::new(env), Default::default())
+                    .concurrent_pipeline(TradeParamsUpdateHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(VotesHandler::new(env), Default::default())
+                    .concurrent_pipeline(VotesHandler::new(config.clone()), Default::default())
                     .await?;
             }
             Package::DeepbookMargin => {
                 indexer
-                    .concurrent_pipeline(MarginManagerCreatedHandler::new(env), Default::default())
+                    .concurrent_pipeline(MarginManagerCreatedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(LoanBorrowedHandler::new(env), Default::default())
+                    .concurrent_pipeline(LoanBorrowedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(LoanRepaidHandler::new(env), Default::default())
+                    .concurrent_pipeline(LoanRepaidHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(LiquidationHandler::new(env), Default::default())
+                    .concurrent_pipeline(LiquidationHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(AssetSuppliedHandler::new(env), Default::default())
+                    .concurrent_pipeline(AssetSuppliedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(AssetWithdrawnHandler::new(env), Default::default())
+                    .concurrent_pipeline(AssetWithdrawnHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(MarginPoolCreatedHandler::new(env), Default::default())
+                    .concurrent_pipeline(MarginPoolCreatedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(DeepbookPoolUpdatedHandler::new(env), Default::default())
+                    .concurrent_pipeline(DeepbookPoolUpdatedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(InterestParamsUpdatedHandler::new(env), Default::default())
+                    .concurrent_pipeline(InterestParamsUpdatedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
                     .concurrent_pipeline(
-                        MarginPoolConfigUpdatedHandler::new(env),
+                        MarginPoolConfigUpdatedHandler::new(config.clone()),
                         Default::default(),
                     )
                     .await?;
                 indexer
-                    .concurrent_pipeline(MaintainerCapUpdatedHandler::new(env), Default::default())
+                    .concurrent_pipeline(MaintainerCapUpdatedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
                     .concurrent_pipeline(
-                        DeepbookPoolRegisteredHandler::new(env),
-                        Default::default(),
-                    )
-                    .await?;
-                indexer
-                    .concurrent_pipeline(
-                        DeepbookPoolUpdatedRegistryHandler::new(env),
+                        DeepbookPoolRegisteredHandler::new(config.clone()),
                         Default::default(),
                     )
                     .await?;
                 indexer
                     .concurrent_pipeline(
-                        DeepbookPoolConfigUpdatedHandler::new(env),
+                        DeepbookPoolUpdatedRegistryHandler::new(config.clone()),
                         Default::default(),
                     )
                     .await?;
                 indexer
                     .concurrent_pipeline(
-                        MaintainerFeesWithdrawnHandler::new(env),
+                        DeepbookPoolConfigUpdatedHandler::new(config.clone()),
                         Default::default(),
                     )
                     .await?;
                 indexer
-                    .concurrent_pipeline(ProtocolFeesWithdrawnHandler::new(env), Default::default())
+                    .concurrent_pipeline(
+                        MaintainerFeesWithdrawnHandler::new(config.clone()),
+                        Default::default(),
+                    )
                     .await?;
                 indexer
-                    .concurrent_pipeline(SupplierCapMintedHandler::new(env), Default::default())
+                    .concurrent_pipeline(ProtocolFeesWithdrawnHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(SupplyReferralMintedHandler::new(env), Default::default())
+                    .concurrent_pipeline(SupplierCapMintedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(PauseCapUpdatedHandler::new(env), Default::default())
+                    .concurrent_pipeline(SupplyReferralMintedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(ProtocolFeesIncreasedHandler::new(env), Default::default())
+                    .concurrent_pipeline(PauseCapUpdatedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(ReferralFeesClaimedHandler::new(env), Default::default())
+                    .concurrent_pipeline(ProtocolFeesIncreasedHandler::new(config.clone()), Default::default())
+                    .await?;
+                indexer
+                    .concurrent_pipeline(ReferralFeesClaimedHandler::new(config.clone()), Default::default())
                     .await?;
 
                 // Collateral Events
                 indexer
-                    .concurrent_pipeline(DepositCollateralHandler::new(env), Default::default())
+                    .concurrent_pipeline(DepositCollateralHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
-                    .concurrent_pipeline(WithdrawCollateralHandler::new(env), Default::default())
+                    .concurrent_pipeline(WithdrawCollateralHandler::new(config.clone()), Default::default())
                     .await?;
 
                 // TPSL (Take Profit / Stop Loss) Events
                 indexer
-                    .concurrent_pipeline(ConditionalOrderAddedHandler::new(env), Default::default())
+                    .concurrent_pipeline(ConditionalOrderAddedHandler::new(config.clone()), Default::default())
                     .await?;
                 indexer
                     .concurrent_pipeline(
-                        ConditionalOrderCancelledHandler::new(env),
+                        ConditionalOrderCancelledHandler::new(config.clone()),
                         Default::default(),
                     )
                     .await?;
                 indexer
                     .concurrent_pipeline(
-                        ConditionalOrderExecutedHandler::new(env),
+                        ConditionalOrderExecutedHandler::new(config.clone()),
                         Default::default(),
                     )
                     .await?;
                 indexer
                     .concurrent_pipeline(
-                        ConditionalOrderInsufficientFundsHandler::new(env),
+                        ConditionalOrderInsufficientFundsHandler::new(config.clone()),
                         Default::default(),
                     )
                     .await?;

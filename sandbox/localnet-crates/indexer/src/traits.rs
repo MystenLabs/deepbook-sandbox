@@ -8,7 +8,7 @@ use std::str::FromStr;
 use sui_sdk_types::{Address, Identifier, StructTag};
 
 // Import types and functions from lib.rs
-use crate::{get_module_type, ModuleType};
+use crate::{get_module_type, ModuleType, NetworkConfig};
 
 /// Trait for Move structs that can be matched against event types
 pub trait MoveStruct: Serialize {
@@ -17,20 +17,20 @@ pub trait MoveStruct: Serialize {
     const NAME: &'static str;
     const TYPE_PARAMS: &'static [&'static str] = &[];
 
-    /// Get the list of acceptable package addresses for this event type based on environment
-    fn acceptable_package_addresses(env: crate::DeepbookEnv) -> Result<Vec<Address>, String> {
-        get_package_addresses_for_module(Self::MODULE, env)
+    /// Get the list of acceptable package addresses for this event type based on config
+    fn acceptable_package_addresses(config: &NetworkConfig) -> Result<Vec<Address>, String> {
+        get_package_addresses_for_module(Self::MODULE, config)
     }
 
     /// Check if a struct tag matches this event type from any supported package version
     fn matches_event_type(
         event_type: &move_core_types::language_storage::StructTag,
-        env: crate::DeepbookEnv,
+        config: &NetworkConfig,
     ) -> bool {
         use move_core_types::account_address::AccountAddress;
 
         // Get all possible struct types for this event
-        let all_struct_types = Self::get_all_struct_types(env);
+        let all_struct_types = Self::get_all_struct_types(config);
 
         // Check if the event type matches any of the generated struct types
         // NOTE: We intentionally ignore type_params.len() because events may have phantom/generic type parameters
@@ -43,8 +43,8 @@ pub trait MoveStruct: Serialize {
     }
 
     /// Generate all possible struct types for this event across all supported package versions
-    fn get_all_struct_types(env: crate::DeepbookEnv) -> Vec<StructTag> {
-        let acceptable_addresses = match Self::acceptable_package_addresses(env) {
+    fn get_all_struct_types(config: &NetworkConfig) -> Vec<StructTag> {
+        let acceptable_addresses = match Self::acceptable_package_addresses(config) {
             Ok(addresses) => addresses,
             Err(_) => return Vec::new(), // Return empty vec if module is unknown
         };
@@ -74,15 +74,15 @@ pub trait MoveStruct: Serialize {
     }
 }
 
-/// Generic helper that reads package addresses from lib.rs at runtime
+/// Generic helper that reads package addresses from NetworkConfig at runtime
 pub fn get_package_addresses_for_module(
     module: &str,
-    env: crate::DeepbookEnv,
+    config: &NetworkConfig,
 ) -> Result<Vec<Address>, String> {
     match get_module_type(module) {
         ModuleType::Core => {
-            // Get core package addresses using helper function
-            let core_packages = crate::get_core_package_addresses(env);
+            // Get core package addresses from config
+            let core_packages = config.get_core_packages();
             let mut addresses = Vec::new();
 
             // Convert string addresses to Address types
@@ -95,9 +95,8 @@ pub fn get_package_addresses_for_module(
             Ok(addresses)
         }
         ModuleType::Margin => {
-            // Get margin package addresses with validation
-            // This will fail fast if margin trading is not supported on the current environment
-            let margin_packages = crate::get_margin_package_addresses(env);
+            // Get margin package addresses from config
+            let margin_packages = config.get_margin_packages();
             let mut addresses = Vec::new();
 
             // Convert string addresses to Address types
@@ -112,7 +111,7 @@ pub fn get_package_addresses_for_module(
                     "Margin trading is not supported on {:?}. \
                     The margin package has not been deployed on this network. \
                     Requested module: '{}'",
-                    env, module
+                    config.env, module
                 ))
             } else {
                 Ok(addresses)

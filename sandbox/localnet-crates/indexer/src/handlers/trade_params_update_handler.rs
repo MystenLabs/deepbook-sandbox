@@ -1,7 +1,7 @@
 use crate::handlers::{is_deepbook_tx, try_extract_move_call_package};
 use crate::models::deepbook::governance::TradeParamsUpdateEvent;
 use crate::traits::MoveStruct;
-use crate::DeepbookEnv;
+use crate::NetworkConfig;
 use async_trait::async_trait;
 use deepbook_schema::models::TradeParamsUpdate;
 use deepbook_schema::schema::trade_params_update;
@@ -15,12 +15,12 @@ use sui_types::transaction::TransactionDataAPI;
 use tracing::debug;
 
 pub struct TradeParamsUpdateHandler {
-    env: DeepbookEnv,
+    config: Arc<NetworkConfig>,
 }
 
 impl TradeParamsUpdateHandler {
-    pub fn new(env: DeepbookEnv) -> Self {
-        Self { env }
+    pub fn new(config: Arc<NetworkConfig>) -> Self {
+        Self { config }
     }
 }
 
@@ -32,7 +32,7 @@ impl Processor for TradeParamsUpdateHandler {
     async fn process(&self, checkpoint: &Arc<Checkpoint>) -> anyhow::Result<Vec<Self::Value>> {
         let mut results = vec![];
         for tx in &checkpoint.transactions {
-            if !is_deepbook_tx(tx, &checkpoint.object_set, self.env) {
+            if !is_deepbook_tx(tx, &checkpoint.object_set, &self.config) {
                 continue;
             }
             let Some(events) = &tx.events else {
@@ -45,7 +45,7 @@ impl Processor for TradeParamsUpdateHandler {
             let digest = tx.transaction.digest();
 
             // Get package addresses for deepbook
-            let deepbook_addresses = self.env.package_addresses();
+            let deepbook_addresses = self.config.package_addresses();
 
             let pool = tx
                 .input_objects(&checkpoint.object_set)
@@ -56,7 +56,7 @@ impl Processor for TradeParamsUpdateHandler {
                 .unwrap_or("0x0".to_string());
 
             for (index, ev) in events.data.iter().enumerate() {
-                if !TradeParamsUpdateEvent::matches_event_type(&ev.type_, self.env) {
+                if !TradeParamsUpdateEvent::matches_event_type(&ev.type_, &self.config) {
                     continue;
                 }
                 let event: TradeParamsUpdateEvent = bcs::from_bytes(&ev.contents)?;
