@@ -40,7 +40,7 @@ use deepbook_indexer::handlers::conditional_order_cancelled_handler::Conditional
 use deepbook_indexer::handlers::conditional_order_executed_handler::ConditionalOrderExecutedHandler;
 use deepbook_indexer::handlers::conditional_order_insufficient_funds_handler::ConditionalOrderInsufficientFundsHandler;
 
-use deepbook_indexer::DeepbookEnv;
+use deepbook_indexer::{DeepbookEnv, NetworkConfig};
 use deepbook_schema::MIGRATIONS;
 use fastcrypto::hash::{HashFunction, Sha256};
 use insta::assert_json_snapshot;
@@ -63,48 +63,48 @@ use sui_types::full_checkpoint_content::CheckpointData;
 
 #[tokio::test]
 async fn balances_test() -> Result<(), anyhow::Error> {
-    let handler = BalancesHandler::new(DeepbookEnv::Mainnet);
+    let handler = BalancesHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("balances", handler, ["balances"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn flash_loan_test() -> Result<(), anyhow::Error> {
-    let handler = FlashLoanHandler::new(DeepbookEnv::Mainnet);
+    let handler = FlashLoanHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("flash_loans", handler, ["flashloans"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn order_fill_test() -> Result<(), anyhow::Error> {
-    let handler = OrderFillHandler::new(DeepbookEnv::Mainnet);
+    let handler = OrderFillHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("order_fill", handler, ["order_fills"]).await?;
     Ok(())
 }
 #[tokio::test]
 async fn order_update_test() -> Result<(), anyhow::Error> {
-    let handler = OrderUpdateHandler::new(DeepbookEnv::Mainnet);
+    let handler = OrderUpdateHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("order_update", handler, ["order_updates"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn pool_price_test() -> Result<(), anyhow::Error> {
-    let handler = PoolPriceHandler::new(DeepbookEnv::Mainnet);
+    let handler = PoolPriceHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("pool_price", handler, ["pool_prices"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn deep_burned_test() -> Result<(), anyhow::Error> {
-    let handler = DeepBurnedHandler::new(DeepbookEnv::Mainnet);
+    let handler = DeepBurnedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("deep_burned", handler, ["deep_burned"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn pool_created_test() -> Result<(), anyhow::Error> {
-    let handler = PoolCreatedHandler::new(DeepbookEnv::Mainnet);
+    let handler = PoolCreatedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("pool_created", handler, ["pool_created"]).await?;
     Ok(())
 }
@@ -113,7 +113,7 @@ async fn pool_created_test() -> Result<(), anyhow::Error> {
 async fn balances_indirect_interaction_test() -> Result<(), anyhow::Error> {
     // Test that balance events from transactions that interact with DeepBook
     // indirectly (through other protocols) are still captured
-    let handler = BalancesHandler::new(DeepbookEnv::Mainnet);
+    let handler = BalancesHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("balances_indirect", handler, ["balances"]).await?;
     Ok(())
 }
@@ -121,7 +121,7 @@ async fn balances_indirect_interaction_test() -> Result<(), anyhow::Error> {
 // Margin Manager Events Tests
 #[tokio::test]
 async fn margin_manager_created_test() -> Result<(), anyhow::Error> {
-    let handler = MarginManagerCreatedHandler::new(DeepbookEnv::Testnet);
+    let handler = MarginManagerCreatedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "margin_manager_created",
         handler,
@@ -133,7 +133,7 @@ async fn margin_manager_created_test() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn loan_borrowed_test() -> Result<(), anyhow::Error> {
-    let handler = LoanBorrowedHandler::new(DeepbookEnv::Testnet);
+    let handler = LoanBorrowedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("loan_borrowed", handler, ["loan_borrowed"]).await?;
     Ok(())
 }
@@ -141,14 +141,14 @@ async fn loan_borrowed_test() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[ignore] // TODO: Add checkpoint test data
 async fn loan_repaid_test() -> Result<(), anyhow::Error> {
-    let handler = LoanRepaidHandler::new(DeepbookEnv::Testnet);
+    let handler = LoanRepaidHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("loan_repaid", handler, ["loan_repaid"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn liquidation_test() -> Result<(), anyhow::Error> {
-    let handler = LiquidationHandler::new(DeepbookEnv::Testnet);
+    let handler = LiquidationHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("liquidation", handler, ["liquidation"]).await?;
     Ok(())
 }
@@ -156,14 +156,14 @@ async fn liquidation_test() -> Result<(), anyhow::Error> {
 // Margin Pool Operations Events Tests
 #[tokio::test]
 async fn asset_supplied_test() -> Result<(), anyhow::Error> {
-    let handler = AssetSuppliedHandler::new(DeepbookEnv::Testnet);
+    let handler = AssetSuppliedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("asset_supplied", handler, ["asset_supplied"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn asset_withdrawn_test() -> Result<(), anyhow::Error> {
-    let handler = AssetWithdrawnHandler::new(DeepbookEnv::Testnet);
+    let handler = AssetWithdrawnHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("asset_withdrawn", handler, ["asset_withdrawn"]).await?;
     Ok(())
 }
@@ -171,14 +171,14 @@ async fn asset_withdrawn_test() -> Result<(), anyhow::Error> {
 // Margin Pool Admin Events Tests
 #[tokio::test]
 async fn margin_pool_created_test() -> Result<(), anyhow::Error> {
-    let handler = MarginPoolCreatedHandler::new(DeepbookEnv::Testnet);
+    let handler = MarginPoolCreatedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("margin_pool_created", handler, ["margin_pool_created"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn deepbook_pool_updated_test() -> Result<(), anyhow::Error> {
-    let handler = DeepbookPoolUpdatedHandler::new(DeepbookEnv::Testnet);
+    let handler = DeepbookPoolUpdatedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("deepbook_pool_updated", handler, ["deepbook_pool_updated"]).await?;
     Ok(())
 }
@@ -186,7 +186,7 @@ async fn deepbook_pool_updated_test() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[ignore] // TODO: Add checkpoint test data
 async fn interest_params_updated_test() -> Result<(), anyhow::Error> {
-    let handler = InterestParamsUpdatedHandler::new(DeepbookEnv::Testnet);
+    let handler = InterestParamsUpdatedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "interest_params_updated",
         handler,
@@ -199,7 +199,7 @@ async fn interest_params_updated_test() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[ignore] // TODO: Add checkpoint test data
 async fn margin_pool_config_updated_test() -> Result<(), anyhow::Error> {
-    let handler = MarginPoolConfigUpdatedHandler::new(DeepbookEnv::Testnet);
+    let handler = MarginPoolConfigUpdatedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "margin_pool_config_updated",
         handler,
@@ -212,7 +212,7 @@ async fn margin_pool_config_updated_test() -> Result<(), anyhow::Error> {
 // Margin Registry Events Tests
 #[tokio::test]
 async fn maintainer_cap_updated_test() -> Result<(), anyhow::Error> {
-    let handler = MaintainerCapUpdatedHandler::new(DeepbookEnv::Testnet);
+    let handler = MaintainerCapUpdatedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "maintainer_cap_updated",
         handler,
@@ -224,7 +224,7 @@ async fn maintainer_cap_updated_test() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn deepbook_pool_registered_test() -> Result<(), anyhow::Error> {
-    let handler = DeepbookPoolRegisteredHandler::new(DeepbookEnv::Testnet);
+    let handler = DeepbookPoolRegisteredHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "deepbook_pool_registered",
         handler,
@@ -236,7 +236,7 @@ async fn deepbook_pool_registered_test() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn deepbook_pool_updated_registry_test() -> Result<(), anyhow::Error> {
-    let handler = DeepbookPoolUpdatedRegistryHandler::new(DeepbookEnv::Testnet);
+    let handler = DeepbookPoolUpdatedRegistryHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "deepbook_pool_updated_registry",
         handler,
@@ -249,7 +249,7 @@ async fn deepbook_pool_updated_registry_test() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[ignore] // TODO: Add checkpoint test data
 async fn deepbook_pool_config_updated_test() -> Result<(), anyhow::Error> {
-    let handler = DeepbookPoolConfigUpdatedHandler::new(DeepbookEnv::Testnet);
+    let handler = DeepbookPoolConfigUpdatedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "deepbook_pool_config_updated",
         handler,
@@ -262,7 +262,7 @@ async fn deepbook_pool_config_updated_test() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[ignore] // TODO: Add checkpoint test data - Event does not exist on testnet yet (checked all package versions)
 async fn maintainer_fees_withdrawn_test() -> Result<(), anyhow::Error> {
-    let handler = MaintainerFeesWithdrawnHandler::new(DeepbookEnv::Testnet);
+    let handler = MaintainerFeesWithdrawnHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "maintainer_fees_withdrawn",
         handler,
@@ -275,7 +275,7 @@ async fn maintainer_fees_withdrawn_test() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[ignore] // TODO: Add checkpoint test data - Event does not exist on testnet yet (checked all package versions)
 async fn protocol_fees_withdrawn_test() -> Result<(), anyhow::Error> {
-    let handler = ProtocolFeesWithdrawnHandler::new(DeepbookEnv::Testnet);
+    let handler = ProtocolFeesWithdrawnHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "protocol_fees_withdrawn",
         handler,
@@ -287,14 +287,14 @@ async fn protocol_fees_withdrawn_test() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn supplier_cap_minted_test() -> Result<(), anyhow::Error> {
-    let handler = SupplierCapMintedHandler::new(DeepbookEnv::Testnet);
+    let handler = SupplierCapMintedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("supplier_cap_minted", handler, ["supplier_cap_minted"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn supply_referral_minted_test() -> Result<(), anyhow::Error> {
-    let handler = SupplyReferralMintedHandler::new(DeepbookEnv::Testnet);
+    let handler = SupplyReferralMintedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "supply_referral_minted",
         handler,
@@ -307,14 +307,14 @@ async fn supply_referral_minted_test() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[ignore] // TODO: Add checkpoint test data - Event does not exist on testnet yet (checked all package versions)
 async fn pause_cap_updated_test() -> Result<(), anyhow::Error> {
-    let handler = PauseCapUpdatedHandler::new(DeepbookEnv::Testnet);
+    let handler = PauseCapUpdatedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("pause_cap_updated", handler, ["pause_cap_updated"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn protocol_fees_increased_test() -> Result<(), anyhow::Error> {
-    let handler = ProtocolFeesIncreasedHandler::new(DeepbookEnv::Testnet);
+    let handler = ProtocolFeesIncreasedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test(
         "protocol_fees_increased",
         handler,
@@ -326,14 +326,14 @@ async fn protocol_fees_increased_test() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 async fn referral_fee_event_test() -> Result<(), anyhow::Error> {
-    let handler = ReferralFeeEventHandler::new(DeepbookEnv::Mainnet);
+    let handler = ReferralFeeEventHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("referral_fee_events", handler, ["referral_fee_events"]).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn referral_fees_claimed_test() -> Result<(), anyhow::Error> {
-    let handler = ReferralFeesClaimedHandler::new(DeepbookEnv::Testnet);
+    let handler = ReferralFeesClaimedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Testnet)));
     data_test("referral_fees_claimed", handler, ["referral_fees_claimed"]).await?;
     Ok(())
 }
@@ -342,7 +342,7 @@ async fn referral_fees_claimed_test() -> Result<(), anyhow::Error> {
 // Checkpoint 234918188 - TX: GSNpevf2UcTeq3ACPMGRsvLFRRGB9w2H4KB9BR1cEYcQ
 #[tokio::test]
 async fn deposit_collateral_test() -> Result<(), anyhow::Error> {
-    let handler = DepositCollateralHandler::new(DeepbookEnv::Mainnet);
+    let handler = DepositCollateralHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("deposit_collateral", handler, ["collateral_events"]).await?;
     Ok(())
 }
@@ -350,7 +350,7 @@ async fn deposit_collateral_test() -> Result<(), anyhow::Error> {
 // Checkpoint 234920766 - TX: 73DkKzySTo824MBEQREnhNwXbbSpX8YEEb7qbfxxaHGG
 #[tokio::test]
 async fn withdraw_collateral_test() -> Result<(), anyhow::Error> {
-    let handler = WithdrawCollateralHandler::new(DeepbookEnv::Mainnet);
+    let handler = WithdrawCollateralHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test("withdraw_collateral", handler, ["collateral_events"]).await?;
     Ok(())
 }
@@ -359,7 +359,7 @@ async fn withdraw_collateral_test() -> Result<(), anyhow::Error> {
 // Checkpoint 234928955 - TX: HRj2fF9ifRA8kXipJy2g6y6UKgMFNeKvvZqfrKY2L825
 #[tokio::test]
 async fn conditional_order_added_test() -> Result<(), anyhow::Error> {
-    let handler = ConditionalOrderAddedHandler::new(DeepbookEnv::Mainnet);
+    let handler = ConditionalOrderAddedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test(
         "conditional_order_added",
         handler,
@@ -372,7 +372,7 @@ async fn conditional_order_added_test() -> Result<(), anyhow::Error> {
 // Checkpoint 234928968 - TX: 5QcwuLcE7jmunStKgUSCrHPpAw1WC8B9XQLPph3jrKGn
 #[tokio::test]
 async fn conditional_order_cancelled_test() -> Result<(), anyhow::Error> {
-    let handler = ConditionalOrderCancelledHandler::new(DeepbookEnv::Mainnet);
+    let handler = ConditionalOrderCancelledHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test(
         "conditional_order_cancelled",
         handler,
@@ -385,7 +385,7 @@ async fn conditional_order_cancelled_test() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[ignore] // No mainnet transactions yet - ConditionalOrderExecuted requires price trigger
 async fn conditional_order_executed_test() -> Result<(), anyhow::Error> {
-    let handler = ConditionalOrderExecutedHandler::new(DeepbookEnv::Mainnet);
+    let handler = ConditionalOrderExecutedHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test(
         "conditional_order_executed",
         handler,
@@ -398,7 +398,7 @@ async fn conditional_order_executed_test() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[ignore] // No mainnet transactions yet - ConditionalOrderInsufficientFunds requires trigger with low balance
 async fn conditional_order_insufficient_funds_test() -> Result<(), anyhow::Error> {
-    let handler = ConditionalOrderInsufficientFundsHandler::new(DeepbookEnv::Mainnet);
+    let handler = ConditionalOrderInsufficientFundsHandler::new(Arc::new(NetworkConfig::from_env(DeepbookEnv::Mainnet)));
     data_test(
         "conditional_order_insufficient_funds",
         handler,
