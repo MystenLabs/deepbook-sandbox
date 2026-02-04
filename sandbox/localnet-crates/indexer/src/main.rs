@@ -54,7 +54,7 @@ use deepbook_indexer::handlers::conditional_order_cancelled_handler::Conditional
 use deepbook_indexer::handlers::conditional_order_executed_handler::ConditionalOrderExecutedHandler;
 use deepbook_indexer::handlers::conditional_order_insufficient_funds_handler::ConditionalOrderInsufficientFundsHandler;
 
-use deepbook_indexer::DeepbookEnv;
+use deepbook_indexer::{DeepbookEnv, NetworkConfig};
 use deepbook_schema::MIGRATIONS;
 use prometheus::Registry;
 use std::net::SocketAddr;
@@ -133,6 +133,38 @@ async fn main() -> Result<(), anyhow::Error> {
         core_packages,
         margin_packages,
     } = Args::parse();
+
+    // Build NetworkConfig with validation for localnet
+    let config = match env {
+        DeepbookEnv::Localnet => {
+            let core_pkgs = core_packages.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "--core-packages is required for --env localnet. \
+                    Provide the DeepBook package address(es) deployed on your local network."
+                )
+            })?;
+
+            if core_pkgs.is_empty() {
+                anyhow::bail!("At least one core package address is required for localnet");
+            }
+
+            let ingestion_path = local_ingestion_path.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "--local-ingestion-path is required for --env localnet. \
+                    Provide the directory where the local Sui node exports checkpoint files."
+                )
+            })?;
+
+            NetworkConfig::localnet(core_pkgs, margin_packages, ingestion_path)
+        }
+        _ => NetworkConfig::from_env(env),
+    };
+
+    tracing::info!("Network config: env={:?}, core_packages={}, margin_packages={}",
+        config.env,
+        config.core_packages.len(),
+        config.margin_packages.len()
+    );
 
     let registry = Registry::new_custom(Some("deepbook".into()), None)
         .context("Failed to create Prometheus registry.")?;
