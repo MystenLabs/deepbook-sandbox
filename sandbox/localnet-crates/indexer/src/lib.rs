@@ -337,4 +337,48 @@ impl NetworkConfig {
             local_ingestion_path: Some(local_ingestion_path),
         }
     }
+
+    /// Get core package addresses as string slices
+    pub fn get_core_packages(&self) -> Vec<&str> {
+        self.core_packages.iter().map(|s| s.as_str()).collect()
+    }
+
+    /// Get margin package addresses as string slices
+    pub fn get_margin_packages(&self) -> Vec<&str> {
+        self.margin_packages.iter().map(|s| s.as_str()).collect()
+    }
+
+    /// Get all package addresses (core + margin) as string slices
+    fn get_all_package_strings(&self) -> Vec<&str> {
+        let mut all = self.get_core_packages();
+        all.extend(self.get_margin_packages());
+        all
+    }
+
+    /// Get all package IDs as ObjectID types
+    pub fn package_ids(&self) -> Vec<sui_types::base_types::ObjectID> {
+        use std::str::FromStr;
+        use sui_types::base_types::ObjectID;
+
+        self.get_all_package_strings()
+            .iter()
+            .map(|pkg| ObjectID::from_str(pkg).unwrap())
+            .collect()
+    }
+
+    /// Get all package addresses as AccountAddress types
+    pub fn package_addresses(&self) -> Vec<move_core_types::account_address::AccountAddress> {
+        use move_core_types::account_address::AccountAddress;
+        use std::str::FromStr;
+
+        self.get_all_package_strings()
+            .iter()
+            .map(|pkg| AccountAddress::from_str(pkg).unwrap())
+            .collect()
+    }
+
+    /// Check if margin trading is supported in this configuration
+    pub fn is_margin_supported(&self) -> bool {
+        !self.margin_packages.is_empty()
+    }
 }
