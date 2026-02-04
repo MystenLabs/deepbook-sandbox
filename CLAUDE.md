@@ -23,14 +23,20 @@ This project provides a toolset for reducing builder friction with one-liner dep
 
 ```
 deepbook-sandbox/
-├── CLAUDE.md              # This file - agent instructions
-├── README.md              # Project overview
+├── CLAUDE.md                   # This file - agent instructions
+├── README.md                   # Project overview
 ├── sandbox/
-│   └── docker-compose.yml # Docker orchestration (WIP)
+│   ├── docker-compose.yml      # Docker orchestration
+│   ├── config/
+│   │   └── fullnode.yaml       # Sui fullnode config for checkpoint export
+│   └── localnet-crates/        # Vendored indexer/server with localnet support
+│       ├── indexer/            # Modified indexer supporting localnet
+│       ├── schema/             # Database schema
+│       └── server/             # REST API server
 └── external/
-    └── deepbook/          # Git submodule - DeepBookV3 source
-        ├── packages/      # Move smart contracts
-        └── crates/        # Rust crates (indexer, API server)
+    └── deepbook/               # Git submodule - DeepBookV3 source
+        ├── packages/           # Move smart contracts
+        └── crates/             # Original Rust crates (testnet/mainnet)
 ```
 
 ## Docker Stack
@@ -42,11 +48,11 @@ Services in the stack:
 | Service | Profile | Description | Ports |
 |---------|---------|-------------|-------|
 | **PostgreSQL** | (always) | Database for the indexer | 5432 |
-| **Sui Localnet** | `localnet` | Local Sui blockchain for testing | 9000 (RPC), 9123 (faucet) |
-| **DeepBook Indexer** | `remote` | Indexes DeepBook events (testnet/mainnet only) | 9184 (metrics) |
-| **DeepBook Server** | `remote` | REST API for querying indexed data | 9008 |
-
-> **Note:** The indexer only supports testnet/mainnet (hardcoded checkpoint URLs). It cannot index a local Sui node.
+| **Sui Localnet** | `localnet` | Local Sui blockchain (basic) | 9000 (RPC), 9123 (faucet) |
+| **Sui Localnet (Indexable)** | `localnet-full` | Sui node with checkpoint export | 9000 (RPC), 9123 (faucet) |
+| **DeepBook Indexer** | `remote` | Indexes events (testnet/mainnet) | 9184 (metrics) |
+| **DeepBook Indexer (Localnet)** | `localnet-full` | Indexes events from local node | 9184 (metrics) |
+| **DeepBook Server** | `remote` | REST API for indexed data | 9008 |
 
 ### Running the Stack
 
@@ -62,8 +68,16 @@ docker compose --profile remote down -v   # Fresh start (remove volumes)
 docker compose --profile localnet up -d
 docker compose --profile localnet down
 
+# Localnet with Indexer (full local stack)
+# 1. First, deploy DeepBook to localnet and note the package address
+# 2. Set the package address in .env:
+#    echo "DEEPBOOK_PACKAGE_ID=0x<your-package-address>" >> .env
+# 3. Start the stack:
+docker compose --profile localnet-full up -d
+docker compose --profile localnet-full down
+
 # Stop all services (any profile)
-docker compose --profile remote --profile localnet down
+docker compose --profile remote --profile localnet --profile localnet-full down
 
 # View logs
 docker compose logs -f
