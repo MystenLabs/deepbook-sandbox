@@ -29,10 +29,9 @@ deepbook-sandbox/
 │   ├── docker-compose.yml      # Docker orchestration
 │   ├── config/
 │   │   └── fullnode.yaml       # Sui fullnode config for checkpoint export
-│   └── localnet-crates/        # Vendored indexer/server with localnet support
+│   └── localnet-crates/        # Vendored indexer with localnet support
 │       ├── indexer/            # Modified indexer supporting localnet
-│       ├── schema/             # Database schema
-│       └── server/             # REST API server
+│       └── schema/             # Database schema (indexer dependency)
 └── external/
     └── deepbook/               # Git submodule - DeepBookV3 source
         ├── packages/           # Move smart contracts

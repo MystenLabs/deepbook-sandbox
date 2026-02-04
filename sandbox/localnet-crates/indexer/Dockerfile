@@ -8,7 +8,7 @@
 #   docker run -e ENV=localnet -e LOCAL_INGESTION_PATH=/checkpoints \
 #              -e CORE_PACKAGES=0x... deepbook-indexer-localnet
 
-FROM rust:1.82.0 AS builder
+FROM rust:1.90.0 AS builder
 
 ARG PROFILE=release
 ARG GIT_REVISION=local
@@ -34,7 +34,6 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 COPY Cargo.toml Cargo.lock ./
 COPY indexer/ ./indexer/
 COPY schema/ ./schema/
-COPY server/ ./server/
 
 # Build the indexer
 RUN cargo build --profile $PROFILE --bin deepbook-indexer --config net.git-fetch-with-cli=true
