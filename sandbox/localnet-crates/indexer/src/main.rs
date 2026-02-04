@@ -185,17 +185,38 @@ async fn main() -> Result<(), anyhow::Error> {
         store.clone(),
     )))?;
 
+    // Build ingestion args based on environment
+    let ingestion_args = if config.env == DeepbookEnv::Localnet {
+        tracing::info!(
+            "Using local checkpoint ingestion from: {:?}",
+            config.local_ingestion_path
+        );
+        IngestionClientArgs {
+            remote_store_url: None,
+            local_ingestion_path: config.local_ingestion_path.clone(),
+            rpc_api_url: None,
+            rpc_username: None,
+            rpc_password: None,
+        }
+    } else {
+        tracing::info!(
+            "Using remote checkpoint ingestion from: {}",
+            config.env.remote_store_url()
+        );
+        IngestionClientArgs {
+            remote_store_url: Some(config.env.remote_store_url()),
+            local_ingestion_path: None,
+            rpc_api_url: None,
+            rpc_username: None,
+            rpc_password: None,
+        }
+    };
+
     let mut indexer = Indexer::new(
         store,
         indexer_args,
         ClientArgs {
-            ingestion: IngestionClientArgs {
-                remote_store_url: Some(env.remote_store_url()),
-                local_ingestion_path: None,
-                rpc_api_url: None,
-                rpc_username: None,
-                rpc_password: None,
-            },
+            ingestion: ingestion_args,
             streaming: Default::default(),
         },
         IngestionConfig::default(),
