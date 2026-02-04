@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use url::Url;
 
 pub mod handlers;
@@ -266,5 +267,74 @@ impl DeepbookEnv {
             .iter()
             .map(|pkg| AccountAddress::from_str(pkg).unwrap())
             .collect()
+    }
+}
+
+/// Runtime configuration for the network, including dynamic package addresses for localnet.
+///
+/// For mainnet/testnet, this wraps `DeepbookEnv` and uses hardcoded package addresses.
+/// For localnet, this holds user-provided package addresses and checkpoint path.
+#[derive(Debug, Clone)]
+pub struct NetworkConfig {
+    /// The network environment
+    pub env: DeepbookEnv,
+    /// Core DeepBook package addresses (from hardcoded list or user-provided for localnet)
+    pub core_packages: Vec<String>,
+    /// Margin package addresses (from hardcoded list or user-provided for localnet)
+    pub margin_packages: Vec<String>,
+    /// Local checkpoint directory path (required for localnet, None for mainnet/testnet)
+    pub local_ingestion_path: Option<PathBuf>,
+}
+
+impl NetworkConfig {
+    /// Create a NetworkConfig from a DeepbookEnv (mainnet/testnet only).
+    /// Uses hardcoded package addresses from the static arrays.
+    pub fn from_env(env: DeepbookEnv) -> Self {
+        match env {
+            DeepbookEnv::Localnet => panic!(
+                "Use NetworkConfig::localnet() for localnet configuration"
+            ),
+            _ => {
+                let core_packages = match env {
+                    DeepbookEnv::Mainnet => MAINNET_PACKAGES,
+                    DeepbookEnv::Testnet => TESTNET_PACKAGES,
+                    DeepbookEnv::Localnet => unreachable!(),
+                }
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+
+                let margin_packages = match env {
+                    DeepbookEnv::Mainnet => MAINNET_MARGIN_PACKAGES,
+                    DeepbookEnv::Testnet => TESTNET_MARGIN_PACKAGES,
+                    DeepbookEnv::Localnet => unreachable!(),
+                }
+                .iter()
+                .filter(|&pkg| *pkg != NOT_MAINNET_PACKAGE)
+                .map(|s| s.to_string())
+                .collect();
+
+                Self {
+                    env,
+                    core_packages,
+                    margin_packages,
+                    local_ingestion_path: None,
+                }
+            }
+        }
+    }
+
+    /// Create a NetworkConfig for localnet with user-provided package addresses.
+    pub fn localnet(
+        core_packages: Vec<String>,
+        margin_packages: Option<Vec<String>>,
+        local_ingestion_path: PathBuf,
+    ) -> Self {
+        Self {
+            env: DeepbookEnv::Localnet,
+            core_packages,
+            margin_packages: margin_packages.unwrap_or_default(),
+            local_ingestion_path: Some(local_ingestion_path),
+        }
     }
 }
