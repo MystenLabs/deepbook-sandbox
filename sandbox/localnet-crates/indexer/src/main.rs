@@ -58,6 +58,7 @@ use deepbook_indexer::DeepbookEnv;
 use deepbook_schema::MIGRATIONS;
 use prometheus::Registry;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use sui_indexer_alt_framework::ingestion::ingestion_client::IngestionClientArgs;
 use sui_indexer_alt_framework::ingestion::{ClientArgs, IngestionConfig};
 use sui_indexer_alt_framework::{Indexer, IndexerArgs};
@@ -96,6 +97,23 @@ struct Args {
     /// Packages to index events for (can specify multiple)
     #[clap(long, value_enum, default_values = ["deepbook", "deepbook-margin"])]
     packages: Vec<Package>,
+
+    // ========== Localnet-specific arguments ==========
+    /// Local checkpoint directory path (required for --env localnet).
+    /// This should point to where the local Sui node exports checkpoint files.
+    #[clap(env, long)]
+    local_ingestion_path: Option<PathBuf>,
+
+    /// Core DeepBook package addresses (required for --env localnet).
+    /// Comma-separated list of package addresses deployed on localnet.
+    /// Example: --core-packages 0xabc...,0xdef...
+    #[clap(env, long, value_delimiter = ',')]
+    core_packages: Option<Vec<String>>,
+
+    /// Margin package addresses (optional for --env localnet).
+    /// Comma-separated list of margin package addresses deployed on localnet.
+    #[clap(env, long, value_delimiter = ',')]
+    margin_packages: Option<Vec<String>>,
 }
 
 #[tokio::main]
@@ -111,6 +129,9 @@ async fn main() -> Result<(), anyhow::Error> {
         database_url,
         env,
         packages,
+        local_ingestion_path,
+        core_packages,
+        margin_packages,
     } = Args::parse();
 
     let registry = Registry::new_custom(Some("deepbook".into()), None)
