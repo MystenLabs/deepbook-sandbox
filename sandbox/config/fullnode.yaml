@@ -1,0 +1,31 @@
+# Sui Fullnode Configuration for Localnet with Checkpoint Export
+#
+# This configuration enables checkpoint file export for the DeepBook indexer.
+# The indexer reads checkpoint files from the data-ingestion-dir to process events.
+#
+# Usage:
+#   This file is mounted into the sui-localnet container and used with:
+#   sui start --config /config/fullnode.yaml --with-faucet
+#
+# Note: The data-ingestion-dir feature has known reliability issues (GitHub #22335).
+# Checkpoints may not always be written consistently.
+
+# Authority/Validator public key (required for starting the node)
+# This will be auto-generated when the node starts
+# protocol-public-key: ""
+
+# Network address for the fullnode
+network-address: "/ip4/0.0.0.0/tcp/8080/http"
+
+# JSON-RPC server address
+json-rpc-address: "0.0.0.0:9000"
+
+# Enable checkpoint export for the indexer
+checkpoint-executor-config:
+  # Maximum concurrent checkpoint execution
+  checkpoint-execution-max-concurrency: 200
+  # Timeout for local execution
+  local-execution-timeout-sec: 30
+  # Directory where checkpoint files (.chk) will be written
+  # This path must match the volume mount in docker-compose.yml
+  data-ingestion-dir: "/opt/sui/checkpoints"

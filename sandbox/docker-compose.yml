@@ -6,12 +6,16 @@
 #     docker compose --profile remote down      # Stop services
 #     docker compose --profile remote down -v   # Stop and remove volumes
 #
-#   Localnet (Sui node only - indexer doesn't support localnet):
+#   Localnet (Sui node only):
 #     docker compose --profile localnet up -d   # Start postgres + sui-localnet
 #     docker compose --profile localnet down    # Stop services
 #
+#   Localnet with Indexer (full stack):
+#     docker compose --profile localnet-full up -d  # Start postgres + sui-localnet + indexer
+#     # Note: Requires DEEPBOOK_PACKAGE_ID to be set after deploying DeepBook
+#
 #   Stop all services (any profile):
-#     docker compose --profile remote --profile localnet down
+#     docker compose --profile remote --profile localnet --profile localnet-full down
 #
 #   View logs:
 #     docker compose logs -f
@@ -28,6 +32,7 @@ networks:
 volumes:
   postgres_data:
   sui_data:
+  sui_checkpoints:  # Checkpoint files for localnet indexer
 
 services:
   # ============================================================
@@ -55,9 +60,8 @@ services:
     restart: unless-stopped
 
   # ============================================================
-  # Sui Localnet (Optional - for Sui-only testing)
+  # Sui Localnet (for Move development and testing)
   # Start with: docker compose --profile localnet up -d
-  # Note: DeepBook Indexer does not support localnet (hardcoded testnet/mainnet only)
   # ============================================================
   sui-localnet:
     image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:compat-arm64 (ARM) or mysten/sui-tools:compat (x86)}
@@ -67,12 +71,46 @@ services:
     environment:
       FORCE_REGENESIS: ${FORCE_REGENESIS:-true}
     command: >
-      sh -c 'RUST_LOG="off,sui_node=info" sui start --with-faucet ${FORCE_REGENESIS:+--force-regenesis}' 
+      sh -c 'RUST_LOG="off,sui_node=info" sui start --with-faucet ${FORCE_REGENESIS:+--force-regenesis}'
     ports:
       - "9000:9000"   # RPC
       - "9123:9123"   # Faucet
     volumes:
       - sui_data:/root/.sui
+    networks:
+      - deepbook-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  # ============================================================
+  # Sui Localnet with Checkpoint Export (for indexer integration)
+  # Start with: docker compose --profile localnet-full up -d
+  # Exports checkpoint files for the DeepBook indexer to consume
+  # ============================================================
+  sui-localnet-indexable:
+    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:compat-arm64 (ARM) or mysten/sui-tools:compat (x86)}
+    container_name: sui-localnet
+    profiles:
+      - localnet-full
+    environment:
+      FORCE_REGENESIS: ${FORCE_REGENESIS:-true}
+    command: >
+      sh -c '
+        mkdir -p /opt/sui/checkpoints &&
+        RUST_LOG="off,sui_node=info" sui start --with-faucet ${FORCE_REGENESIS:+--force-regenesis}
+      '
+    ports:
+      - "9000:9000"   # RPC
+      - "9123:9123"   # Faucet
+    volumes:
+      - sui_data:/root/.sui
+      - sui_checkpoints:/opt/sui/checkpoints
+      - ./config/fullnode.yaml:/config/fullnode.yaml:ro
     networks:
       - deepbook-net
     healthcheck:
@@ -109,6 +147,47 @@ services:
       - deepbook-net
     depends_on:
       postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+  # ============================================================
+  # DeepBook Indexer (Localnet)
+  # Indexes DeepBook events from local Sui node via checkpoint files
+  # Requires: DEEPBOOK_PACKAGE_ID set after deploying DeepBook
+  # ============================================================
+  deepbook-indexer-localnet:
+    profiles:
+      - localnet-full
+    build:
+      context: ./localnet-crates
+      dockerfile: indexer/Dockerfile
+      args:
+        PROFILE: release
+    container_name: deepbook-indexer-localnet
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
+      ENV: localnet
+      LOCAL_INGESTION_PATH: /checkpoints
+      CORE_PACKAGES: ${DEEPBOOK_PACKAGE_ID:?Set DEEPBOOK_PACKAGE_ID in .env to the deployed DeepBook package address}
+      MARGIN_PACKAGES: ${MARGIN_PACKAGE_ID:-}
+      RUST_LOG: ${RUST_LOG:-info}
+      FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-0}
+    volumes:
+      - sui_checkpoints:/checkpoints:ro
+    ports:
+      - "9184:9184"  # Prometheus metrics
+    networks:
+      - deepbook-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sui-localnet-indexable:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
