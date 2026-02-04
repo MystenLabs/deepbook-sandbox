@@ -1,0 +1,14 @@
+# Upstream Source Tracking
+# This file tracks the MystenLabs/deepbookv3 commit that these crates were copied from.
+# Update this file whenever you sync with upstream.
+
+UPSTREAM_REPO=https://github.com/MystenLabs/deepbookv3
+UPSTREAM_COMMIT=2c82154e0f72e88a429300f41e224cdecf1e087d
+UPSTREAM_DATE=2026-02-03
+UPSTREAM_MSG=manager states (#832)
+
+# To check for upstream changes:
+#   cd external/deepbook && git fetch origin && git log 2c82154..origin/main --oneline
+#
+# To diff your changes against upstream:
+#   diff -r external/deepbook/crates/indexer sandbox/localnet-crates/indexer
