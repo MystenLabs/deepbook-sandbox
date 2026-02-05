@@ -3,11 +3,13 @@
 export RUST_BACKTRACE=1
 export RUST_LOG=${RUST_LOG:-info}
 
+# Force local checkpoint ingestion for localnet
+# This env var is checked in main.rs to use local_ingestion_path instead of remote_store_url
+export CHECKPOINTS_DIR=${CHECKPOINTS_DIR:-/checkpoints}
+
 # Build command arguments
-# testnet is hardcorded here because it will be always be used as is.
-# Inside the localnet indexer source code the testnet checkpoints have been replaced
-# with localnet checkpoints. So testnet in this case is just a placeholder for a 
-# stable ad-hoc flow executed in the indexer's source code.
+# --env testnet is used as a placeholder since DeepbookEnv requires a valid variant.
+# The actual checkpoint source between testnet/localnet is determined by CHECKPOINTS_DIR env var in main.rs.
 args=(--database-url "$DATABASE_URL" --env testnet --db-connection-pool-size 250)
 if [ -n "$FIRST_CHECKPOINT" ]; then
     args+=(--first-checkpoint "$FIRST_CHECKPOINT")

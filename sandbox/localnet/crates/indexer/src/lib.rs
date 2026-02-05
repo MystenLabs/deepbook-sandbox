@@ -7,8 +7,9 @@ pub mod traits;
 pub const NOT_MAINNET_PACKAGE: &str = "<not on mainnet>";
 
 pub const MAINNET_REMOTE_STORE_URL: &str = "https://checkpoints.mainnet.sui.io";
-// ATTENTION: For localnet, this points to the nginx checkpoint server container
-pub const TESTNET_REMOTE_STORE_URL: &str = "http://localnet-checkpoint-server:80";
+// Note: Not used by localnet indexer (which reads local checkpoints via CHECKPOINTS_DIR).
+// Kept for API compatibility with DeepbookEnv::remote_store_url().
+pub const TESTNET_REMOTE_STORE_URL: &str = "https://checkpoints.testnet.sui.io";
 
 // Package addresses for different environments
 const MAINNET_PACKAGES: &[&str] = &[

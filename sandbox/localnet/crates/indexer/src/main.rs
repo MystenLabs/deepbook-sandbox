@@ -133,19 +133,18 @@ async fn main() -> Result<(), anyhow::Error> {
         store.clone(),
     )))?;
 
-    // Use local checkpoint path if CHECKPOINTS_DIR is set, otherwise use remote URL
-    let (remote_url, local_path) = match std::env::var("CHECKPOINTS_DIR") {
-        Ok(dir) => (None, Some(PathBuf::from(dir))),
-        Err(_) => (Some(env.remote_store_url()), None),
-    };
+    // Localnet indexer requires CHECKPOINTS_DIR to be set for local checkpoint ingestion
+    let local_path = std::env::var("CHECKPOINTS_DIR")
+        .map(PathBuf::from)
+        .expect("CHECKPOINTS_DIR env var must be set for localnet indexer");
 
     let mut indexer = Indexer::new(
         store,
         indexer_args,
         ClientArgs {
             ingestion: IngestionClientArgs {
-                remote_store_url: remote_url,
-                local_ingestion_path: local_path,
+                remote_store_url: None,
+                local_ingestion_path: Some(local_path),
                 rpc_api_url: None,
                 rpc_username: None,
                 rpc_password: None,
