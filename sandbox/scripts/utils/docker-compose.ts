@@ -6,6 +6,9 @@ import { fileURLToPath } from 'url';
 export const LOCALNET_RPC_PORT = 9000;
 export const LOCALNET_FAUCET_PORT = 9123;
 
+/** DeepBook server REST API port (remote profile). */
+export const DEEPBOOK_SERVER_PORT = 9008;
+
 /**
  * Resolve the sandbox root directory (where docker-compose.yml lives).
  * Works when running from sandbox/ or from project root.
@@ -38,6 +41,51 @@ export async function startLocalnet(sandboxRoot?: string): Promise<{
 	await waitForRpc(`http://127.0.0.1:${LOCALNET_RPC_PORT}`);
 	await waitForFaucet(`http://127.0.0.1:${LOCALNET_FAUCET_PORT}`);
 	return { rpcPort: LOCALNET_RPC_PORT, faucetPort: LOCALNET_FAUCET_PORT };
+}
+
+/**
+ * Start deepbook-indexer and server with docker compose (profile remote).
+ * Runs from sandbox root. Pass envOverlay to inject deployment IDs into the compose
+ * process so containers get the correct values (Docker Compose substitutes from process env).
+ * Uses --force-recreate so containers are recreated with the new env.
+ */
+export async function startRemote(
+	sandboxRoot?: string,
+	envOverlay?: Record<string, string>,
+): Promise<{ serverPort: number }> {
+	const cwd = sandboxRoot ?? getSandboxRoot();
+	const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
+	const result = spawnSync(
+		'docker',
+		['compose', '--profile', 'remote', 'up', '-d', '--force-recreate'],
+		{
+			cwd,
+			encoding: 'utf-8',
+			stdio: 'inherit',
+			env,
+		},
+	);
+	if (result.status !== 0) {
+		throw new Error(
+			`docker compose --profile remote failed (exit ${result.status}). Ensure Docker is running.`,
+		);
+	}
+	await waitForServer(`http://127.0.0.1:${DEEPBOOK_SERVER_PORT}`);
+	return { serverPort: DEEPBOOK_SERVER_PORT };
+}
+
+async function waitForServer(baseUrl: string, maxAttempts = 90): Promise<void> {
+	const url = `${baseUrl.replace(/\/$/, '')}/`;
+	for (let i = 0; i < maxAttempts; i++) {
+		try {
+			const res = await fetch(url);
+			if (res.status > 0) return;
+		} catch {
+			// connection refused or similar
+		}
+		await new Promise((r) => setTimeout(r, 2000));
+	}
+	throw new Error(`DeepBook server at ${url} did not become ready after ${maxAttempts} attempts`);
 }
 
 async function waitForRpc(url: string, maxAttempts = 60): Promise<void> {
