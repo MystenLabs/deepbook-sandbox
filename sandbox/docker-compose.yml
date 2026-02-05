@@ -78,31 +78,11 @@ services:
         networks:
             - deepbook-net
         healthcheck:
-            test: ["CMD-SHELL", "curl -sf http://localhost:9000 || exit 1"]
+            test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9000'"]
             interval: 10s
             timeout: 5s
             retries: 30
             start_period: 30s
-        restart: unless-stopped
-
-    # ============================================================
-    # Checkpoint Server (Localnet only)
-    # Serves checkpoint files over HTTP for the indexer
-    # ============================================================
-    localnet-checkpoint-server:
-        image: nginx:alpine
-        profiles:
-            - localnet
-        container_name: localnet-checkpoint-server
-        volumes:
-            - checkpoint_data:/usr/share/nginx/html:ro
-        ports:
-            - "9200:80"
-        networks:
-            - deepbook-net
-        depends_on:
-            sui-localnet:
-                condition: service_healthy
         restart: unless-stopped
 
     # ============================================================
@@ -156,8 +136,11 @@ services:
         container_name: deepbook-local-indexer
         environment:
             DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
+            CHECKPOINTS_DIR: /checkpoints
             RUST_LOG: ${RUST_LOG:-info}
             FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-0}
+        volumes:
+            - checkpoint_data:/checkpoints:ro
         ports:
             - "9184:9184" # Prometheus metrics
         networks:
@@ -165,8 +148,8 @@ services:
         depends_on:
             postgres:
                 condition: service_healthy
-            localnet-checkpoint-server:
-                condition: service_started
+            sui-localnet:
+                condition: service_healthy
         healthcheck:
             test:
                 [

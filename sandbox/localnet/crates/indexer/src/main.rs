@@ -58,6 +58,7 @@ use deepbook_indexer::DeepbookEnv;
 use deepbook_schema::MIGRATIONS;
 use prometheus::Registry;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use sui_indexer_alt_framework::ingestion::ingestion_client::IngestionClientArgs;
 use sui_indexer_alt_framework::ingestion::{ClientArgs, IngestionConfig};
 use sui_indexer_alt_framework::{Indexer, IndexerArgs};
@@ -132,13 +133,19 @@ async fn main() -> Result<(), anyhow::Error> {
         store.clone(),
     )))?;
 
+    // Use local checkpoint path if CHECKPOINTS_DIR is set, otherwise use remote URL
+    let (remote_url, local_path) = match std::env::var("CHECKPOINTS_DIR") {
+        Ok(dir) => (None, Some(PathBuf::from(dir))),
+        Err(_) => (Some(env.remote_store_url()), None),
+    };
+
     let mut indexer = Indexer::new(
         store,
         indexer_args,
         ClientArgs {
             ingestion: IngestionClientArgs {
-                remote_store_url: Some(env.remote_store_url()),
-                local_ingestion_path: None,
+                remote_store_url: remote_url,
+                local_ingestion_path: local_path,
                 rpc_api_url: None,
                 rpc_username: None,
                 rpc_password: None,
