@@ -19,14 +19,15 @@ export function getSandboxRoot(): string {
 
 /**
  * Start localnet with docker compose (profile localnet) and wait until RPC is ready.
- * Runs from sandbox root: `docker compose --profile localnet up -d`, then polls RPC.
+ * Runs from sandbox root: `docker compose --profile localnet up -d sui-localnet postgres`, then polls RPC.
+ * Note: Explicit service names prevent the indexer from starting prematurely.
  */
 export async function startLocalnet(sandboxRoot?: string): Promise<{
 	rpcPort: number;
 	faucetPort: number;
 }> {
 	const cwd = sandboxRoot ?? getSandboxRoot();
-	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d'], {
+	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', 'sui-localnet', 'postgres'], {
 		cwd,
 		encoding: 'utf-8',
 		stdio: 'inherit',
@@ -100,8 +101,8 @@ export async function startLocalnetIndexer(
 
 	await fs.writeFile(envPath, envLines.filter(Boolean).join('\n') + '\n');
 
-	// Start the indexer with the localnet-indexer profile
-	const result = spawnSync('docker', ['compose', '--profile', 'localnet-indexer', 'up', '-d'], {
+	// Start the indexer (explicit service name to avoid starting other localnet services)
+	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', 'deepbook-local-indexer'], {
 		cwd,
 		encoding: 'utf-8',
 		stdio: 'inherit',
