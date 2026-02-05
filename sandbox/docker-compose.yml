@@ -184,8 +184,8 @@ services:
             RPC_URL: ${RPC_URL:-https://fullnode.testnet.sui.io:443}
             DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-0x22be4cade64bf2d02412c7e8d0e8beea2f78828b948118d46735315409371a3c}
             DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270}
-            DEEP_TREASURY_ID: ${DEEP_TREASURY_ID:-0x032abf8948dda67a271bcc18e776dbbcfb0d58c8d288a700ff0d5521e57a1ffe}
-            MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID:-}
+            DEEP_TREASURY_ID: ${DEEP_TREASURY_ID}
+            MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID}
             RUST_LOG: ${RUST_LOG:-info}
         ports:
             - "9008:9008" # REST API
