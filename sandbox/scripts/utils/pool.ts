@@ -77,6 +77,8 @@ export class PoolCreator {
 		const whitelistedPool = false;
 		const stablePool = false;
 
+		tx.setGasBudget(200_000_000);
+
 		// Call create_pool_admin
 		tx.moveCall({
 			target: `${deepbookPkg.packageId}::pool::create_pool_admin`,

@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process';
-import { readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import path from 'path';
 import type { SuiClient } from '@mysten/sui/client';
 import type { Keypair } from '@mysten/sui/cryptography';
@@ -24,8 +24,14 @@ export interface PackageInfo {
 	deps: string[];
 }
 
+const PACKAGES_BASE = '../external/deepbook/packages';
+
 export class MoveDeployer {
 	private suiBinary: string;
+	/** Backup of deepbook/Published.toml when removed for testnet (restored after deploy). */
+	private deepbookPublishedTomlBackup: string | null = null;
+	/** Backup of token/Move.lock when removed for testnet (restored after deploy). */
+	private tokenMoveLockBackup: string | null = null;
 
 	constructor(
 		private client: SuiClient,
@@ -39,14 +45,21 @@ export class MoveDeployer {
 
 		// Build Move package (cwd must be package dir so local deps like ../token resolve)
 		const resolvedPath = path.resolve(process.cwd(), packagePath);
-		const buildResult = execFileSync(
-			this.suiBinary,
-			['move', 'build', '--dump-bytecode-as-base64', '--with-unpublished-dependencies', "-e", getNetwork(), '--path', resolvedPath],
-			{ encoding: 'utf-8' },
-		);
+		const command = getNetwork() === "localnet" ? [
+			'move', 
+			'build', 
+			'--dump-bytecode-as-base64', 
+			'--with-unpublished-dependencies',
+			"-e", 
+			"localnet", 
+			'--path', 
+			resolvedPath
+		] : ['move', 'build', '--dump-bytecode-as-base64', '--with-unpublished-dependencies', '--path', resolvedPath];
+		const buildResult = execFileSync(this.suiBinary, command, { encoding: 'utf-8' });
 
 		const { modules, dependencies } = JSON.parse(buildResult);
-		
+		console.log(modules);
+		console.log(dependencies);
 		console.log(`    Publishing ${packageName}...`);
 
 		// Create publish transaction
@@ -57,7 +70,7 @@ export class MoveDeployer {
 		});
 
 		// Transfer upgrade capability to sender
-		tx.transferObjects([cap], tx.pure.address(await this.signer.getPublicKey().toSuiAddress()));
+		tx.transferObjects([cap], tx.pure.address(this.signer.getPublicKey().toSuiAddress()));
 
 		// Execute transaction
 		const result = await this.client.signAndExecuteTransaction({
@@ -104,7 +117,7 @@ export class MoveDeployer {
 	}
 
 	async deployAll(): Promise<Map<string, DeploymentResult>> {
-		const baseDir = '../external/deepbook/packages';
+		const baseDir = PACKAGES_BASE;
 
 		// Define deployment order with dependencies
 		const packages: PackageInfo[] = [
@@ -115,8 +128,9 @@ export class MoveDeployer {
 
 		for (const pkg of packages) {
 			// Handle dependency resolution for deepbook package
-			if (pkg.name === 'deepbook' || pkg.name === 'deepbook_margin') {
-				this.patchMoveTOML(pkg, deployed);
+			if (pkg.name === 'deepbook') {
+				const chainId = await this.client.getChainIdentifier();
+				this.patchMoveTOML(pkg, deployed, chainId);
 			}
 
 			try {
@@ -127,7 +141,7 @@ export class MoveDeployer {
 				await new Promise((resolve) => setTimeout(resolve, 2000));
 			} finally {
 				// Restore original Move.toml
-				if (pkg.name === 'deepbook' || pkg.name === 'deepbook_margin') {
+				if (pkg.name === 'deepbook') {
 					this.restoreMoveTOML(pkg);
 				}
 			}
@@ -136,7 +150,7 @@ export class MoveDeployer {
 		return deployed;
 	}
 
-	private patchMoveTOML(pkg: PackageInfo, deployed: Map<string, DeploymentResult>): void {
+	private patchMoveTOML(pkg: PackageInfo, deployed: Map<string, DeploymentResult>, chainId: string): void {
 		const tomlPath = `${pkg.path}/Move.toml`;
 		const original = readFileSync(tomlPath, 'utf-8');
 
@@ -152,11 +166,17 @@ export class MoveDeployer {
 				/token\s*=\s*\{[^}]*git[^}]*\}/g,
 				'token = { local = "../token" }',
 			);
-			// Replace [addresses] with [environments] for deployment (restored from backup after)
-			patched = patched.replace(
-				/\[addresses\]\s*\n\s*deepbook\s*=\s*"0x0"\s*/,
-				'[environments]\nlocalnet = "b9036328"\n',
-			);
+			if (getNetwork() === "localnet") {
+				// Replace [addresses] with [environments] for deployment (restored from backup after)
+				patched = patched.replace(
+					/\[addresses\]\s*\n\s*deepbook\s*=\s*"0x0"\s*/,
+					`[environments]\nlocalnet = "${chainId}"\n`,
+				);
+			} else {
+				// Testnet: remove deepbook Published.toml and token Move.lock so dependencies resolve correctly (restored after deploy)
+				this.removeDeepbookPublishedToml();
+				this.removeTokenMoveLock();
+			}
 		}
 
 		if (pkg.name === 'deepbook_margin') {
@@ -170,7 +190,6 @@ export class MoveDeployer {
 				'deepbook = { local = "../deepbook" }',
 			);
 		}
-
 		writeFileSync(tomlPath, patched);
 	}
 
@@ -185,5 +204,45 @@ export class MoveDeployer {
 		} catch (error) {
 			console.warn(`    Warning: Could not restore Move.toml for ${pkg.name}`);
 		}
+		if (getNetwork() === "testnet") {
+			this.restoreDeepbookPublishedToml();
+			this.restoreTokenMoveLock();
+		}
+	}
+
+	private getTokenMoveLockPath(): string {
+		return path.resolve(process.cwd(), PACKAGES_BASE, 'token', 'Move.lock');
+	}
+
+	private removeTokenMoveLock(): void {
+		const lockPath = this.getTokenMoveLockPath();
+		if (!existsSync(lockPath)) return;
+		this.tokenMoveLockBackup = readFileSync(lockPath, 'utf-8');
+		unlinkSync(lockPath);
+	}
+
+	private restoreTokenMoveLock(): void {
+		if (this.tokenMoveLockBackup === null) return;
+		const lockPath = this.getTokenMoveLockPath();
+		writeFileSync(lockPath, this.tokenMoveLockBackup);
+		this.tokenMoveLockBackup = null;
+	}
+
+	private getDeepbookPublishedTomlPath(): string {
+		return path.resolve(process.cwd(), PACKAGES_BASE, 'deepbook', 'Published.toml');
+	}
+
+	private removeDeepbookPublishedToml(): void {
+		const publishedPath = this.getDeepbookPublishedTomlPath();
+		if (!existsSync(publishedPath)) return;
+		this.deepbookPublishedTomlBackup = readFileSync(publishedPath, 'utf-8');
+		unlinkSync(publishedPath);
+	}
+
+	private restoreDeepbookPublishedToml(): void {
+		if (this.deepbookPublishedTomlBackup === null) return;
+		const publishedPath = this.getDeepbookPublishedTomlPath();
+		writeFileSync(publishedPath, this.deepbookPublishedTomlBackup);
+		this.deepbookPublishedTomlBackup = null;
 	}
 }

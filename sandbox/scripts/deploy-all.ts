@@ -1,8 +1,9 @@
 import path from 'path';
 import { getClient, getFaucetUrl, getNetwork, getRpcUrl, getSigner } from './utils/config';
-import { getSandboxRoot, startLocalnet } from './utils/docker-compose';
+import { getSandboxRoot, startLocalnet, startRemote } from './utils/docker-compose';
 import { MoveDeployer } from './utils/deployer';
-import { requestFaucetWithRetry } from './utils/helpers';
+import { updateEnvFile } from './utils/env';
+import { ensureMinimumBalance, getTestnetDeploymentEnv } from './utils/helpers';
 import { PoolCreator } from './utils/pool';
 import fs from 'fs/promises';
 
@@ -11,16 +12,16 @@ async function main() {
 	console.log(`🚀 Starting DeepBook ${network} deployment...\n`);
 
 	try {
-		// Phase 1: Start containers
+		// Start localnet network if localnet is selected
 		if (network === 'localnet') {
-			console.log('📦 Phase 1: Starting localnet (docker compose)...');
+			console.log('📦 Starting localnet (docker compose)...');
 			const { rpcPort, faucetPort } = await startLocalnet(getSandboxRoot());
 			console.log(`  ✅ RPC: http://127.0.0.1:${rpcPort}`);
 			console.log(`  ✅ Faucet: http://127.0.0.1:${faucetPort}\n`);
 		}
 
-		// Phase 2: Setup Sui client and keypair
-		console.log('🔑 Phase 2: Setting up Sui client...');
+		// Phase 1: Setup Sui client and keypair
+		console.log('🔑 Phase 1: Setting up Sui client...');
 		const signer = getSigner();
 		const signerAddress = signer.getPublicKey().toSuiAddress();
 		console.log(`  Signer address: ${signerAddress}`);
@@ -36,20 +37,13 @@ async function main() {
 			throw new Error(`Failed to connect to Sui RPC: ${error}`);
 		}
 
-		// Phase 3: Fund deployer address
-		console.log('💰 Phase 3: Funding deployer address...');
+		// Phase 2: Fund deployer address
+		console.log('💰 Phase 2: Funding deployer address...');
 		const poolCreator = new PoolCreator(client, signer, getFaucetUrl(network));
-		const faucetHost = getFaucetUrl(network);
-		await requestFaucetWithRetry(faucetHost, signerAddress);
-		// Wait for coins to be available
-		await new Promise((resolve) => setTimeout(resolve, 2000));
+		await ensureMinimumBalance(client, signerAddress, getFaucetUrl(network));
 
-		// Verify we have coins
-		const coins = await client.getCoins({ owner: signerAddress });
-		console.log(`  ✅ Received ${coins.data.length} coin(s)\n`);
-
-		// Phase 4: Deploy Move packages
-		console.log('📝 Phase 4: Deploying Move packages...');
+		// Phase 3: Deploy Move packages
+		console.log('📝 Phase 3: Deploying Move packages...');
 		console.log('  This will take several minutes...\n');
 		const deployer = new MoveDeployer(client, signer);
 		const deployedPackages = await deployer.deployAll();
@@ -60,16 +54,30 @@ async function main() {
 		}
 		console.log();
 
-		// Phase 5: Start indexer (testnet only)
+		// Phase 4: Start deepbook-indexer and server (testnet only)
+		if (network === 'testnet') {
+			const deepbookResult = deployedPackages.get('deepbook')!;
+			const sandboxRoot = getSandboxRoot();
+			const envUpdates = await getTestnetDeploymentEnv(client, deepbookResult);
 
-		// Phase 6: Create DEEP/SUI pool
-		console.log('🏊 Phase 6: Creating DEEP/SUI pool...');
+			updateEnvFile(sandboxRoot, envUpdates);
+			console.log('  ✅ Updated .env with deployment IDs and FIRST_CHECKPOINT\n');
+
+			console.log('📡 Phase 4: Starting deepbook-indexer and server (docker compose --profile remote)...');
+			const { serverPort } = await startRemote(sandboxRoot, envUpdates);
+			console.log(`  ✅ DeepBook server: http://127.0.0.1:${serverPort}\n`);
+		} else {
+			console.log('📡 Phase 4: Indexer is not supported for localnet yet\n');
+		}
+
+		// Phase 5: Create DEEP/SUI pool
+		console.log('🏊 Phase 5: Creating DEEP/SUI pool...');
 		console.log(deployedPackages);
 		const pool = await poolCreator.createPool(deployedPackages);
 		console.log();
 
-		// Phase 7: Write configuration file
-		console.log('📄 Phase 7: Writing configuration...');
+		// Phase 6: Write configuration file
+		console.log('📄 Phase 6: Writing configuration...');
 		const config = {
 			network: {
 				type: network,
@@ -114,6 +122,9 @@ async function main() {
 		console.log('📋 Deployment Info:');
 		console.log(`  • RPC URL: ${getRpcUrl(network)}`);
 		console.log(`  • Faucet URL: ${getFaucetUrl(network)}`);
+		if (network === 'testnet') {
+			console.log(`  • DeepBook Server: http://127.0.0.1:9008`);
+		}
 		console.log(`  • Deployer Address: ${signerAddress}`);
 		console.log(`  • DEEP/SUI Pool: ${pool.poolId}`);
 		console.log(`  • Deployment File: ${deploymentPath}\n`);
