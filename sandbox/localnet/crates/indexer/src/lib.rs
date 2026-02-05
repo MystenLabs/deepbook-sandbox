@@ -238,6 +238,33 @@ impl DeepbookEnv {
         use std::str::FromStr;
         use sui_types::base_types::ObjectID;
 
+        // Check for override via env var (for localnet with dynamic package deployment)
+        if let Ok(packages) = std::env::var("CORE_PACKAGES") {
+            let mut ids: Vec<ObjectID> = packages
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(|pkg| {
+                    ObjectID::from_str(pkg.trim())
+                        .expect("Invalid CORE_PACKAGES address")
+                })
+                .collect();
+
+            // Also include margin packages if provided
+            if let Ok(margin) = std::env::var("MARGIN_PACKAGES") {
+                ids.extend(
+                    margin
+                        .split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(|pkg| {
+                            ObjectID::from_str(pkg.trim())
+                                .expect("Invalid MARGIN_PACKAGES address")
+                        }),
+                );
+            }
+            return ids;
+        }
+
+        // Fall back to hardcoded packages
         self.get_all_package_strings()
             .iter()
             .map(|pkg| ObjectID::from_str(pkg).unwrap())
@@ -248,6 +275,33 @@ impl DeepbookEnv {
         use move_core_types::account_address::AccountAddress;
         use std::str::FromStr;
 
+        // Check for override via env var (for localnet with dynamic package deployment)
+        if let Ok(packages) = std::env::var("CORE_PACKAGES") {
+            let mut addrs: Vec<AccountAddress> = packages
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(|pkg| {
+                    AccountAddress::from_str(pkg.trim())
+                        .expect("Invalid CORE_PACKAGES address")
+                })
+                .collect();
+
+            // Also include margin packages if provided
+            if let Ok(margin) = std::env::var("MARGIN_PACKAGES") {
+                addrs.extend(
+                    margin
+                        .split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(|pkg| {
+                            AccountAddress::from_str(pkg.trim())
+                                .expect("Invalid MARGIN_PACKAGES address")
+                        }),
+                );
+            }
+            return addrs;
+        }
+
+        // Fall back to hardcoded packages
         self.get_all_package_strings()
             .iter()
             .map(|pkg| AccountAddress::from_str(pkg).unwrap())

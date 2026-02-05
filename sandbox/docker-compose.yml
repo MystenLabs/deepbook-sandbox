@@ -137,6 +137,8 @@ services:
         environment:
             DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
             LOCAL_CHECKPOINTS_DIR: /checkpoints
+            CORE_PACKAGES: ${CORE_PACKAGES:-}
+            MARGIN_PACKAGES: ${MARGIN_PACKAGES:-}
             RUST_LOG: ${RUST_LOG:-info}
             FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-0}
         volumes:

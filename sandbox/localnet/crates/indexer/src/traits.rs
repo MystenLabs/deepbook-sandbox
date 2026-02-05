@@ -79,13 +79,43 @@ pub fn get_package_addresses_for_module(
     module: &str,
     env: crate::DeepbookEnv,
 ) -> Result<Vec<Address>, String> {
-    match get_module_type(module) {
+    let module_type = get_module_type(module);
+
+    // Check for env var overrides (for localnet with dynamic package deployment)
+    match module_type {
         ModuleType::Core => {
-            // Get core package addresses using helper function
+            if let Ok(packages) = std::env::var("CORE_PACKAGES") {
+                let addresses: Vec<Address> = packages
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .filter_map(|pkg| parse_address_from_hex(pkg.trim()).ok())
+                    .collect();
+                if !addresses.is_empty() {
+                    return Ok(addresses);
+                }
+            }
+        }
+        ModuleType::Margin => {
+            if let Ok(packages) = std::env::var("MARGIN_PACKAGES") {
+                let addresses: Vec<Address> = packages
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .filter_map(|pkg| parse_address_from_hex(pkg.trim()).ok())
+                    .collect();
+                if !addresses.is_empty() {
+                    return Ok(addresses);
+                }
+            }
+        }
+        _ => {}
+    }
+
+    // Fall back to hardcoded packages
+    match module_type {
+        ModuleType::Core => {
             let core_packages = crate::get_core_package_addresses(env);
             let mut addresses = Vec::new();
 
-            // Convert string addresses to Address types
             for addr_str in core_packages {
                 if let Ok(addr) = parse_address_from_hex(addr_str) {
                     addresses.push(addr);
@@ -95,12 +125,9 @@ pub fn get_package_addresses_for_module(
             Ok(addresses)
         }
         ModuleType::Margin => {
-            // Get margin package addresses with validation
-            // This will fail fast if margin trading is not supported on the current environment
             let margin_packages = crate::get_margin_package_addresses(env);
             let mut addresses = Vec::new();
 
-            // Convert string addresses to Address types
             for addr_str in margin_packages {
                 if let Ok(addr) = parse_address_from_hex(addr_str) {
                     addresses.push(addr);
@@ -128,7 +155,6 @@ pub fn get_package_addresses_for_module(
             }
         }
         ModuleType::Unknown => {
-            // Raise exception for unknown modules
             Err(format!("Unknown module: {}", module))
         }
     }
