@@ -143,11 +143,8 @@ async fn main() -> Result<(), anyhow::Error> {
         indexer_args,
         ClientArgs {
             ingestion: IngestionClientArgs {
-                remote_store_url: None,
                 local_ingestion_path: Some(local_path),
-                rpc_api_url: None,
-                rpc_username: None,
-                rpc_password: None,
+                ..Default::default()
             },
             streaming: Default::default(),
         },

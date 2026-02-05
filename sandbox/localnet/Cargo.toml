@@ -21,9 +21,9 @@ bcs = "0.1.6"
 url = "2.5.4"
 prometheus = "0.13.4"
 
-sui-futures = { git = "https://github.com/MystenLabs/sui.git", branch = "testnet" }
-sui-indexer-alt-metrics = { git = "https://github.com/MystenLabs/sui.git", branch = "testnet" }
-telemetry-subscribers = { git = "https://github.com/MystenLabs/sui.git", branch = "testnet" }
-sui-pg-db = { git = "https://github.com/MystenLabs/sui.git", branch = "testnet" }
-move-core-types = { git = "https://github.com/MystenLabs/sui.git", branch = "testnet" }
-sui-types = { git = "https://github.com/MystenLabs/sui.git", branch = "testnet" }
+sui-futures = { git = "https://github.com/MystenLabs/sui.git", branch = "main" }
+sui-indexer-alt-metrics = { git = "https://github.com/MystenLabs/sui.git", branch = "main" }
+telemetry-subscribers = { git = "https://github.com/MystenLabs/sui.git", branch = "main" }
+sui-pg-db = { git = "https://github.com/MystenLabs/sui.git", branch = "main" }
+move-core-types = { git = "https://github.com/MystenLabs/sui.git", branch = "main" }
+sui-types = { git = "https://github.com/MystenLabs/sui.git", branch = "main" }
