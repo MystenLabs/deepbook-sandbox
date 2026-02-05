@@ -7,7 +7,8 @@ pub mod traits;
 pub const NOT_MAINNET_PACKAGE: &str = "<not on mainnet>";
 
 pub const MAINNET_REMOTE_STORE_URL: &str = "https://checkpoints.mainnet.sui.io";
-pub const TESTNET_REMOTE_STORE_URL: &str = "https://checkpoints.testnet.sui.io";
+// ATTENTION: For localnet, this points to the nginx checkpoint server container
+pub const TESTNET_REMOTE_STORE_URL: &str = "http://localnet-checkpoint-server:80";
 
 // Package addresses for different environments
 const MAINNET_PACKAGES: &[&str] = &[
@@ -18,6 +19,7 @@ const MAINNET_PACKAGES: &[&str] = &[
     "0x2d93777cc8b67c064b495e8606f2f8f5fd578450347bbe7b36e0bc03963c1c40", // Latest
 ];
 
+// TODO: 
 const TESTNET_PACKAGES: &[&str] = &[
     "0x467e34e75debeea8b89d03aea15755373afc39a7c96c9959549c7f5f689843cf",
     "0x5d520a3e3059b68530b2ef4080126dbb5d234e0afd66561d0d9bd48127a06044",
