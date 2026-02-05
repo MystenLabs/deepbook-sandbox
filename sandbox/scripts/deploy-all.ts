@@ -1,6 +1,6 @@
 import path from 'path';
 import { getClient, getFaucetUrl, getNetwork, getRpcUrl, getSigner } from './utils/config';
-import { getSandboxRoot, startLocalnet } from './utils/docker-compose';
+import { getSandboxRoot, startLocalnet, startLocalnetIndexer } from './utils/docker-compose';
 import { MoveDeployer } from './utils/deployer';
 import { requestFaucetWithRetry } from './utils/helpers';
 import { PoolCreator } from './utils/pool';
@@ -60,7 +60,18 @@ async function main() {
 		}
 		console.log();
 
-		// Phase 5: Start indexer (testnet only)
+		// Phase 5: Start indexer with deployed packages
+		if (network === 'localnet') {
+			console.log('🔍 Phase 5: Starting localnet indexer...');
+			const corePackageId = deployedPackages.get('deepbook')!.packageId;
+			// TODO: Add margin package when deployed
+			// const marginPackageId = deployedPackages.get('deepbook_margin')?.packageId;
+			await startLocalnetIndexer(
+				{ corePackageId },
+				getSandboxRoot(),
+			);
+			console.log(`  ✅ Indexer started with CORE_PACKAGES=${corePackageId}\n`);
+		}
 
 		// Phase 6: Create DEEP/SUI pool
 		console.log('🏊 Phase 6: Creating DEEP/SUI pool...');

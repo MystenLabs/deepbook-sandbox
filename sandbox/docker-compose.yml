@@ -126,7 +126,7 @@ services:
 
     deepbook-local-indexer:
         profiles:
-            - localnet
+            - localnet-indexer
         build:
             context: ./localnet
             dockerfile: ./docker/deepbook-indexer/Dockerfile
