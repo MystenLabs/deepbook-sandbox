@@ -4,11 +4,6 @@ import type { DeploymentResult } from './deployer';
 
 const ONE_SUI_MIST = BigInt(1_000_000_000);
 
-export interface RequestFaucetOptions {
-	/** If true, throw after max retries instead of checking balance (use when caller already checked balance). */
-	throwOnFailure?: boolean;
-}
-
 /** Request from faucet with retries (helps with localnet ECONNRESET until faucet is stable). */
 export async function requestFaucetWithRetry(
 	host: string,
