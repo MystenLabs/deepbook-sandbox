@@ -121,7 +121,7 @@ async function waitForFaucet(baseUrl: string, maxAttempts = 30): Promise<void> {
  * Start the localnet indexer with dynamically deployed package addresses.
  * Writes package IDs to .env and starts the indexer container.
  */
-export async function startLocalnetIndexer(
+export async function startLocalnetIndexerAndServer(
 	packages: { corePackageId: string; marginPackageId?: string },
 	sandboxRoot?: string,
 ): Promise<void> {
@@ -150,7 +150,7 @@ export async function startLocalnetIndexer(
 	await fs.writeFile(envPath, envLines.filter(Boolean).join('\n') + '\n');
 
 	// Start the indexer (explicit service name to avoid starting other localnet services)
-	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', 'deepbook-local-indexer'], {
+	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', 'deepbook-local-indexer', 'deepbook-server'], {
 		cwd,
 		encoding: 'utf-8',
 		stdio: 'inherit',

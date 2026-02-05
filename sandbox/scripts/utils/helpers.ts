@@ -1,6 +1,7 @@
 import type { SuiClient } from '@mysten/sui/client';
 import { requestSuiFromFaucetV2 } from '@mysten/sui/faucet';
 import type { DeploymentResult } from './deployer';
+import { getRpcUrl } from './config';
 
 const ONE_SUI_MIST = BigInt(1_000_000_000);
 
@@ -53,7 +54,7 @@ export async function ensureMinimumBalance(
  * Wait for the deepbook publish tx, get its checkpoint, find ProtectedTreasury ID,
  * and return env vars for testnet (indexer + server). Used before Phase 4.
  */
-export async function getTestnetDeploymentEnv(
+export async function getDeploymentEnv(
 	client: SuiClient,
 	deepbookResult: DeploymentResult,
 ): Promise<Record<string, string>> {
@@ -73,6 +74,7 @@ export async function getTestnetDeploymentEnv(
 		DEEPBOOK_PACKAGE_ID: deepbookResult.packageId,
 		DEEP_TOKEN_PACKAGE_ID: deepbookResult.packageId,
 		DEEP_TREASURY_ID: deepTreasuryId,
+		RPC_URL: getRpcUrl()
 	};
 	if (firstCheckpoint) env.FIRST_CHECKPOINT = firstCheckpoint;
 	return env;
