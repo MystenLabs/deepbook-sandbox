@@ -5,7 +5,7 @@ export RUST_LOG=${RUST_LOG:-info}
 
 # Force local checkpoint ingestion for localnet
 # This env var is checked in main.rs to use local_ingestion_path instead of remote_store_url
-export CHECKPOINTS_DIR=${CHECKPOINTS_DIR:-/checkpoints}
+export LOCAL_CHECKPOINTS_DIR=${LOCAL_CHECKPOINTS_DIR:-/checkpoints}
 
 # Build command arguments
 # --env testnet is used as a placeholder since DeepbookEnv requires a valid variant.

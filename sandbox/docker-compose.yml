@@ -136,7 +136,7 @@ services:
         container_name: deepbook-local-indexer
         environment:
             DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-            CHECKPOINTS_DIR: /checkpoints
+            LOCAL_CHECKPOINTS_DIR: /checkpoints
             RUST_LOG: ${RUST_LOG:-info}
             FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-0}
         volumes:

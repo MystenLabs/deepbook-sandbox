@@ -133,10 +133,10 @@ async fn main() -> Result<(), anyhow::Error> {
         store.clone(),
     )))?;
 
-    // Localnet indexer requires CHECKPOINTS_DIR to be set for local checkpoint ingestion
-    let local_path = std::env::var("CHECKPOINTS_DIR")
+    // Localnet indexer requires LOCAL_CHECKPOINTS_DIR to be set for local checkpoint ingestion
+    let local_path = std::env::var("LOCAL_CHECKPOINTS_DIR")
         .map(PathBuf::from)
-        .expect("CHECKPOINTS_DIR env var must be set for localnet indexer");
+        .expect("LOCAL_CHECKPOINTS_DIR env var must be set for localnet indexer");
 
     let mut indexer = Indexer::new(
         store,
