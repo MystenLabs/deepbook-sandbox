@@ -150,7 +150,8 @@ export async function startLocalnetIndexerAndServer(
 	await fs.writeFile(envPath, envLines.filter(Boolean).join('\n') + '\n');
 
 	// Start the indexer (explicit service name to avoid starting other localnet services)
-	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', 'deepbook-local-indexer', 'deepbook-server'], {
+	// --force-recreate ensures containers pick up new env vars on re-deploys
+	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', '--force-recreate', 'deepbook-local-indexer', 'deepbook-server'], {
 		cwd,
 		encoding: 'utf-8',
 		stdio: 'inherit',

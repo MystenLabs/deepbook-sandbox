@@ -57,6 +57,9 @@ async function main() {
 		const deepbookResult = deployedPackages.get('deepbook')!;
 		const sandboxRoot = getSandboxRoot();
 		const envUpdates = await getDeploymentEnv(client, deepbookResult);
+		if (network === 'localnet') {
+			envUpdates.FIRST_CHECKPOINT = '0';
+		}
 
 		updateEnvFile(sandboxRoot, envUpdates);
 		console.log('  ✅ Updated .env with deployment IDs and FIRST_CHECKPOINT\n');		
