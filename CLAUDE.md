@@ -27,18 +27,28 @@ deepbook-sandbox/
 ├── README.md              # Project overview
 ├── sandbox/
 │   ├── docker-compose.yml # Docker orchestration
-│   └── faucet/            # Faucet service (TypeScript/Hono)
-│       ├── Dockerfile
-│       ├── package.json
-│       ├── tsconfig.json
-│       └── src/
-│           ├── index.ts           # Server entry, health check
-│           ├── config.ts          # Env validation, signer/client factories
-│           ├── services/
-│           │   ├── sui-faucet.ts  # Proxies to Sui's built-in faucet
-│           │   └── deep-faucet.ts # Signs DEEP transfers from deployer
-│           └── routes/
-│               └── faucet.ts      # POST /faucet endpoint
+│   ├── deployments/       # Deployment manifests (generated)
+│   ├── faucet/            # Faucet service (TypeScript/Hono)
+│   │   ├── Dockerfile
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── index.ts           # Server entry, health check
+│   │       ├── config.ts          # Env validation, signer/client factories
+│   │       ├── services/
+│   │       │   ├── sui-faucet.ts  # Proxies to Sui's built-in faucet
+│   │       │   └── deep-faucet.ts # Signs DEEP transfers from deployer
+│   │       └── routes/
+│   │           └── faucet.ts      # POST /faucet endpoint
+│   └── scripts/
+│       ├── deploy-all.ts  # Deploy DeepBook to localnet
+│       ├── down.ts        # Stop localnet containers
+│       ├── market-maker/  # Market maker service
+│       │   ├── index.ts   # Entry point
+│       │   ├── config.ts  # Zod config schema
+│       │   ├── types.ts   # DeepBook constants
+│       │   └── ...        # Grid strategy, order management, etc.
+│       └── utils/         # Shared utilities
 └── external/
     └── deepbook/          # Git submodule - DeepBookV3 source
         ├── packages/      # Move smart contracts
@@ -95,6 +105,9 @@ pnpm deploy-all
 # Start oracle service (updates SUI/DEEP price feeds every 3s)
 pnpm oracle-service
 
+# Run the market maker (requires deploy-all first)
+pnpm market-maker
+
 # Stop all services
 pnpm down
 ```
@@ -138,9 +151,19 @@ The oracle service (`./sandbox/scripts/oracle-service/`) provides automated pric
 
 See [./sandbox/scripts/oracle-service/README.md](./sandbox/scripts/oracle-service/README.md) for detailed documentation.
 
+## Market Maker Configuration
+
+Environment variables for `pnpm market-maker`:
+- `MM_SPREAD_BPS` - Spread in basis points (default: 10 = 0.1%)
+- `MM_LEVELS_PER_SIDE` - Orders per side (default: 5)
+- `MM_REBALANCE_INTERVAL_MS` - Rebalance interval (default: 10000)
+- `MM_HEALTH_CHECK_PORT` - Health server port (default: 3000)
+- `MM_METRICS_PORT` - Prometheus metrics port (default: 9090)
+
+See `sandbox/scripts/market-maker/README.md` for full documentation.
+
 ## Key Concepts
 
 - **Balance Manager**: Shared object holding all balances for an account (1 owner, up to 1000 traders)
 - **Pool**: Contains Book (order matching), State (user data, volumes, governance), and Vault (settlement)
 - **DEEP Token**: Required for trading fees; can be staked for reduced fees and governance participation
-

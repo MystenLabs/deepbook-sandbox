@@ -7,7 +7,8 @@
   "scripts": {
     "deploy-all": "tsx scripts/deploy-all.ts",
     "down": "tsx scripts/down.ts",
-    "oracle-service": "tsx scripts/oracle-service/index.ts"
+    "oracle-service": "tsx scripts/oracle-service/index.ts",
+    "market-maker": "tsx scripts/market-maker/index.ts"
   },
   "dependencies": {
     "@mysten/sui": "^1.45.2",
