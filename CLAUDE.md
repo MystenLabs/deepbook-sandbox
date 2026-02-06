@@ -26,7 +26,17 @@ deepbook-sandbox/
 ├── CLAUDE.md              # This file - agent instructions
 ├── README.md              # Project overview
 ├── sandbox/
-│   └── docker-compose.yml # Docker orchestration (WIP)
+│   ├── docker-compose.yml # Docker orchestration
+│   ├── deployments/       # Deployment manifests (generated)
+│   └── scripts/
+│       ├── deploy-all.ts  # Deploy DeepBook to localnet
+│       ├── down.ts        # Stop localnet containers
+│       ├── market-maker/  # Market maker service
+│       │   ├── index.ts   # Entry point
+│       │   ├── config.ts  # Zod config schema
+│       │   ├── types.ts   # DeepBook constants
+│       │   └── ...        # Grid strategy, order management, etc.
+│       └── utils/         # Shared utilities
 └── external/
     └── deepbook/          # Git submodule - DeepBookV3 source
         ├── packages/      # Move smart contracts
@@ -92,6 +102,32 @@ sui move test                               # Run tests
 sui move test --skip-fetch-latest-git-deps  # Skip fetching deps if unchanged
 bunx prettier-move -c *.move --write        # Format Move files
 ```
+
+## Sandbox Scripts
+
+```bash
+cd sandbox
+
+# Deploy DeepBook to localnet (starts containers, deploys Move packages, creates DEEP/SUI pool)
+pnpm deploy-all
+
+# Run the market maker (requires deploy-all first)
+pnpm market-maker
+
+# Stop localnet containers
+pnpm down
+```
+
+### Market Maker Configuration
+
+Environment variables for `pnpm market-maker`:
+- `MM_SPREAD_BPS` - Spread in basis points (default: 10 = 0.1%)
+- `MM_LEVELS_PER_SIDE` - Orders per side (default: 5)
+- `MM_REBALANCE_INTERVAL_MS` - Rebalance interval (default: 10000)
+- `MM_HEALTH_CHECK_PORT` - Health server port (default: 3000)
+- `MM_METRICS_PORT` - Prometheus metrics port (default: 9090)
+
+See `sandbox/scripts/market-maker/README.md` for full documentation.
 
 ## Key Concepts
 
