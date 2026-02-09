@@ -54,9 +54,18 @@ async function main() {
 		}
 		console.log();
 
-		const deepbookResult = deployedPackages.get('deepbook')!;
 		const sandboxRoot = getSandboxRoot();
-		const envUpdates = await getDeploymentEnv(client, deepbookResult);
+		let firstCheckpoint: string | undefined;
+		if (network === 'testnet') {
+			const tokenResult = deployedPackages.get('token')!;
+			await client.waitForTransaction({ digest: tokenResult.transactionDigest });
+			const tx = await client.getTransactionBlock({
+				digest: tokenResult.transactionDigest,
+				options: {},
+			});
+			firstCheckpoint = tx.checkpoint ?? undefined;
+		}
+		const envUpdates = getDeploymentEnv(deployedPackages, { firstCheckpoint });
 		if (network === 'localnet') {
 			envUpdates.FIRST_CHECKPOINT = '0';
 		}
@@ -70,8 +79,16 @@ async function main() {
 			const { serverPort } = await startRemote(sandboxRoot, envUpdates);
 			console.log(`  ✅ DeepBook server: http://127.0.0.1:${serverPort}\n`);
 		} else {
-		    console.log('📡 Phase 4: Starting custom server and indexer for localnet yet\n');
-            await startLocalnetIndexerAndServer({corePackageId: deepbookResult.packageId}, sandboxRoot) // TODO: include marginPackageId
+			console.log('📡 Phase 4: Starting custom server and indexer for localnet\n');
+			const deepbookPkg = deployedPackages.get('deepbook')!;
+			const marginPkg = deployedPackages.get('deepbook_margin');
+			await startLocalnetIndexerAndServer(
+				{
+					corePackageId: deepbookPkg.packageId,
+					...(marginPkg && { marginPackageId: marginPkg.packageId }),
+				},
+				sandboxRoot,
+			);
 		}
 
 		// Phase 5: Create DEEP/SUI pool

@@ -3,6 +3,8 @@ import { requestSuiFromFaucetV2 } from '@mysten/sui/faucet';
 import type { DeploymentResult } from './deployer';
 import { getRpcUrl } from './config';
 
+export type DeploymentEnvOptions = { firstCheckpoint?: string };
+
 const ONE_SUI_MIST = BigInt(1_000_000_000);
 
 /** Request from faucet with retries (helps with localnet ECONNRESET until faucet is stable). */
@@ -51,31 +53,32 @@ export async function ensureMinimumBalance(
 }
 
 /**
- * Wait for the deepbook publish tx, get its checkpoint, find ProtectedTreasury ID,
- * and return env vars for testnet (indexer + server). Used before Phase 4.
+ * Build env vars for indexer/server from deployment results. All IDs come from the
+ * deployment map. Pass firstCheckpoint from the caller if needed (e.g.
+ * fetch token tx once in deploy-all for testnet).
  */
-export async function getDeploymentEnv(
-	client: SuiClient,
-	deepbookResult: DeploymentResult,
-): Promise<Record<string, string>> {
-	await client.waitForTransaction({ digest: deepbookResult.transactionDigest });
-	const tx = await client.getTransactionBlock({
-		digest: deepbookResult.transactionDigest,
-		options: {},
-	});
-	const firstCheckpoint = tx.checkpoint ?? '';
+export function getDeploymentEnv(
+	deployedPackages: Map<string, DeploymentResult>,
+	options?: DeploymentEnvOptions,
+): Record<string, string> {
+	const token = deployedPackages.get('token');
+	const deepbook = deployedPackages.get('deepbook');
+	const margin = deployedPackages.get('deepbook_margin');
 
-	const treasuryObj = deepbookResult.createdObjects.find((obj) =>
+	const treasuryObj = token.createdObjects.find((obj) =>
 		obj.objectType.includes('ProtectedTreasury'),
 	);
 	const deepTreasuryId = treasuryObj?.objectId ?? '';
 
 	const env: Record<string, string> = {
-		DEEPBOOK_PACKAGE_ID: deepbookResult.packageId,
-		DEEP_TOKEN_PACKAGE_ID: deepbookResult.packageId,
+		DEEPBOOK_PACKAGE_ID: deepbook.packageId,
+		DEEP_TOKEN_PACKAGE_ID: token.packageId,
 		DEEP_TREASURY_ID: deepTreasuryId,
-		RPC_URL: getRpcUrl()
+		MARGIN_PACKAGE_ID: margin.packageId,
+		RPC_URL: getRpcUrl(),
 	};
-	if (firstCheckpoint) env.FIRST_CHECKPOINT = firstCheckpoint;
+	if (options?.firstCheckpoint) {
+		env.FIRST_CHECKPOINT = options.firstCheckpoint;
+	}
 	return env;
 }
