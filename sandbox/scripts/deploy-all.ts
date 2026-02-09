@@ -1,9 +1,9 @@
 import path from 'path';
 import { getClient, getFaucetUrl, getNetwork, getRpcUrl, getSigner } from './utils/config';
-import { getSandboxRoot, startLocalnet, startRemote } from './utils/docker-compose';
+import { getSandboxRoot, startLocalnet, startRemote, startLocalnetIndexerAndServer } from './utils/docker-compose';
 import { MoveDeployer } from './utils/deployer';
 import { updateEnvFile } from './utils/env';
-import { ensureMinimumBalance, getTestnetDeploymentEnv } from './utils/helpers';
+import { ensureMinimumBalance, getDeploymentEnv } from './utils/helpers';
 import { PoolCreator } from './utils/pool';
 import fs from 'fs/promises';
 
@@ -54,20 +54,24 @@ async function main() {
 		}
 		console.log();
 
+		const deepbookResult = deployedPackages.get('deepbook')!;
+		const sandboxRoot = getSandboxRoot();
+		const envUpdates = await getDeploymentEnv(client, deepbookResult);
+		if (network === 'localnet') {
+			envUpdates.FIRST_CHECKPOINT = '0';
+		}
+
+		updateEnvFile(sandboxRoot, envUpdates);
+		console.log('  ✅ Updated .env with deployment IDs and FIRST_CHECKPOINT\n');		
+
 		// Phase 4: Start deepbook-indexer and server (testnet only)
 		if (network === 'testnet') {
-			const deepbookResult = deployedPackages.get('deepbook')!;
-			const sandboxRoot = getSandboxRoot();
-			const envUpdates = await getTestnetDeploymentEnv(client, deepbookResult);
-
-			updateEnvFile(sandboxRoot, envUpdates);
-			console.log('  ✅ Updated .env with deployment IDs and FIRST_CHECKPOINT\n');
-
 			console.log('📡 Phase 4: Starting deepbook-indexer and server (docker compose --profile remote)...');
 			const { serverPort } = await startRemote(sandboxRoot, envUpdates);
 			console.log(`  ✅ DeepBook server: http://127.0.0.1:${serverPort}\n`);
 		} else {
-			console.log('📡 Phase 4: Indexer is not supported for localnet yet\n');
+		    console.log('📡 Phase 4: Starting custom server and indexer for localnet yet\n');
+            await startLocalnetIndexerAndServer({corePackageId: deepbookResult.packageId}, sandboxRoot) // TODO: include marginPackageId
 		}
 
 		// Phase 5: Create DEEP/SUI pool
