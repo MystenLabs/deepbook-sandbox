@@ -45,7 +45,7 @@ async function main() {
 		// Phase 3: Deploy Move packages
 		console.log('📝 Phase 3: Deploying Move packages...');
 		console.log('  This will take several minutes...\n');
-		const deployer = new MoveDeployer(client, signer);
+		const deployer = new MoveDeployer(client, signer, network);
 		const deployedPackages = await deployer.deployAll();
 
 		console.log('\n  📦 Deployment Summary:');

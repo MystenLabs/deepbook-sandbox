@@ -8,11 +8,32 @@ import type {
 	SuiObjectChangeCreated,
 	SuiTransactionBlockResponse,
 } from '@mysten/sui/client';
+import type { Network } from './config';
 
 const PACKAGES_BASE = '../external/deepbook/packages';
 
+/** Packages that need Move.toml patching (environments / local deps) before publish. */
+const PACKAGES_NEED_MOVE_PATCH = ['token', 'deepbook', 'pyth', 'deepbook_margin', 'margin_liquidation'] as const;
+/** Packages that need Move.lock removed before publish and restored after. */
+const PACKAGES_NEED_MOVE_LOCK = ['token', 'deepbook', 'pyth', 'deepbook_margin', 'margin_liquidation'] as const;
+/** Packages that need Published.toml removed before publish and restored after. */
+const PACKAGES_NEED_PUBLISHED_TOML = ['deepbook', 'deepbook_margin', 'margin_liquidation'] as const;
+
+const PYTH_GIT_TESTNET =
+	'pyth = { git = "https://github.com/pyth-network/pyth-crosschain.git", subdir = "target_chains/sui/contracts", rev = "sui-contract-testnet" }';
+
 function getSandboxRoot(): string {
 	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+}
+
+function needsMovePatch(name: string): boolean {
+	return (PACKAGES_NEED_MOVE_PATCH as readonly string[]).includes(name);
+}
+function needsMoveLock(name: string): boolean {
+	return (PACKAGES_NEED_MOVE_LOCK as readonly string[]).includes(name);
+}
+function needsPublishedToml(name: string): boolean {
+	return (PACKAGES_NEED_PUBLISHED_TOML as readonly string[]).includes(name);
 }
 
 export interface DeploymentResult {
@@ -66,14 +87,11 @@ function parsePublishOutput(output: string): {
 
 export class MoveDeployer {
 	private suiBinary: string;
-	/** Backup of deepbook/Published.toml when removed for testnet (restored after deploy). */
-	private deepbookPublishedTomlBackup: string | null = null;
-	/** Backup of token/Move.lock when removed for testnet (restored after deploy). */
-	private tokenMoveLockBackup: string | null = null;
 
 	constructor(
 		private client: SuiClient,
 		private signer: Keypair,
+		private network: Network,
 	) {
 		this.suiBinary = process.env.SUI_BINARY || 'sui';
 	}
@@ -82,9 +100,13 @@ export class MoveDeployer {
 		console.log(`    Publishing ${packageName} (sui client publish)...`);
 
 		const resolvedPath = path.resolve(process.cwd(), packagePath);
+		const args =
+			this.network === 'localnet'
+				? ['client', 'publish', '--environment', 'localnet', resolvedPath]
+				: ['client', 'publish', resolvedPath];
 		let output: string;
 		try {
-			output = execFileSync(this.suiBinary, ['client', 'publish', resolvedPath], {
+			output = execFileSync(this.suiBinary, args, {
 				encoding: 'utf-8',
 				stdio: ['inherit', 'pipe', 'inherit'],
 			}) as string;
@@ -118,7 +140,7 @@ export class MoveDeployer {
 		const sandboxRoot = getSandboxRoot();
 		const pythPath = path.join(sandboxRoot, 'packages', 'pyth');
 
-		const packages: PackageInfo[] = [
+		const allPackages: PackageInfo[] = [
 			{ name: 'token', path: `${PACKAGES_BASE}/token`, deps: [] },
 			{ name: 'deepbook', path: `${PACKAGES_BASE}/deepbook`, deps: ['token'] },
 			{ name: 'pyth', path: pythPath, deps: [] },
@@ -126,81 +148,93 @@ export class MoveDeployer {
 			{ name: 'margin_liquidation', path: `${PACKAGES_BASE}/margin_liquidation`, deps: ['deepbook_margin'] },
 		];
 
+		const packages =
+			this.network === 'testnet' ? allPackages.filter((p) => p.name !== 'pyth') : allPackages;
+
 		const deployed = new Map<string, DeploymentResult>();
 		const publishedTomlBackups = new Map<string, string>();
 		const moveLockBackups = new Map<string, string>();
 
-		const needsPublishedTomlRemoveRestore = ['deepbook', 'deepbook_margin', 'margin_liquidation'];
-
 		for (const pkg of packages) {
-			const needsMovePatch =
-				pkg.name === 'token' ||
-				pkg.name === 'deepbook' ||
-				pkg.name === 'pyth' ||
-				pkg.name === 'deepbook_margin' ||
-				pkg.name === 'margin_liquidation';
-
-			if (needsMovePatch) {
-				this.patchMoveTOML(pkg, deployed, chainId);
-			}
-
-			if (pkg.name === 'token' || pkg.name === 'deepbook' || pkg.name === 'pyth' || pkg.name === 'deepbook_margin' || pkg.name === 'margin_liquidation') {
-				this.backupMoveLock(pkg, moveLockBackups);
-				this.removeMoveLock(pkg);
-			}
-			if (needsPublishedTomlRemoveRestore.includes(pkg.name)) {
-				this.backupPublishedToml(pkg, publishedTomlBackups);
-				this.removePublishedToml(pkg);
-			}
-
+			this.preDeployment(pkg, deployed, chainId, moveLockBackups, publishedTomlBackups);
 			const result = await this.deployPackage(pkg.path, pkg.name);
 			deployed.set(pkg.name, result);
 			await new Promise((r) => setTimeout(r, 2000));
 		}
 
+		this.afterDeployment(packages, moveLockBackups, publishedTomlBackups);
+
+		return deployed;
+	}
+
+	/**
+	 * Before publishing a package: patch Move.toml, backup+remove Move.lock and Published.toml as needed.
+	 */
+	private preDeployment(
+		pkg: PackageInfo,
+		deployed: Map<string, DeploymentResult>,
+		chainId: string,
+		moveLockBackups: Map<string, string>,
+		publishedTomlBackups: Map<string, string>,
+	): void {
+		if (needsMovePatch(pkg.name)) {
+			this.patchMoveTOML(pkg, deployed, chainId, this.network);
+		}
+		if (needsMoveLock(pkg.name)) {
+			this.backupMoveLock(pkg, moveLockBackups);
+			this.removeMoveLock(pkg);
+		}
+		if (needsPublishedToml(pkg.name)) {
+			this.backupPublishedToml(pkg, publishedTomlBackups);
+			this.removePublishedToml(pkg);
+		}
+	}
+
+	/**
+	 * After all deployments: restore Move.toml, Move.lock, and Published.toml; remove pyth/token Published.toml.
+	 */
+	private afterDeployment(
+		packages: PackageInfo[],
+		moveLockBackups: Map<string, string>,
+		publishedTomlBackups: Map<string, string>,
+	): void {
 		for (const pkg of packages) {
-			if (
-				pkg.name === 'token' ||
-				pkg.name === 'deepbook' ||
-				pkg.name === 'pyth' ||
-				pkg.name === 'deepbook_margin' ||
-				pkg.name === 'margin_liquidation'
-			) {
+			if (needsMovePatch(pkg.name)) {
 				this.restoreMoveTOML(pkg);
 			}
-			if (pkg.name === 'token' || pkg.name === 'deepbook' || pkg.name === 'pyth' || pkg.name === 'deepbook_margin' || pkg.name === 'margin_liquidation') {
+			if (needsMoveLock(pkg.name)) {
 				this.restoreMoveLock(pkg, moveLockBackups);
 			}
-			if (needsPublishedTomlRemoveRestore.includes(pkg.name)) {
+			if (needsPublishedToml(pkg.name)) {
 				this.restorePublishedToml(pkg, publishedTomlBackups);
 			}
-			if (pkg.name === 'pyth') {
+			if (pkg.name === 'pyth' || pkg.name === 'token') {
 				this.removePublishedToml(pkg);
 			}
 		}
-
-		this.removeTokenPublishedToml();
-
-		return deployed;
 	}
 
 	private patchMoveTOML(
 		pkg: PackageInfo,
 		deployed: Map<string, DeploymentResult>,
 		chainId: string,
+		network: Network,
 	): void {
 		const tomlPath = path.join(path.resolve(process.cwd(), pkg.path), 'Move.toml');
 		const original = readFileSync(tomlPath, 'utf-8');
 		writeFileSync(`${tomlPath}.backup`, original);
 
 		let patched = original;
+		const isLocalnet = network === 'localnet';
 		const envBlock = `[environments]\nlocalnet = "${chainId}"\n`;
 
 		if (pkg.name === 'token') {
-			patched = patched.replace(
-				/\[addresses\]\s*\n\s*token\s*=\s*"0x0"\s*/,
-				envBlock,
-			);
+			if (isLocalnet) {
+				patched = patched.replace(
+					/\[addresses\]\s*\n\s*token\s*=\s*"0x0"\s*/,
+					envBlock,
+				);
+			}
 		}
 
 		if (pkg.name === 'deepbook') {
@@ -208,10 +242,12 @@ export class MoveDeployer {
 				/token\s*=\s*\{[^}]*git[^}]*\}/g,
 				'token = { local = "../token" }',
 			);
-			patched = patched.replace(
-				/\[addresses\]\s*\n\s*deepbook\s*=\s*"0x0"\s*/,
-				envBlock,
-			);
+			if (isLocalnet) {
+				patched = patched.replace(
+					/\[addresses\]\s*\n\s*deepbook\s*=\s*"0x0"\s*/,
+					envBlock,
+				);
+			}
 		}
 
 		if (pkg.name === 'deepbook_margin') {
@@ -223,28 +259,43 @@ export class MoveDeployer {
 				/deepbook\s*=\s*\{[^}]*local[^}]*\}/g,
 				'deepbook = { local = "../deepbook" }',
 			);
-			patched = patched.replace(
-				/Pyth\s*=\s*\{[^}]*git[^}]*\}/g,
-				'pyth = { local = "../../../../sandbox/packages/pyth" }',
-			);
-			patched = patched.replace(
-				/\[addresses\]\s*\n\s*deepbook_margin\s*=\s*"0x0"\s*/,
-				envBlock,
-			);
+			if (isLocalnet) {
+				patched = patched.replace(
+					/Pyth\s*=\s*\{[^}]*git[^}]*\}/g,
+					'pyth = { local = "../../../../sandbox/packages/pyth" }',
+				);
+			} else {
+				patched = patched.replace(
+					/Pyth\s*=\s*\{[^}]*\}/g,
+					PYTH_GIT_TESTNET,
+				);
+			}
+			if (isLocalnet) {
+				patched = patched.replace(
+					/\[addresses\]\s*\n\s*deepbook_margin\s*=\s*"0x0"\s*/,
+					envBlock,
+				);
+			}
 		}
 
 		if (pkg.name === 'margin_liquidation') {
+			const pythDep =
+				isLocalnet
+					? 'pyth = { local = "../../../../sandbox/packages/pyth" }'
+					: PYTH_GIT_TESTNET;
 			patched = patched.replace(
 				/deepbook_margin\s*=\s*\{\s*local\s*=\s*"\.\.\/deepbook_margin"\s*\}/,
-				'deepbook_margin = { local = "../deepbook_margin" }\ndeepbook = { local = "../deepbook" }\npyth = { local = "../../../../sandbox/packages/pyth" }',
+				`deepbook_margin = { local = "../deepbook_margin" }\ndeepbook = { local = "../deepbook" }\n${pythDep}`,
 			);
-			patched = patched.replace(
-				/\[addresses\]\s*\n\s*margin_liquidation\s*=\s*"0x0"\s*/,
-				envBlock,
-			);
+			if (isLocalnet) {
+				patched = patched.replace(
+					/\[addresses\]\s*\n\s*margin_liquidation\s*=\s*"0x0"\s*/,
+					envBlock,
+				);
+			}
 		}
 
-		if (pkg.name === 'pyth') {
+		if (pkg.name === 'pyth' && isLocalnet) {
 			patched = patched.replace(
 				/localnet\s*=\s*"[^"]*"/,
 				`localnet = "${chainId}"`,
@@ -265,19 +316,8 @@ export class MoveDeployer {
 		}
 	}
 
-	private getTokenPath(): string {
-		return path.resolve(process.cwd(), PACKAGES_BASE, 'token');
-	}
-
 	private getPackageDir(pkg: PackageInfo): string {
 		return path.resolve(process.cwd(), pkg.path);
-	}
-
-	private removeTokenPublishedToml(): void {
-		const publishedPath = path.join(this.getTokenPath(), 'Published.toml');
-		if (existsSync(publishedPath)) {
-			unlinkSync(publishedPath);
-		}
 	}
 
 	private backupPublishedToml(pkg: PackageInfo, backups: Map<string, string>): void {
