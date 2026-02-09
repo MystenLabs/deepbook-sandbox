@@ -70,9 +70,8 @@ async function main() {
 			const { serverPort } = await startRemote(sandboxRoot, envUpdates);
 			console.log(`  ✅ DeepBook server: http://127.0.0.1:${serverPort}\n`);
 		} else {
-		    console.log('📡 Phase 4: Starting custom indexer for localnet yet\n');
+		    console.log('📡 Phase 4: Starting custom server and indexer for localnet yet\n');
             await startLocalnetIndexerAndServer({corePackageId: deepbookResult.packageId}, sandboxRoot) // TODO: include marginPackageId
-            console.log('📡 Phase 4: Starting server for localnet yet\n');
 		}
 
 		// Phase 5: Create DEEP/SUI pool
