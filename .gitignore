@@ -144,3 +144,5 @@ sandbox/docker/sui_localnet_data/
 
 # DeepBook deployment outputs
 sandbox/deployments/
+
+target/

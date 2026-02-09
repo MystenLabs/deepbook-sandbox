@@ -9,13 +9,13 @@
     "down": "tsx scripts/down.ts"
   },
   "dependencies": {
-    "@mysten/sui": "^1.45.0",
+    "@mysten/sui": "^1.45.2",
     "dotenv": "^17.2.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^20.17.6",
+    "@types/node": "^20.19.32",
     "tsx": "^4.21.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.9.3"
   }
 }

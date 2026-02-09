@@ -1,4 +1,5 @@
 import { spawnSync } from 'child_process';
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -21,14 +22,15 @@ export function getSandboxRoot(): string {
 
 /**
  * Start localnet with docker compose (profile localnet) and wait until RPC is ready.
- * Runs from sandbox root: `docker compose --profile localnet up -d`, then polls RPC.
+ * Runs from sandbox root: `docker compose --profile localnet up -d sui-localnet postgres`, then polls RPC.
+ * Note: Explicit service names prevent the indexer from starting prematurely.
  */
 export async function startLocalnet(sandboxRoot?: string): Promise<{
 	rpcPort: number;
 	faucetPort: number;
 }> {
 	const cwd = sandboxRoot ?? getSandboxRoot();
-	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d'], {
+	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', 'sui-localnet', 'postgres'], {
 		cwd,
 		encoding: 'utf-8',
 		stdio: 'inherit',
@@ -113,4 +115,65 @@ async function waitForFaucet(baseUrl: string, maxAttempts = 30): Promise<void> {
 		await new Promise((r) => setTimeout(r, 2000));
 	}
 	throw new Error(`Faucet at ${baseUrl} did not become ready after ${maxAttempts} attempts`);
+}
+
+/**
+ * Start the localnet indexer with dynamically deployed package addresses.
+ * Writes package IDs to .env and starts the indexer container.
+ */
+export async function startLocalnetIndexerAndServer(
+	packages: { corePackageId: string; marginPackageId?: string },
+	sandboxRoot?: string,
+): Promise<void> {
+	const cwd = sandboxRoot ?? getSandboxRoot();
+	const envPath = path.join(cwd, '.env');
+
+	// Read existing .env content (preserve other variables like SUI_TOOLS_IMAGE)
+	let envContent = '';
+	try {
+		envContent = await fs.readFile(envPath, 'utf-8');
+	} catch {
+		// .env doesn't exist yet, that's fine
+	}
+
+	// Update or add CORE_PACKAGES and MARGIN_PACKAGES
+	const envLines = envContent.split('\n').filter((line) => {
+		const trimmed = line.trim();
+		return !trimmed.startsWith('CORE_PACKAGES=') && !trimmed.startsWith('MARGIN_PACKAGES=');
+	});
+
+	envLines.push(`CORE_PACKAGES=${packages.corePackageId}`);
+	if (packages.marginPackageId) {
+		envLines.push(`MARGIN_PACKAGES=${packages.marginPackageId}`);
+	}
+
+	await fs.writeFile(envPath, envLines.filter(Boolean).join('\n') + '\n');
+
+	// Start the indexer (explicit service name to avoid starting other localnet services)
+	// --force-recreate ensures containers pick up new env vars on re-deploys
+	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', '--force-recreate', 'deepbook-local-indexer', 'deepbook-server'], {
+		cwd,
+		encoding: 'utf-8',
+		stdio: 'inherit',
+	});
+
+	if (result.status !== 0) {
+		throw new Error(`Failed to start localnet indexer (exit ${result.status})`);
+	}
+
+	// Wait for indexer to be healthy (check metrics endpoint)
+	await waitForIndexer('http://127.0.0.1:9184/metrics');
+}
+
+async function waitForIndexer(url: string, maxAttempts = 60): Promise<void> {
+	for (let i = 0; i < maxAttempts; i++) {
+		try {
+			const res = await fetch(url);
+			if (res.ok) return;
+		} catch {
+			// connection refused
+		}
+		await new Promise((r) => setTimeout(r, 2000));
+	}
+	throw new Error(`Indexer at ${url} did not become ready after ${maxAttempts} attempts`);
 }
