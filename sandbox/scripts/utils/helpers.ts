@@ -41,7 +41,7 @@ export async function ensureMinimumBalance(
 		console.log(`  ✅ Has sufficient balance (≥1 SUI)\n`);
 		return;
 	}
-	await requestFaucetWithRetry(faucetHost, recipient, maxFaucetRetries, client);
+	await requestFaucetWithRetry(faucetHost, recipient, maxFaucetRetries);
 	await new Promise((r) => setTimeout(r, 2000));
 	const after = await client.getBalance({ owner: recipient });
 	console.log(`  ✅ Has ${after.totalBalance} MIST balance\n`);
