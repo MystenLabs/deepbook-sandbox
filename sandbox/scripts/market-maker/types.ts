@@ -62,3 +62,25 @@ export interface ActiveOrder {
 	isBid: boolean
 	placedAt: Date
 }
+
+const EXPLORER_BASE = 'https://explorer.polymedia.app';
+
+function explorerNetwork(network: string): string {
+	return network === 'localnet' ? 'local' : network;
+}
+
+export function explorerObjectUrl(objectId: string, network: string): string {
+	return `${EXPLORER_BASE}/object/${objectId}?network=${explorerNetwork(network)}`;
+}
+
+export function explorerTxUrl(digest: string, network: string): string {
+	return `${EXPLORER_BASE}/txblock/${digest}?network=${explorerNetwork(network)}`;
+}
+
+export function formatPrice(price: bigint): string {
+	return (Number(price) / 1e9).toFixed(6);
+}
+
+export function formatDeep(quantity: bigint): string {
+	return (Number(quantity) / 1e6).toString();
+}

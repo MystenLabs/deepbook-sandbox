@@ -1,7 +1,7 @@
 import type { SuiClient, SuiEvent } from '@mysten/sui/client';
 import type { Keypair } from '@mysten/sui/cryptography';
 import { Transaction } from '@mysten/sui/transactions';
-import { ORDER_TYPE, SELF_MATCHING, SUI_CLOCK_OBJECT_ID } from './types';
+import { ORDER_TYPE, SELF_MATCHING, SUI_CLOCK_OBJECT_ID, explorerTxUrl } from './types';
 import type { ActiveOrder, GridLevel } from './types';
 import { updateMetrics } from './metrics';
 
@@ -18,6 +18,7 @@ export class OrderManager {
 		private baseType: string,
 		private quoteType: string,
 		private balanceManagerId: string,
+		private network: string,
 	) {}
 
 	/**
@@ -57,7 +58,7 @@ export class OrderManager {
 					tx.pure.u64(level.price), // price
 					tx.pure.u64(level.quantity), // quantity
 					tx.pure.bool(level.isBid), // is_bid
-					tx.pure.bool(true), // pay_with_deep (use DEEP for fees)
+					tx.pure.bool(false), // pay_with_deep (false for whitelisted pools with no DEEP)
 					tx.pure.u64(expireTimestamp), // expire_timestamp
 					tx.object(SUI_CLOCK_OBJECT_ID), // clock
 				],
@@ -79,10 +80,15 @@ export class OrderManager {
 			);
 		}
 
+		// Wait for the place transaction to finalize so object versions are updated
+		await this.client.waitForTransaction({
+			digest: result.digest,
+		});
+
 		// Extract order IDs from events
 		const events = result.events || [];
 		const orderPlacedEvents = events.filter((e) =>
-			e.type.includes('::pool::OrderPlaced') || e.type.includes('::order::OrderPlaced'),
+			e.type.includes('::OrderPlaced'),
 		);
 
 		let missingOrderIds = 0;
@@ -115,7 +121,8 @@ export class OrderManager {
 			activeOrders: this.activeOrders.size,
 		});
 
-		console.log(`  Placed ${placedOrderIds.length} orders (tx: ${result.digest.slice(0, 10)}...)`);
+		console.log(`  Placed ${placedOrderIds.length} orders`);
+		console.log(`  ${explorerTxUrl(result.digest, this.network)}`);
 		return placedOrderIds;
 	}
 
@@ -157,6 +164,11 @@ export class OrderManager {
 			);
 		}
 
+		// Wait for the cancel transaction to finalize so object versions are updated
+		await this.client.waitForTransaction({
+			digest: result.digest,
+		});
+
 		const canceledCount = this.activeOrders.size;
 		this.activeOrders.clear();
 
@@ -166,7 +178,8 @@ export class OrderManager {
 			activeOrders: 0,
 		});
 
-		console.log(`  Canceled ${canceledCount} orders (tx: ${result.digest.slice(0, 10)}...)`);
+		console.log(`  Canceled ${canceledCount} orders`);
+		console.log(`  ${explorerTxUrl(result.digest, this.network)}`);
 		return result.digest;
 	}
 
