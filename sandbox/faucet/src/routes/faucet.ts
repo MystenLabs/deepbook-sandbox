@@ -6,9 +6,13 @@ import type { FaucetConfig } from '../config.js';
 import { requestSui } from '../services/sui-faucet.js';
 import { requestDeep } from '../services/deep-faucet.js';
 
+const DEEP_DECIMALS = 6;
+const DEFAULT_DEEP_AMOUNT = 1000;
+
 const bodySchema = z.object({
 	address: z.string().regex(/^0x[0-9a-fA-F]{64}$/, 'Invalid Sui address (expected 0x + 64 hex chars)'),
 	token: z.enum(['SUI', 'DEEP']),
+	amount: z.number().positive().int().optional(),
 });
 
 export function faucetRoutes(config: FaucetConfig, client: SuiClient, signer: Keypair): Hono {
@@ -27,14 +31,23 @@ export function faucetRoutes(config: FaucetConfig, client: SuiClient, signer: Ke
 			return c.json({ success: false, error: parsed.error.issues[0].message }, 400);
 		}
 
-		const { address, token } = parsed.data;
+		const { address, token, amount } = parsed.data;
 
 		if (token === 'SUI') {
 			const result = await requestSui(config.suiFaucetUrl, address);
 			return c.json(result, result.success ? 200 : 502);
 		}
 
-		const result = await requestDeep(client, signer, config.deepType, address);
+		const deepAmount = amount ?? DEFAULT_DEEP_AMOUNT;
+		if (deepAmount > config.maxDeepPerRequest) {
+			return c.json(
+				{ success: false, error: `Amount exceeds maximum of ${config.maxDeepPerRequest} DEEP per request` },
+				400,
+			);
+		}
+
+		const baseUnits = deepAmount * 10 ** DEEP_DECIMALS;
+		const result = await requestDeep(client, signer, config.deepType, address, baseUnits);
 		return c.json(result, result.success ? 200 : 500);
 	});
 

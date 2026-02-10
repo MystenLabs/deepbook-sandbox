@@ -27,6 +27,7 @@ const envSchema = z
 		DEEP_TOKEN_PACKAGE_ID: z.string().min(1, 'DEEP_TOKEN_PACKAGE_ID is required'),
 		RPC_URL: z.string().optional(),
 		PORT: z.coerce.number().default(9009),
+		MAX_DEEP_PER_REQUEST: z.coerce.number().positive().default(10000),
 	})
 	.transform((raw) => {
 		const defaults = NETWORK_DEFAULTS[raw.NETWORK];
@@ -38,6 +39,7 @@ const envSchema = z
 			rpcUrl: raw.RPC_URL?.trim() || defaults.rpcUrl,
 			suiFaucetUrl: defaults.suiFaucetUrl,
 			port: raw.PORT,
+			maxDeepPerRequest: raw.MAX_DEEP_PER_REQUEST,
 		};
 	});
 

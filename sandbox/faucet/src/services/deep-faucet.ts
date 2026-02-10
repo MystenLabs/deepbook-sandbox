@@ -2,9 +2,6 @@ import type { SuiClient } from '@mysten/sui/client';
 import type { Keypair } from '@mysten/sui/cryptography';
 import { Transaction, coinWithBalance } from '@mysten/sui/transactions';
 
-/** 1000 DEEP per request (6 decimals). */
-const DEEP_AMOUNT = 1_000_000_000;
-
 /** Simple lock to prevent concurrent signing (avoids object version conflicts). */
 let signing = false;
 
@@ -13,6 +10,7 @@ export async function requestDeep(
 	signer: Keypair,
 	deepType: string,
 	recipient: string,
+	amount: number,
 ): Promise<{ success: boolean; digest?: string; error?: string }> {
 	if (signing) {
 		return { success: false, error: 'Another DEEP request is in progress, try again shortly' };
@@ -23,7 +21,7 @@ export async function requestDeep(
 		const tx = new Transaction();
 
 		const coin = coinWithBalance({
-			balance: DEEP_AMOUNT,
+			balance: amount,
 			type: deepType,
 			useGasCoin: false,
 		})(tx);
