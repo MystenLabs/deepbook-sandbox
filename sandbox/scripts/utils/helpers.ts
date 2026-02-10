@@ -1,7 +1,6 @@
-import type { SuiClient } from '@mysten/sui/client';
-import { requestSuiFromFaucetV2 } from '@mysten/sui/faucet';
-import type { DeploymentResult } from './deployer';
-import { getRpcUrl } from './config';
+import type { SuiClient } from "@mysten/sui/client";
+import { requestSuiFromFaucetV2 } from "@mysten/sui/faucet";
+import type { DeploymentResult } from "./deployer";
 
 const ONE_SUI_MIST = BigInt(1_000_000_000);
 
@@ -10,7 +9,6 @@ export async function requestFaucetWithRetry(
 	host: string,
 	recipient: string,
 	maxRetries = 3,
-	client: SuiClient,
 ): Promise<void> {
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
@@ -23,7 +21,6 @@ export async function requestFaucetWithRetry(
 			await new Promise((r) => setTimeout(r, delay));
 		}
 	}
-
 
 	throw new Error(
 		`Faucet failed after ${maxRetries} retries and recipient balance is below 1 SUI. Cannot continue.`,
@@ -70,12 +67,11 @@ export async function getDeploymentEnv(
 	);
 	const deepTreasuryId = treasuryObj?.objectId ?? '';
 
-	const env: Record<string, string> = {
-		DEEPBOOK_PACKAGE_ID: deepbookResult.packageId,
-		DEEP_TOKEN_PACKAGE_ID: deepbookResult.packageId,
-		DEEP_TREASURY_ID: deepTreasuryId,
-		RPC_URL: getRpcUrl()
-	};
-	if (firstCheckpoint) env.FIRST_CHECKPOINT = firstCheckpoint;
-	return env;
+  const env: Record<string, string> = {
+    DEEPBOOK_PACKAGE_ID: deepbookResult.packageId,
+    DEEP_TOKEN_PACKAGE_ID: deepbookResult.packageId,
+    DEEP_TREASURY_ID: deepTreasuryId,
+  };
+  if (firstCheckpoint) env.FIRST_CHECKPOINT = firstCheckpoint;
+  return env;
 }

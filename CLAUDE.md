@@ -26,7 +26,19 @@ deepbook-sandbox/
 ├── CLAUDE.md              # This file - agent instructions
 ├── README.md              # Project overview
 ├── sandbox/
-│   └── docker-compose.yml # Docker orchestration (WIP)
+│   ├── docker-compose.yml # Docker orchestration
+│   └── faucet/            # Faucet service (TypeScript/Hono)
+│       ├── Dockerfile
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── src/
+│           ├── index.ts           # Server entry, health check
+│           ├── config.ts          # Env validation, signer/client factories
+│           ├── services/
+│           │   ├── sui-faucet.ts  # Proxies to Sui's built-in faucet
+│           │   └── deep-faucet.ts # Signs DEEP transfers from deployer
+│           └── routes/
+│               └── faucet.ts      # POST /faucet endpoint
 └── external/
     └── deepbook/          # Git submodule - DeepBookV3 source
         ├── packages/      # Move smart contracts
@@ -45,6 +57,7 @@ Services in the stack:
 | **Sui Localnet** | `localnet` | Local Sui blockchain for testing | 9000 (RPC), 9123 (faucet) |
 | **DeepBook Indexer** | `remote` | Indexes DeepBook events (testnet/mainnet only) | 9184 (metrics) |
 | **DeepBook Server** | `remote` | REST API for querying indexed data | 9008 |
+| **DeepBook Faucet** | `localnet`, `remote` | Distributes SUI (proxied) and DEEP tokens | 9009 |
 
 > **Note:** The indexer only supports testnet/mainnet (hardcoded checkpoint URLs). It cannot index a local Sui node.
 

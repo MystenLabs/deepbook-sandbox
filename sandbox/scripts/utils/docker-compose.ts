@@ -151,7 +151,7 @@ export async function startLocalnetIndexerAndServer(
 
 	// Start the indexer (explicit service name to avoid starting other localnet services)
 	// --force-recreate ensures containers pick up new env vars on re-deploys
-	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', '--force-recreate', 'deepbook-local-indexer', 'deepbook-server'], {
+	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', '--force-recreate', 'deepbook-local-indexer', 'deepbook-server', 'deepbook-faucet'], {
 		cwd,
 		encoding: 'utf-8',
 		stdio: 'inherit',
