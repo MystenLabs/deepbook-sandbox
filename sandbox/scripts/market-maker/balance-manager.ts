@@ -21,10 +21,13 @@ export class BalanceManagerService {
 		const tx = new Transaction();
 
 		// Call balance_manager::new to create a BalanceManager
-		tx.moveCall({
+		const bm = tx.moveCall({
 			target: `${this.packageId}::balance_manager::new`,
 			arguments: [],
 		});
+
+		// Transfer the BalanceManager to the signer
+		tx.transferObjects([bm], this.signer.getPublicKey().toSuiAddress());
 
 		const result = await this.client.signAndExecuteTransaction({
 			transaction: tx,

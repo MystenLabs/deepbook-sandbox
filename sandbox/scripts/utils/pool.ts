@@ -74,7 +74,7 @@ export class PoolCreator {
 		const tickSize = 10_000_000; // 0.00001 SUI (price tick in quote, 9 decimals)
 		const lotSize = 1_000_000; // 1 DEEP (base quantity step, 6 decimals)
 		const minSize = 10_000_000; // 10 DEEP minimum order (base, 6 decimals)
-		const whitelistedPool = false;
+		const whitelistedPool = true;
 		const stablePool = false;
 
 		// Call create_pool_admin

@@ -4,6 +4,7 @@ import path from 'path';
 import { getClient, getSigner } from '../utils/config';
 import { loadConfig, parseEnvConfig } from './config';
 import type { DeploymentManifest } from './types';
+import { explorerObjectUrl, explorerTxUrl } from './types';
 import { MarketMaker } from './market-maker';
 
 async function findLatestDeployment(): Promise<string> {
@@ -45,8 +46,10 @@ async function main() {
 	const deploymentPath = process.env.DEPLOYMENT_PATH;
 	const manifest = await loadDeployment(deploymentPath);
 
-	console.log(`Network: ${manifest.network.type}`);
+	const network = manifest.network.type;
+	console.log(`Network: ${network}`);
 	console.log(`Pool: ${manifest.pool.poolId}`);
+	console.log(`  ${explorerObjectUrl(manifest.pool.poolId, network)}`);
 	console.log(`Package: ${manifest.packages.deepbook.packageId}`);
 
 	// Load configuration
@@ -54,8 +57,8 @@ async function main() {
 	const config = loadConfig(envConfig);
 
 	console.log('\nConfiguration:');
-	console.log(`  Initial mid price: ${config.initialMidPrice}`);
-	console.log(`  Spread: ${config.spreadBps} bps`);
+	console.log(`  Initial mid price: ${Number(config.initialMidPrice) / 1e9} SUI/DEEP`);
+	console.log(`  Spread: ${config.spreadBps} bps (${(config.spreadBps / 100).toFixed(2)}%)`);
 	console.log(`  Levels per side: ${config.levelsPerSide}`);
 	console.log(`  Order size: ${Number(config.orderSizeBase) / 1e6} DEEP`);
 	console.log(`  Rebalance interval: ${config.rebalanceIntervalMs}ms`);
@@ -65,6 +68,7 @@ async function main() {
 	const signer = getSigner();
 	const signerAddress = signer.getPublicKey().toSuiAddress();
 	console.log(`\nSigner: ${signerAddress}`);
+	console.log(`  ${explorerObjectUrl(signerAddress, network)}`);
 
 	// Create and initialize market maker
 	const marketMaker = new MarketMaker({

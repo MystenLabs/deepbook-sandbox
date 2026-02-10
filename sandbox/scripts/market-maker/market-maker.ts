@@ -5,6 +5,7 @@ import type { DeploymentManifest } from './types';
 import { BalanceManagerService } from './balance-manager';
 import { OrderManager } from './order-manager';
 import { calculateGridLevels } from './grid-strategy';
+import { explorerObjectUrl, formatPrice, formatDeep } from './types';
 import { HealthServer, type HealthStatus, type ReadinessStatus } from './health';
 import { MetricsServer, updateMetrics, getMetrics } from './metrics';
 
@@ -29,6 +30,7 @@ export class MarketMaker {
 	private isRunning = false;
 	private isReady = false;
 	private isShuttingDown = false;
+	private hasDeepBalance = false;
 	private rebalanceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(ctx: MarketMakerContext) {
@@ -55,6 +57,10 @@ export class MarketMaker {
 		const bmInfo = await bmService.createBalanceManager();
 		this.balanceManagerId = bmInfo.balanceManagerId;
 		console.log(`   Created: ${this.balanceManagerId}`);
+		console.log(`   ${explorerObjectUrl(this.balanceManagerId, this.manifest.network.type)}`);
+
+		// Wait for object to be available on localnet
+		await new Promise((resolve) => setTimeout(resolve, 2000));
 
 		// Deposit SUI for quote asset (for buying DEEP)
 		console.log('2. Depositing SUI...');
@@ -62,11 +68,16 @@ export class MarketMaker {
 		await bmService.deposit(this.balanceManagerId, '0x2::sui::SUI', suiDepositAmount);
 		console.log(`   Deposited: ${Number(suiDepositAmount) / 1e9} SUI`);
 
-		// Note: DEEP deposit is skipped - on localnet, DEEP may need to be minted
-		// via TreasuryCap which requires additional setup. For now, we'll place
-		// orders and let them fail if there's no DEEP. In production, you'd fund
-		// the BalanceManager with DEEP before starting.
-		console.log('3. DEEP deposit skipped (requires minting on localnet)');
+		// Deposit DEEP for base asset (for selling DEEP)
+		console.log('3. Depositing DEEP...');
+		const deepDepositAmount = 1_000_000_000n; // 1000 DEEP (6 decimals)
+		try {
+			await bmService.deposit(this.balanceManagerId, baseType, deepDepositAmount);
+			console.log(`   Deposited: ${Number(deepDepositAmount) / 1e6} DEEP`);
+			this.hasDeepBalance = true;
+		} catch (e) {
+			console.log('   DEEP deposit failed (no DEEP tokens). Running bid-only mode.');
+		}
 
 		// Create OrderManager
 		this.orderManager = new OrderManager(
@@ -77,6 +88,7 @@ export class MarketMaker {
 			baseType,
 			quoteType,
 			this.balanceManagerId,
+			this.manifest.network.type,
 		);
 
 		// Start health check server
@@ -91,6 +103,9 @@ export class MarketMaker {
 		console.log('5. Starting metrics server...');
 		this.metricsServer = new MetricsServer();
 		await this.metricsServer.start(this.config.metricsPort);
+
+		// Wait for deposit transactions to propagate on localnet
+		await new Promise((resolve) => setTimeout(resolve, 3000));
 
 		this.isReady = true;
 		console.log('\n=== Market Maker Initialized ===\n');
@@ -174,8 +189,20 @@ export class MarketMaker {
 			}
 
 			// Calculate new grid levels
-			const levels = calculateGridLevels(this.config);
-			console.log(`  Grid: ${levels.filter((l) => l.isBid).length} bids, ${levels.filter((l) => !l.isBid).length} asks`);
+			let levels = calculateGridLevels(this.config);
+			// Filter out asks if no DEEP balance
+			if (!this.hasDeepBalance) {
+				levels = levels.filter((l) => l.isBid);
+			}
+			const bids = levels.filter((l) => l.isBid);
+			const asks = levels.filter((l) => !l.isBid);
+			console.log(`  Grid: ${bids.length} bids, ${asks.length} asks`);
+			for (const level of asks) {
+				console.log(`    ASK  ${formatPrice(level.price)} SUI/DEEP  ${formatDeep(level.quantity)} DEEP`);
+			}
+			for (const level of bids) {
+				console.log(`    BID  ${formatPrice(level.price)} SUI/DEEP  ${formatDeep(level.quantity)} DEEP`);
+			}
 
 			// Place new orders
 			await this.orderManager.placeOrders(levels);
