@@ -4,18 +4,30 @@ import type { SuiObjectChangeCreated } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import type { DeploymentResult } from './deployer';
 
-const PRICE_ID_BYTES_LENGTH = 32;
+/**
+ * Pyth Network Price Feed IDs
+ * These are the official Pyth price feed identifiers for SUI and DEEP
+ */
+const SUI_PRICE_FEED_ID = '0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744';
+const DEEP_PRICE_FEED_ID = '0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff';
 
-/** Build 32-byte price identifier: prefix bytes followed by zero-padding. */
-function priceIdBytes(prefix: string): Uint8Array {
-	const encoded = new TextEncoder().encode(prefix);
-	const out = new Uint8Array(PRICE_ID_BYTES_LENGTH);
-	out.set(encoded);
-	return out;
+/** Convert hex string (with or without 0x prefix) to 32-byte Uint8Array */
+function hexToBytes(hex: string): Uint8Array {
+	const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+
+	if (cleanHex.length !== 64) {
+		throw new Error(`Expected 64 hex characters (32 bytes), got ${cleanHex.length}`);
+	}
+
+	const bytes = new Uint8Array(32);
+	for (let i = 0; i < 64; i += 2) {
+		bytes[i / 2] = Number.parseInt(cleanHex.slice(i, i + 2), 16);
+	}
+	return bytes;
 }
 
-const DEEP_PRICE_FEED_ID_BYTES = priceIdBytes('DEEP');
-const SUI_PRICE_FEED_ID_BYTES = priceIdBytes('SUI');
+const SUI_PRICE_FEED_ID_BYTES = hexToBytes(SUI_PRICE_FEED_ID);
+const DEEP_PRICE_FEED_ID_BYTES = hexToBytes(DEEP_PRICE_FEED_ID);
 
 export interface PythOracleIds {
 	deepPriceInfoObjectId: string;
@@ -71,7 +83,7 @@ export async function setupPythOracles(
 		throw new Error('pyth package not found in deployed packages');
 	}
 
-	const timestamp = Math.floor(Date.now() / 1000);
+	const timestamp = 0;
 	const tx = new Transaction();
 	tx.setGasBudget(200_000_000);
 
