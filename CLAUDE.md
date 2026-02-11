@@ -29,9 +29,10 @@ deepbook-sandbox/
 │   ├── docker-compose.yml # Docker orchestration
 │   ├── deployments/       # Deployment manifests (generated)
 │   └── scripts/
-│       ├── deploy-all.ts  # Deploy DeepBook to localnet
-│       ├── down.ts        # Stop localnet containers
-│       ├── market-maker/  # Market maker service
+│       ├── deploy-all.ts      # Deploy DeepBook to localnet
+│       ├── seed-liquidity.ts  # One-shot initial liquidity seeding
+│       ├── down.ts            # Stop localnet containers
+│       ├── market-maker/      # Market maker service
 │       │   ├── index.ts   # Entry point
 │       │   ├── config.ts  # Zod config schema
 │       │   ├── types.ts   # DeepBook constants
@@ -108,8 +109,11 @@ bunx prettier-move -c *.move --write        # Format Move files
 ```bash
 cd sandbox
 
-# Deploy DeepBook to localnet (starts containers, deploys Move packages, creates DEEP/SUI pool)
+# Deploy DeepBook to localnet (starts containers, deploys Move packages, creates DEEP/SUI pool, seeds liquidity)
 pnpm deploy-all
+
+# Seed initial liquidity into the latest deployed pool (standalone, runs once and exits)
+pnpm seed-liquidity
 
 # Run the market maker (requires deploy-all first)
 pnpm market-maker

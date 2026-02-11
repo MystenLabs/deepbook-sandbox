@@ -7,7 +7,8 @@
   "scripts": {
     "deploy-all": "tsx scripts/deploy-all.ts",
     "down": "tsx scripts/down.ts",
-    "market-maker": "tsx scripts/market-maker/index.ts"
+    "market-maker": "tsx scripts/market-maker/index.ts",
+    "seed-liquidity": "tsx scripts/seed-liquidity.ts"
   },
   "dependencies": {
     "@mysten/sui": "^1.45.0",
