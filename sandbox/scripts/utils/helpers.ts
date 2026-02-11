@@ -68,10 +68,11 @@ export function getDeploymentEnv(
 	const deepTreasuryId = treasuryObj?.objectId ?? '';
 
   const env: Record<string, string> = {
-    DEEPBOOK_PACKAGE_ID: deepbookResult.packageId,
-    DEEP_TOKEN_PACKAGE_ID: deepbookResult.packageId,
+    DEEPBOOK_PACKAGE_ID: deepbook.packageId,
+    DEEP_TOKEN_PACKAGE_ID: token.packageId,
     DEEP_TREASURY_ID: deepTreasuryId,
+    DEEPBOOK_MARGIN_PACKAGE_ID: margin.packageId
   };
-  if (firstCheckpoint) env.FIRST_CHECKPOINT = firstCheckpoint;
+  if (options.firstCheckpoint) env.FIRST_CHECKPOINT = options.firstCheckpoint;
   return env;
 }
