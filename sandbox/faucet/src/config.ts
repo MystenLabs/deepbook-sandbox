@@ -16,7 +16,7 @@ const NETWORK_DEFAULTS: Record<Network, { rpcUrl: string; suiFaucetUrl: string }
 	},
 	testnet: {
 		rpcUrl: 'https://fullnode.testnet.sui.io',
-		suiFaucetUrl: 'https://faucet.testnet.sui.io',
+		suiFaucetUrl: 'https://faucet.testnet.sui.io/v2',
 	},
 };
 
