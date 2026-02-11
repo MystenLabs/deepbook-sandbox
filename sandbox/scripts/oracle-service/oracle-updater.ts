@@ -82,7 +82,6 @@ export class OracleUpdater {
 
 		// Convert price string to magnitude (remove negative sign if present)
 		const priceMag = Math.abs(Number.parseInt(price.price));
-		console.log("=============", priceMag);
 		const emaPriceMag = Math.abs(Number.parseInt(ema_price.price));
 		console.log(emaPriceMag);
 
