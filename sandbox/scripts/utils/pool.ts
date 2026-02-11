@@ -47,6 +47,8 @@ export class PoolCreator {
 	async createPool(
 		deployedPackages: Map<string, DeploymentResult>,
 	): Promise<PoolInfo> {
+		
+		const tokenPkg = deployedPackages.get('token');
 		const deepbookPkg = deployedPackages.get('deepbook');
 
 		if (!deepbookPkg) {
@@ -83,7 +85,7 @@ export class PoolCreator {
 		tx.moveCall({
 			target: `${deepbookPkg.packageId}::pool::create_pool_admin`,
 			typeArguments: [
-				`${deepbookPkg.packageId}::deep::DEEP`, // BaseAsset
+				`${tokenPkg.packageId}::deep::DEEP`, // BaseAsset
 				'0x2::sui::SUI', // QuoteAsset
 			],
 			arguments: [
@@ -140,6 +142,9 @@ export class PoolCreator {
 		objects: SuiObjectChangeCreated[],
 		typeName: string,
 	): SuiObjectChangeCreated | undefined {
-		return objects.find((obj) => obj.objectType.endsWith(`::${typeName}`));
+		return objects.find((obj) => {
+			const type = (obj.objectType ?? '').replace(/\s*│\s*$/g, '').trim();
+			return type.endsWith(`::${typeName}`);
+		});
 	}
 }
