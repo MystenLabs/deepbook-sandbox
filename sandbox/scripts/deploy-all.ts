@@ -6,6 +6,7 @@ import { updateEnvFile } from './utils/env';
 import { ensureMinimumBalance, getDeploymentEnv } from './utils/helpers';
 import { PoolCreator } from './utils/pool';
 import fs from 'fs/promises';
+import { setupPythOracles, type PythOracleIds } from './utils/oracle';
 
 async function main() {
 	const network = getNetwork();
@@ -91,6 +92,13 @@ async function main() {
 			);
 		}
 
+		// Setup the pyth oracles for localnet
+		let pythOracleIds: PythOracleIds | undefined;
+		if (network === 'localnet') {
+			console.log('🔍 Setting up pyth oracles...');
+			pythOracleIds = await setupPythOracles(client, signer, deployedPackages, sandboxRoot);
+		}
+
 		// Phase 5: Create DEEP/SUI pool
 		console.log('🏊 Phase 5: Creating DEEP/SUI pool...');
 		console.log(deployedPackages);
@@ -118,6 +126,12 @@ async function main() {
 					},
 				]),
 			),
+			...(pythOracleIds && {
+				pythOracles: {
+					deepPriceInfoObjectId: pythOracleIds.deepPriceInfoObjectId,
+					suiPriceInfoObjectId: pythOracleIds.suiPriceInfoObjectId,
+				},
+			}),
 			pool: {
 				poolId: pool.poolId,
 				baseCoin: `${deployedPackages.get('deepbook')!.packageId}::deep::DEEP`,
@@ -145,6 +159,10 @@ async function main() {
 		console.log(`  • Faucet URL: ${getFaucetUrl(network)}`);
 		if (network === 'testnet') {
 			console.log(`  • DeepBook Server: http://127.0.0.1:9008`);
+		}
+		if (network === 'localnet') {
+			console.log(`  • DEEP pyth oracle (PriceInfoObject): ${pythOracleIds?.deepPriceInfoObjectId}`);
+			console.log(`  • SUI pyth oracle (PriceInfoObject): ${pythOracleIds?.suiPriceInfoObjectId}`);
 		}
 		console.log(`  • Deployer Address: ${signerAddress}`);
 		console.log(`  • DEEP/SUI Pool: ${pool.poolId}`);
