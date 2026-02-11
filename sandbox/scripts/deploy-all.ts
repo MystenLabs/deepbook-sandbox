@@ -5,6 +5,7 @@ import { MoveDeployer } from './utils/deployer';
 import { updateEnvFile } from './utils/env';
 import { ensureMinimumBalance, getDeploymentEnv } from './utils/helpers';
 import { PoolCreator } from './utils/pool';
+import { seedLiquidity } from './seed-liquidity';
 import fs from 'fs/promises';
 import { setupPythOracles, type PythOracleIds } from './utils/oracle';
 
@@ -152,7 +153,13 @@ async function main() {
 
 		console.log(`  ✅ Deployment written to ${deploymentPath}\n`);
 
-		// Phase 8: Success!
+		// Phase 8: Seed initial liquidity
+		console.log('🌱 Phase 8: Seeding initial liquidity...');
+		// Wait for pool creation to propagate on localnet before placing orders
+		await new Promise((resolve) => setTimeout(resolve, 3000));
+		await seedLiquidity({ client, signer, manifest: config });
+
+		// Phase 9: Success!
 		console.log('✨ DeepBook environment ready!\n');
 		console.log('📋 Deployment Info:');
 		console.log(`  • RPC URL: ${getRpcUrl(network)}`);

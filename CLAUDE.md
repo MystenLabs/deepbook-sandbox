@@ -41,9 +41,10 @@ deepbook-sandbox/
 │   │       └── routes/
 │   │           └── faucet.ts      # POST /faucet endpoint
 │   └── scripts/
-│       ├── deploy-all.ts  # Deploy DeepBook to localnet
-│       ├── down.ts        # Stop localnet containers
-│       ├── market-maker/  # Market maker service
+│       ├── deploy-all.ts      # Deploy DeepBook to localnet
+│       ├── seed-liquidity.ts  # One-shot initial liquidity seeding
+│       ├── down.ts            # Stop localnet containers
+│       ├── market-maker/      # Market maker service
 │       │   ├── index.ts   # Entry point
 │       │   ├── config.ts  # Zod config schema
 │       │   ├── types.ts   # DeepBook constants
