@@ -1,3 +1,4 @@
+// MOCK PYTH CONTRACT FOR LOCALNET
 module pyth::pyth {
     use sui::clock::{Self, Clock};
 
@@ -7,6 +8,7 @@ module pyth::pyth {
 
     const E_STALE_PRICE_UPDATE: u64 = 1;
 
+    /// MOCK IMPLEMENTATION
     /// Create and share new price feed objects
     public fun create_price_feeds(
         mut price_infos: vector<PriceInfo>,
@@ -19,6 +21,7 @@ module pyth::pyth {
         };
     } 
 
+    /// MOCK IMPLEMENTATION
     /// Update a singular Pyth PriceInfoObject (containing a price feed)
     public fun update_single_price_feed(
         update: &PriceInfo,
@@ -55,6 +58,7 @@ module pyth::pyth {
         price
     }
 
+    /// MOCK IMPLEMENTATION
     /// Get the latest available price cached for the given price identifier.
     ///
     /// WARNING: the returned price can be from arbitrarily far in the past.
