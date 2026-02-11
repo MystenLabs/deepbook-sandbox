@@ -132,7 +132,7 @@ export async function setupPythOracles(
 	const magnitude = (priceObj.data?.content as any).fields.price_info.fields.price_feed.fields.price.fields.price.fields.magnitude; 
 
 	let ids: PythOracleIds;
-	if (magnitude === 2000000) {
+	if (magnitude == 2000000) {
 		ids = {
 			deepPriceInfoObjectId: created[0].objectId,
 			suiPriceInfoObjectId: created[1].objectId,
