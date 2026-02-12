@@ -1,7 +1,6 @@
-import type { SuiClient } from '@mysten/sui/client';
-import { requestSuiFromFaucetV2 } from '@mysten/sui/faucet';
-import type { DeploymentResult } from './deployer';
-import { getRpcUrl } from './config';
+import type { SuiClient } from "@mysten/sui/client";
+import { requestSuiFromFaucetV2 } from "@mysten/sui/faucet";
+import type { DeploymentResult } from "./deployer";
 
 export type DeploymentEnvOptions = { firstCheckpoint?: string };
 
@@ -12,7 +11,6 @@ export async function requestFaucetWithRetry(
 	host: string,
 	recipient: string,
 	maxRetries = 3,
-	client: SuiClient,
 ): Promise<void> {
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
@@ -25,7 +23,6 @@ export async function requestFaucetWithRetry(
 			await new Promise((r) => setTimeout(r, delay));
 		}
 	}
-
 
 	throw new Error(
 		`Faucet failed after ${maxRetries} retries and recipient balance is below 1 SUI. Cannot continue.`,
@@ -46,7 +43,7 @@ export async function ensureMinimumBalance(
 		console.log(`  ✅ Has sufficient balance (≥1 SUI)\n`);
 		return;
 	}
-	await requestFaucetWithRetry(faucetHost, recipient, maxFaucetRetries, client);
+	await requestFaucetWithRetry(faucetHost, recipient, maxFaucetRetries);
 	await new Promise((r) => setTimeout(r, 2000));
 	const after = await client.getBalance({ owner: recipient });
 	console.log(`  ✅ Has ${after.totalBalance} MIST balance\n`);
@@ -70,15 +67,12 @@ export function getDeploymentEnv(
 	);
 	const deepTreasuryId = treasuryObj?.objectId ?? '';
 
-	const env: Record<string, string> = {
-		DEEPBOOK_PACKAGE_ID: deepbook.packageId,
-		DEEP_TOKEN_PACKAGE_ID: token.packageId,
-		DEEP_TREASURY_ID: deepTreasuryId,
-		MARGIN_PACKAGE_ID: margin.packageId,
-		RPC_URL: getRpcUrl(),
-	};
-	if (options?.firstCheckpoint) {
-		env.FIRST_CHECKPOINT = options.firstCheckpoint;
-	}
-	return env;
+  const env: Record<string, string> = {
+    DEEPBOOK_PACKAGE_ID: deepbook.packageId,
+    DEEP_TOKEN_PACKAGE_ID: token.packageId,
+    DEEP_TREASURY_ID: deepTreasuryId,
+    DEEPBOOK_MARGIN_PACKAGE_ID: margin.packageId
+  };
+  if (options.firstCheckpoint) env.FIRST_CHECKPOINT = options.firstCheckpoint;
+  return env;
 }

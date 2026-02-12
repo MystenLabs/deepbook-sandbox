@@ -1,0 +1,19 @@
+meta {
+  name: Request DEEP
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/faucet
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "address": "{{address}}",
+    "token": "DEEP",
+    "amount": 1000
+  }
+}
