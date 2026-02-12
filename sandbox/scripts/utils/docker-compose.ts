@@ -121,7 +121,7 @@ async function waitForFaucet(baseUrl: string, maxAttempts = 30): Promise<void> {
  * Start the localnet indexer with dynamically deployed package addresses.
  * Writes package IDs to .env and starts the indexer container.
  */
-export async function startLocalnetIndexerAndServer(
+export async function configureAndStartLocalnetServices(
 	packages: { corePackageId: string; marginPackageId?: string },
 	sandboxRoot?: string,
 ): Promise<void> {

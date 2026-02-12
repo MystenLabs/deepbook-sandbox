@@ -1,6 +1,6 @@
 import path from 'path';
 import { getClient, getFaucetUrl, getNetwork, getRpcUrl, getSigner } from './utils/config';
-import { getSandboxRoot, startLocalnet, startRemote, startLocalnetIndexerAndServer } from './utils/docker-compose';
+import { getSandboxRoot, startLocalnet, startRemote, configureAndStartLocalnetServices } from './utils/docker-compose';
 import { MoveDeployer } from './utils/deployer';
 import { updateEnvFile } from './utils/env';
 import { ensureMinimumBalance, getDeploymentEnv } from './utils/helpers';
@@ -83,7 +83,7 @@ async function main() {
 			console.log('📡 Phase 4: Starting custom server and indexer for localnet\n');
 			const deepbookPkg = deployedPackages.get('deepbook')!;
 			const marginPkg = deployedPackages.get('deepbook_margin');
-			await startLocalnetIndexerAndServer(
+			await configureAndStartLocalnetServices(
 				{
 					corePackageId: deepbookPkg.packageId,
 					...(marginPkg && { marginPackageId: marginPkg.packageId }),
