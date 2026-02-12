@@ -2,20 +2,13 @@ import type { SuiClient } from '@mysten/sui/client';
 import type { Keypair } from '@mysten/sui/cryptography';
 import type { SuiObjectChangeCreated } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
+import { fromHex } from '@mysten/sui/utils';
 import type { DeploymentResult } from './deployer';
+import { SUI_PRICE_FEED_ID, DEEP_PRICE_FEED_ID } from '../oracle-service/constants';
 
-const PRICE_ID_BYTES_LENGTH = 32;
 
-/** Build 32-byte price identifier: prefix bytes followed by zero-padding. */
-function priceIdBytes(prefix: string): Uint8Array {
-	const encoded = new TextEncoder().encode(prefix);
-	const out = new Uint8Array(PRICE_ID_BYTES_LENGTH);
-	out.set(encoded);
-	return out;
-}
-
-const DEEP_PRICE_FEED_ID_BYTES = priceIdBytes('DEEP');
-const SUI_PRICE_FEED_ID_BYTES = priceIdBytes('SUI');
+const SUI_PRICE_FEED_ID_BYTES = fromHex(SUI_PRICE_FEED_ID);
+const DEEP_PRICE_FEED_ID_BYTES = fromHex(DEEP_PRICE_FEED_ID);
 
 export interface PythOracleIds {
 	deepPriceInfoObjectId: string;
@@ -58,20 +51,19 @@ function addPriceInfoToTx(
 
 /**
  * Create DEEP and SUI PriceInfoObjects via pyth::pyth::create_price_feeds.
- * Uses hardcoded identifier bytes and a shared helper to build both feeds.
+ * Uses official Pyth Network price feed identifiers.
  */
 export async function setupPythOracles(
 	client: SuiClient,
 	signer: Keypair,
 	deployedPackages: Map<string, DeploymentResult>,
-	sandboxRoot: string,
 ): Promise<PythOracleIds> {
 	const pythPkg = deployedPackages.get('pyth');
 	if (!pythPkg) {
 		throw new Error('pyth package not found in deployed packages');
 	}
 
-	const timestamp = Math.floor(Date.now() / 1000);
+	const timestamp = 0;
 	const tx = new Transaction();
 	tx.setGasBudget(200_000_000);
 
