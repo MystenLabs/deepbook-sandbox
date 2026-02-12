@@ -2,6 +2,8 @@ import type { SuiClient } from '@mysten/sui/client';
 import type { Keypair } from '@mysten/sui/cryptography';
 import { Transaction } from '@mysten/sui/transactions';
 import type { ParsedPriceData } from './types';
+import { SUI_PRICE_FEED_ID, DEEP_PRICE_FEED_ID } from './constants';
+import { fromHex } from '@mysten/sui/utils';
 
 /**
  * Handles updating Pyth oracle contracts on Sui
@@ -22,8 +24,8 @@ export class OracleUpdater {
 	): Promise<void> {
 		console.log('🔄 Updating on-chain price feeds...');
 		console.log(priceData);
-		const suiData = priceData.find((p) => p.id.startsWith('23d7315113f5b1d3'));
-		const deepData = priceData.find((p) => p.id.startsWith('29bdd5248234e33b'));
+		const suiData = priceData.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
+		const deepData = priceData.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
 
 		if (!suiData || !deepData) {
 			throw new Error(
@@ -83,7 +85,6 @@ export class OracleUpdater {
 		// Convert price string to magnitude (remove negative sign if present)
 		const priceMag = Math.abs(Number.parseInt(price.price));
 		const emaPriceMag = Math.abs(Number.parseInt(ema_price.price));
-		console.log(emaPriceMag);
 
 		// Determine if prices are negative
 		const priceNegative = Number.parseInt(price.price) < 0;
@@ -136,7 +137,7 @@ export class OracleUpdater {
 		});
 
 		// Build price identifier (32 bytes)
-		const priceIdBytes = this.hexToBytes(data.id);
+		const priceIdBytes = fromHex(data.id);
 		const priceIdentifier = tx.moveCall({
 			target: `${this.pythPackageId}::price_identifier::from_byte_vec`,
 			arguments: [tx.pure.vector('u8', Array.from(priceIdBytes))],
@@ -158,20 +159,6 @@ export class OracleUpdater {
 				priceFeed,
 			],
 		});
-	}
-
-	/**
-	 * Converts hex string to Uint8Array
-	 */
-	private hexToBytes(hex: string): Uint8Array {
-		// Remove 0x prefix if present
-		const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-
-		const bytes = new Uint8Array(cleanHex.length / 2);
-		for (let i = 0; i < cleanHex.length; i += 2) {
-			bytes[i / 2] = Number.parseInt(cleanHex.slice(i, i + 2), 16);
-		}
-		return bytes;
 	}
 
 	/**

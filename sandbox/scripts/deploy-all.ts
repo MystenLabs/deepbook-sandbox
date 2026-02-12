@@ -96,7 +96,7 @@ async function main() {
 		let pythOracleIds: PythOracleIds | undefined;
 		if (network === 'localnet') {
 			console.log('🔍 Setting up pyth oracles...');
-			pythOracleIds = await setupPythOracles(client, signer, deployedPackages, sandboxRoot);
+			pythOracleIds = await setupPythOracles(client, signer, deployedPackages);
 		}
 
 		// Phase 5: Create DEEP/SUI pool

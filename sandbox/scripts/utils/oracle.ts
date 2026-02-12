@@ -2,32 +2,13 @@ import type { SuiClient } from '@mysten/sui/client';
 import type { Keypair } from '@mysten/sui/cryptography';
 import type { SuiObjectChangeCreated } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
+import { fromHex } from '@mysten/sui/utils';
 import type { DeploymentResult } from './deployer';
+import { SUI_PRICE_FEED_ID, DEEP_PRICE_FEED_ID } from '../oracle-service/constants';
 
-/**
- * Pyth Network Price Feed IDs
- * These are the official Pyth price feed identifiers for SUI and DEEP
- */
-const SUI_PRICE_FEED_ID = '0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744';
-const DEEP_PRICE_FEED_ID = '0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff';
 
-/** Convert hex string (with or without 0x prefix) to 32-byte Uint8Array */
-function hexToBytes(hex: string): Uint8Array {
-	const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-
-	if (cleanHex.length !== 64) {
-		throw new Error(`Expected 64 hex characters (32 bytes), got ${cleanHex.length}`);
-	}
-
-	const bytes = new Uint8Array(32);
-	for (let i = 0; i < 64; i += 2) {
-		bytes[i / 2] = Number.parseInt(cleanHex.slice(i, i + 2), 16);
-	}
-	return bytes;
-}
-
-const SUI_PRICE_FEED_ID_BYTES = hexToBytes(SUI_PRICE_FEED_ID);
-const DEEP_PRICE_FEED_ID_BYTES = hexToBytes(DEEP_PRICE_FEED_ID);
+const SUI_PRICE_FEED_ID_BYTES = fromHex(SUI_PRICE_FEED_ID);
+const DEEP_PRICE_FEED_ID_BYTES = fromHex(DEEP_PRICE_FEED_ID);
 
 export interface PythOracleIds {
 	deepPriceInfoObjectId: string;
@@ -70,13 +51,12 @@ function addPriceInfoToTx(
 
 /**
  * Create DEEP and SUI PriceInfoObjects via pyth::pyth::create_price_feeds.
- * Uses hardcoded identifier bytes and a shared helper to build both feeds.
+ * Uses official Pyth Network price feed identifiers.
  */
 export async function setupPythOracles(
 	client: SuiClient,
 	signer: Keypair,
 	deployedPackages: Map<string, DeploymentResult>,
-	sandboxRoot: string,
 ): Promise<PythOracleIds> {
 	const pythPkg = deployedPackages.get('pyth');
 	if (!pythPkg) {
