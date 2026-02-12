@@ -156,7 +156,7 @@ async function main() {
 		console.log('✨ DeepBook environment ready!\n');
 		console.log('📋 Deployment Info:');
 		console.log(`  • RPC URL: ${getRpcUrl(network)}`);
-		console.log(`  • Faucet URL: ${getFaucetUrl(network)}`);
+		console.log(`  • Faucet URL: http://localhost:9009`);
 		if (network === 'testnet') {
 			console.log(`  • DeepBook Server: http://127.0.0.1:9008`);
 		}
