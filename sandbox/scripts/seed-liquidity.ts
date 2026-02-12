@@ -66,7 +66,7 @@ export async function seedLiquidity(options: SeedLiquidityOptions): Promise<void
 
 	console.log('\n=== Seeding Initial Liquidity ===\n');
 	console.log(`  Pool: ${poolId}`);
-	console.log(`  Mid price: ${Number(config.initialMidPrice) / 1e9} SUI/DEEP`);
+	console.log(`  Mid price: ${Number(config.initialMidPrice) / 1e9} DEEP/SUI`);
 	console.log(`  Spread: ${config.spreadBps} bps (${(config.spreadBps / 100).toFixed(2)}%)`);
 	console.log(`  Levels per side: ${config.levelsPerSide}`);
 	console.log(`  Order size: ${Number(config.orderSizeBase) / 1e6} DEEP`);
@@ -136,12 +136,12 @@ export async function seedLiquidity(options: SeedLiquidityOptions): Promise<void
 	if (bids.length > 0) {
 		const bestBid = bids.reduce((max, l) => (l.price > max ? l.price : max), 0n);
 		const worstBid = bids.reduce((min, l) => (l.price < min ? l.price : min), bids[0].price);
-		console.log(`  Bids: ${bids.length} orders from ${formatPrice(worstBid)} to ${formatPrice(bestBid)} SUI/DEEP (${formatDeep(totalBidSize)} DEEP total)`);
+		console.log(`  Bids: ${bids.length} orders from ${formatPrice(worstBid)} to ${formatPrice(bestBid)} DEEP/SUI (${formatDeep(totalBidSize)} DEEP total)`);
 	}
 	if (asks.length > 0) {
 		const bestAsk = asks.reduce((min, l) => (l.price < min ? l.price : min), asks[0].price);
 		const worstAsk = asks.reduce((max, l) => (l.price > max ? l.price : max), 0n);
-		console.log(`  Asks: ${asks.length} orders from ${formatPrice(bestAsk)} to ${formatPrice(worstAsk)} SUI/DEEP (${formatDeep(totalAskSize)} DEEP total)`);
+		console.log(`  Asks: ${asks.length} orders from ${formatPrice(bestAsk)} to ${formatPrice(worstAsk)} DEEP/SUI (${formatDeep(totalAskSize)} DEEP total)`);
 	}
 	console.log(`  Balance Manager: ${balanceManagerId}`);
 	console.log(`  Total orders: ${levels.length}`);

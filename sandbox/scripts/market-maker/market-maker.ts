@@ -198,10 +198,10 @@ export class MarketMaker {
 			const asks = levels.filter((l) => !l.isBid);
 			console.log(`  Grid: ${bids.length} bids, ${asks.length} asks`);
 			for (const level of asks) {
-				console.log(`    ASK  ${formatPrice(level.price)} SUI/DEEP  ${formatDeep(level.quantity)} DEEP`);
+				console.log(`    ASK  ${formatPrice(level.price)} DEEP/SUI  ${formatDeep(level.quantity)} DEEP`);
 			}
 			for (const level of bids) {
-				console.log(`    BID  ${formatPrice(level.price)} SUI/DEEP  ${formatDeep(level.quantity)} DEEP`);
+				console.log(`    BID  ${formatPrice(level.price)} DEEP/SUI  ${formatDeep(level.quantity)} DEEP`);
 			}
 
 			// Place new orders

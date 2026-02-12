@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const marketMakerConfigSchema = z.object({
 	// Pricing - mid price in quote asset (SUI) per base asset (DEEP)
-	// 100_000_000 = 0.1 SUI per DEEP (9 decimals for SUI)
+	// 100_000_000 = 0.1 DEEP/SUI (9 decimals for SUI)
 	initialMidPrice: z.bigint().positive().default(100_000_000n),
 
 	// Grid parameters

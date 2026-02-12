@@ -57,7 +57,7 @@ async function main() {
 	const config = loadConfig(envConfig);
 
 	console.log('\nConfiguration:');
-	console.log(`  Initial mid price: ${Number(config.initialMidPrice) / 1e9} SUI/DEEP`);
+	console.log(`  Initial mid price: ${Number(config.initialMidPrice) / 1e9} DEEP/SUI`);
 	console.log(`  Spread: ${config.spreadBps} bps (${(config.spreadBps / 100).toFixed(2)}%)`);
 	console.log(`  Levels per side: ${config.levelsPerSide}`);
 	console.log(`  Order size: ${Number(config.orderSizeBase) / 1e6} DEEP`);

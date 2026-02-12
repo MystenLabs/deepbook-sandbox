@@ -28,7 +28,7 @@ Configuration can be set via environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MM_INITIAL_MID_PRICE` | Mid price in quote units (9 decimals for SUI) | `100000000` (0.1 SUI/DEEP) |
+| `MM_INITIAL_MID_PRICE` | Mid price in quote units (9 decimals for SUI) | `100000000` (0.1 DEEP/SUI) |
 | `MM_SPREAD_BPS` | Spread in basis points | `10` (0.1%) |
 | `MM_LEVELS_PER_SIDE` | Number of orders per side | `5` |
 | `MM_LEVEL_SPACING_BPS` | Spacing between levels in bps | `5` (0.05%) |
