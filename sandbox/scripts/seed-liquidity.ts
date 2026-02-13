@@ -11,6 +11,7 @@ import { explorerObjectUrl, formatPrice, formatDeep } from './market-maker/types
 import { BalanceManagerService } from './market-maker/balance-manager';
 import { OrderManager } from './market-maker/order-manager';
 import { calculateGridLevels } from './market-maker/grid-strategy';
+import { fetchOracleMidPrice } from './market-maker/price-feed';
 
 async function findLatestDeployment(): Promise<string> {
 	const deploymentsDir = path.join(process.cwd(), 'deployments');
@@ -64,9 +65,14 @@ export async function seedLiquidity(options: SeedLiquidityOptions): Promise<void
 	const envConfig = parseEnvConfig();
 	const config = loadConfig(envConfig);
 
+	// Fetch oracle price
+	const oraclePrice = await fetchOracleMidPrice(client, manifest);
+	const midPrice = oraclePrice ?? undefined;
+	const priceSource = oraclePrice ? 'oracle' : 'fallback';
+
 	console.log('\n=== Seeding Initial Liquidity ===\n');
 	console.log(`  Pool: ${poolId}`);
-	console.log(`  Mid price: ${Number(config.fallbackMidPrice) / 1e9} DEEP/SUI (fallback)`);
+	console.log(`  Mid price: ${Number(midPrice ?? config.fallbackMidPrice) / 1e9} DEEP/SUI (${priceSource})`);
 	console.log(`  Spread: ${config.spreadBps} bps (${(config.spreadBps / 100).toFixed(2)}%)`);
 	console.log(`  Levels per side: ${config.levelsPerSide}`);
 	console.log(`  Order size: ${Number(config.orderSizeBase) / 1e6} DEEP`);
@@ -88,6 +94,9 @@ export async function seedLiquidity(options: SeedLiquidityOptions): Promise<void
 	await bmService.deposit(balanceManagerId, '0x2::sui::SUI', suiDepositAmount);
 	console.log(`   Deposited: ${Number(suiDepositAmount) / 1e9} SUI`);
 
+	// Wait for SUI deposit to propagate before touching another coin object
+	await new Promise((resolve) => setTimeout(resolve, 2000));
+
 	// Deposit DEEP for base asset (for selling DEEP)
 	console.log('3. Depositing DEEP...');
 	const deepDepositAmount = 1_000_000_000n; // 1000 DEEP (6 decimals)
@@ -105,7 +114,7 @@ export async function seedLiquidity(options: SeedLiquidityOptions): Promise<void
 
 	// Calculate grid levels
 	console.log('4. Calculating grid levels...');
-	let levels = calculateGridLevels(config);
+	let levels = calculateGridLevels(config, midPrice);
 	if (!hasDeepBalance) {
 		levels = levels.filter((l) => l.isBid);
 	}

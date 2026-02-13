@@ -38,6 +38,10 @@ export interface DeploymentManifest {
 			transactionDigest: string
 		}
 	}
+	pythOracles?: {
+		deepPriceInfoObjectId: string
+		suiPriceInfoObjectId: string
+	}
 	pool: {
 		poolId: string
 		baseCoin: string

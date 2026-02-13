@@ -15,7 +15,7 @@ const marketMakerConfigSchema = z.object({
 	rebalanceIntervalMs: z.number().int().positive().default(10_000), // 10 seconds
 
 	// Pool parameters (from pool creation)
-	tickSize: z.bigint().positive().default(10_000_000n), // 0.00001 SUI
+	tickSize: z.bigint().positive().default(1_000_000n), // 0.001 SUI
 	lotSize: z.bigint().positive().default(1_000_000n), // 1 DEEP
 	minSize: z.bigint().positive().default(10_000_000n), // 10 DEEP
 
@@ -35,7 +35,7 @@ export function loadConfig(overrides?: Partial<MarketMakerConfig>): MarketMakerC
 		levelSpacingBps: 5,
 		orderSizeBase: 10_000_000n,
 		rebalanceIntervalMs: 10_000,
-		tickSize: 10_000_000n,
+		tickSize: 1_000_000n,
 		lotSize: 1_000_000n,
 		minSize: 10_000_000n,
 		healthCheckPort: 3000,
