@@ -175,6 +175,7 @@ async function main() {
 		if (network === 'localnet') {
 			console.log(`  • DEEP pyth oracle (PriceInfoObject): ${pythOracleIds?.deepPriceInfoObjectId}`);
 			console.log(`  • SUI pyth oracle (PriceInfoObject): ${pythOracleIds?.suiPriceInfoObjectId}`);
+			console.log(`  • Oracle Service status: http://localhost:9010`);
 		}
 		console.log(`  • Deployer Address: ${signerAddress}`);
 		console.log(`  • DEEP/SUI Pool: ${pool.poolId}`);

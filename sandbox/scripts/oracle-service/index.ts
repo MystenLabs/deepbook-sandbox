@@ -1,7 +1,8 @@
+import http from 'http';
 import { getClient, getNetwork, getSigner } from '../utils/config';
 import { PythClient } from './pyth-client';
 import { OracleUpdater } from './oracle-updater';
-import type { OracleConfig } from './types';
+import type { OracleConfig, ParsedPriceData } from './types';
 import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from './constants';
 
 /**
@@ -10,10 +11,13 @@ import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from './constants';
  * This service:
  * 1. Fetches historical price data from Pyth Network API every 10 seconds
  * 2. Updates the SUI and DEEP PriceInfoObjects on-chain
+ * 3. Exposes a health/status endpoint on port 9010
  *
  * Required env vars:
  *   PYTH_PACKAGE_ID, DEEP_PRICE_INFO_OBJECT_ID, SUI_PRICE_INFO_OBJECT_ID
  */
+
+const STATUS_PORT = 9010;
 
 const DEFAULT_CONFIG: OracleConfig = {
 	pythApiUrl: 'https://benchmarks.pyth.network',
@@ -29,6 +33,46 @@ function requireEnv(name: string): string {
 	const value = process.env[name];
 	if (!value) throw new Error(`Missing required env var: ${name}`);
 	return value;
+}
+
+/** Shared state for the status endpoint */
+const status = {
+	updateCount: 0,
+	errorCount: 0,
+	lastUpdateTime: null as string | null,
+	lastSuiPrice: null as string | null,
+	lastDeepPrice: null as string | null,
+};
+
+function formatPrice(price: string, expo: number): string {
+	const priceNum = Number.parseInt(price);
+	const formatted = priceNum * Math.pow(10, expo);
+	return formatted.toFixed(Math.abs(expo));
+}
+
+function updateStatus(suiData: ParsedPriceData, deepData: ParsedPriceData) {
+	status.lastUpdateTime = new Date().toISOString();
+	status.lastSuiPrice = formatPrice(suiData.price.price, suiData.price.expo);
+	status.lastDeepPrice = formatPrice(deepData.price.price, deepData.price.expo);
+}
+
+function startStatusServer() {
+	const server = http.createServer((_req, res) => {
+		res.writeHead(200, { 'Content-Type': 'application/json' });
+		res.end(JSON.stringify({
+			status: 'ok',
+			updates: status.updateCount,
+			errors: status.errorCount,
+			lastUpdate: status.lastUpdateTime,
+			prices: {
+				sui: status.lastSuiPrice ? `$${status.lastSuiPrice}` : null,
+				deep: status.lastDeepPrice ? `$${status.lastDeepPrice}` : null,
+			},
+		}, null, 2));
+	});
+	server.listen(STATUS_PORT, () => {
+		console.log(`📊 Status endpoint: http://localhost:${STATUS_PORT}\n`);
+	});
 }
 
 async function main() {
@@ -69,8 +113,8 @@ async function main() {
 		throw new Error(`Failed to connect to Sui RPC: ${error}`);
 	}
 
-	let updateCount = 0;
-	let errorCount = 0;
+	// Start status/health endpoint
+	startStatusServer();
 
 	console.log('🚀 Starting price feed updates...\n');
 
@@ -82,20 +126,26 @@ async function main() {
 			// Fetch price data from Pyth
 			const priceUpdate = await pythClient.fetchPriceUpdates();
 
+			// Find SUI and DEEP data for status tracking
+			const suiData = priceUpdate.parsed.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
+			const deepData = priceUpdate.parsed.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
+
 			// Update on-chain oracles
 			await oracleUpdater.updatePriceFeeds(priceUpdate.parsed, {
 				sui: suiPriceInfoObjectId,
 				deep: deepPriceInfoObjectId,
 			});
 
-			updateCount++;
+			status.updateCount++;
+			if (suiData && deepData) updateStatus(suiData, deepData);
+
 			const elapsed = Date.now() - startTime;
 			console.log(
-				`  ⏱️  Update #${updateCount} completed in ${elapsed}ms (errors: ${errorCount})\n`,
+				`  ⏱️  Update #${status.updateCount} completed in ${elapsed}ms (errors: ${status.errorCount})\n`,
 			);
 		} catch (error) {
-			errorCount++;
-			console.error(`❌ Update failed (error #${errorCount}):`, error);
+			status.errorCount++;
+			console.error(`❌ Update failed (error #${status.errorCount}):`, error);
 			console.log('  Continuing...\n');
 		}
 	};
