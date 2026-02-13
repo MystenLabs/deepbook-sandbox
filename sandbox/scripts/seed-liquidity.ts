@@ -66,7 +66,7 @@ export async function seedLiquidity(options: SeedLiquidityOptions): Promise<void
 
 	console.log('\n=== Seeding Initial Liquidity ===\n');
 	console.log(`  Pool: ${poolId}`);
-	console.log(`  Mid price: ${Number(config.initialMidPrice) / 1e9} DEEP/SUI`);
+	console.log(`  Mid price: ${Number(config.fallbackMidPrice) / 1e9} DEEP/SUI (fallback)`);
 	console.log(`  Spread: ${config.spreadBps} bps (${(config.spreadBps / 100).toFixed(2)}%)`);
 	console.log(`  Levels per side: ${config.levelsPerSide}`);
 	console.log(`  Order size: ${Number(config.orderSizeBase) / 1e6} DEEP`);

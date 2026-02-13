@@ -9,9 +9,13 @@ import type { GridLevel } from './types';
  * - N levels of asks above mid price
  * - Each level is spaced by levelSpacingBps from the previous
  * - The closest bid/ask are spreadBps/2 from mid price
+ *
+ * @param config - Market maker configuration
+ * @param midPrice - Mid price from oracle. Falls back to config.fallbackMidPrice.
  */
-export function calculateGridLevels(config: MarketMakerConfig): GridLevel[] {
-	const { initialMidPrice, spreadBps, levelsPerSide, levelSpacingBps, orderSizeBase, tickSize, lotSize, minSize } = config;
+export function calculateGridLevels(config: MarketMakerConfig, midPrice?: bigint): GridLevel[] {
+	const { spreadBps, levelsPerSide, levelSpacingBps, orderSizeBase, tickSize, lotSize, minSize } = config;
+	const effectiveMidPrice = midPrice ?? config.fallbackMidPrice;
 
 	const levels: GridLevel[] = [];
 
@@ -25,7 +29,7 @@ export function calculateGridLevels(config: MarketMakerConfig): GridLevel[] {
 
 	// Best ask = mid * (1 + spread/2)
 	const bestAskPrice = alignToTickSize(
-		(initialMidPrice * halfSpreadMultiplier) / baseMultiplier,
+		(effectiveMidPrice * halfSpreadMultiplier) / baseMultiplier,
 		tickSize,
 		true, // round up for asks
 	);
@@ -33,7 +37,7 @@ export function calculateGridLevels(config: MarketMakerConfig): GridLevel[] {
 	// Best bid = mid * (1 - spread/2)
 	const halfSpreadMultiplierBid = BigInt(10000 - halfSpreadBps);
 	const bestBidPrice = alignToTickSize(
-		(initialMidPrice * halfSpreadMultiplierBid) / baseMultiplier,
+		(effectiveMidPrice * halfSpreadMultiplierBid) / baseMultiplier,
 		tickSize,
 		false, // round down for bids
 	);

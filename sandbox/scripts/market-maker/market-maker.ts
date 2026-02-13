@@ -5,6 +5,7 @@ import type { DeploymentManifest } from './types';
 import { BalanceManagerService } from './balance-manager';
 import { OrderManager } from './order-manager';
 import { calculateGridLevels } from './grid-strategy';
+import { fetchMidPrice } from './price-feed';
 import { explorerObjectUrl, formatPrice, formatDeep } from './types';
 import { HealthServer, type HealthStatus, type ReadinessStatus } from './health';
 import { MetricsServer, updateMetrics, getMetrics } from './metrics';
@@ -31,6 +32,7 @@ export class MarketMaker {
 	private isReady = false;
 	private isShuttingDown = false;
 	private hasDeepBalance = false;
+	private lastMidPrice: bigint | null = null;
 	private rebalanceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(ctx: MarketMakerContext) {
@@ -183,13 +185,27 @@ export class MarketMaker {
 		console.log(`[${new Date().toISOString()}] Rebalancing...`);
 
 		try {
+			// Fetch mid price from Pyth oracle
+			let midPrice: bigint | undefined;
+			const oraclePrice = await fetchMidPrice();
+			if (oraclePrice) {
+				this.lastMidPrice = oraclePrice;
+				midPrice = oraclePrice;
+				console.log(`  Mid price: ${Number(oraclePrice) / 1e9} DEEP/SUI (oracle)`);
+			} else if (this.lastMidPrice) {
+				midPrice = this.lastMidPrice;
+				console.log(`  Mid price: ${Number(midPrice) / 1e9} DEEP/SUI (last known — oracle unavailable)`);
+			} else {
+				console.log(`  Mid price: ${Number(this.config.fallbackMidPrice) / 1e9} DEEP/SUI (fallback — oracle unavailable)`);
+			}
+
 			// Cancel all existing orders
 			if (this.orderManager.getActiveOrderCount() > 0) {
 				await this.orderManager.cancelAllOrders();
 			}
 
 			// Calculate new grid levels
-			let levels = calculateGridLevels(this.config);
+			let levels = calculateGridLevels(this.config, midPrice);
 			// Filter out asks if no DEEP balance
 			if (!this.hasDeepBalance) {
 				levels = levels.filter((l) => l.isBid);

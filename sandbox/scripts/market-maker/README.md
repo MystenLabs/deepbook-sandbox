@@ -28,7 +28,7 @@ Configuration can be set via environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MM_INITIAL_MID_PRICE` | Mid price in quote units (9 decimals for SUI) | `100000000` (0.1 DEEP/SUI) |
+| `MM_FALLBACK_MID_PRICE` | Fallback mid price when oracle is unavailable (9 decimals for SUI) | `100000000` (0.1 DEEP/SUI) |
 | `MM_SPREAD_BPS` | Spread in basis points | `10` (0.1%) |
 | `MM_LEVELS_PER_SIDE` | Number of orders per side | `5` |
 | `MM_LEVEL_SPACING_BPS` | Spacing between levels in bps | `5` (0.05%) |
@@ -126,6 +126,6 @@ Press `Ctrl+C` to stop the market maker. It will:
 
 - **DEEP tokens**: On localnet, DEEP tokens need to be minted via TreasuryCap. The market maker will attempt to place orders but they may fail if there's insufficient DEEP balance for asks. Fund the BalanceManager with DEEP before starting in production.
 
-- **No price oracle**: This implementation uses a hardcoded mid price. In production, you'd want to fetch the price from an oracle or external source.
+- **Pyth oracle pricing**: The market maker fetches live DEEP/SUI prices from the Pyth Network oracle. If the oracle is temporarily unavailable, it falls back to the last known price, then to `MM_FALLBACK_MID_PRICE`.
 
 - **POST_ONLY orders**: All orders use POST_ONLY restriction to ensure they're maker orders only. This prevents accidental taker trades and associated fees.
