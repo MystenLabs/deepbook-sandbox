@@ -17,7 +17,7 @@ const PACKAGES_NEED_MOVE_PATCH = ['token', 'deepbook', 'pyth', 'deepbook_margin'
 /** Packages that need Move.lock removed before publish and restored after. */
 const PACKAGES_NEED_MOVE_LOCK = ['token', 'deepbook', 'pyth', 'deepbook_margin', 'margin_liquidation'] as const;
 /** Packages that need Published.toml removed before publish and restored after. */
-const PACKAGES_NEED_PUBLISHED_TOML = ['deepbook', 'deepbook_margin', 'margin_liquidation'] as const;
+const PACKAGES_NEED_PUBLISHED_TOML = ['token', 'deepbook', 'deepbook_margin', 'margin_liquidation'] as const;
 
 const PYTH_GIT_TESTNET =
 	'pyth = { git = "https://github.com/pyth-network/pyth-crosschain.git", subdir = "target_chains/sui/contracts", rev = "sui-contract-testnet" }';
