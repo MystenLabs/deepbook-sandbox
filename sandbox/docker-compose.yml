@@ -239,3 +239,28 @@ services:
             retries: 5
             start_period: 15s
         restart: unless-stopped
+
+    # ============================================================
+    # Oracle Service
+    # Updates Pyth price feeds for SUI and DEEP on localnet
+    # ============================================================
+    oracle-service:
+        profiles:
+            - localnet
+        build:
+            context: .
+            dockerfile: ./scripts/oracle-service/Dockerfile
+        container_name: oracle-service
+        environment:
+            NETWORK: localnet
+            PRIVATE_KEY: ${PRIVATE_KEY}
+            RPC_URL: http://sui-localnet:9000
+            PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID}
+            DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID}
+            SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID}
+        networks:
+            - deepbook-net
+        depends_on:
+            sui-localnet:
+                condition: service_healthy
+        restart: unless-stopped

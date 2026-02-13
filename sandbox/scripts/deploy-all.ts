@@ -1,6 +1,6 @@
 import path from 'path';
 import { getClient, getFaucetUrl, getNetwork, getRpcUrl, getSigner } from './utils/config';
-import { getSandboxRoot, startLocalnet, startRemote, configureAndStartLocalnetServices } from './utils/docker-compose';
+import { getSandboxRoot, startLocalnet, startRemote, configureAndStartLocalnetServices, startOracleService } from './utils/docker-compose';
 import { MoveDeployer } from './utils/deployer';
 import { updateEnvFile } from './utils/env';
 import { ensureMinimumBalance, getDeploymentEnv } from './utils/helpers';
@@ -97,6 +97,18 @@ async function main() {
 		if (network === 'localnet') {
 			console.log('🔍 Setting up pyth oracles...');
 			pythOracleIds = await setupPythOracles(client, signer, deployedPackages);
+
+			const pythPkg = deployedPackages.get('pyth')!;
+			updateEnvFile(sandboxRoot, {
+				PYTH_PACKAGE_ID: pythPkg.packageId,
+				DEEP_PRICE_INFO_OBJECT_ID: pythOracleIds.deepPriceInfoObjectId,
+				SUI_PRICE_INFO_OBJECT_ID: pythOracleIds.suiPriceInfoObjectId,
+			});
+			console.log('  ✅ Updated .env with pyth oracle IDs\n');
+
+			console.log('🔮 Starting oracle service container...');
+			await startOracleService(sandboxRoot);
+			console.log('  ✅ Oracle service started\n');
 		}
 
 		// Phase 5: Create DEEP/SUI pool

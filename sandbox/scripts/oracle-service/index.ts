@@ -1,7 +1,4 @@
-import fs from 'fs/promises';
-import path from 'path';
 import { getClient, getNetwork, getSigner } from '../utils/config';
-import { getSandboxRoot } from '../utils/docker-compose';
 import { PythClient } from './pyth-client';
 import { OracleUpdater } from './oracle-updater';
 import type { OracleConfig } from './types';
@@ -13,7 +10,9 @@ import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from './constants';
  * This service:
  * 1. Fetches historical price data from Pyth Network API every 10 seconds
  * 2. Updates the SUI and DEEP PriceInfoObjects on-chain
- * 3. Uses the latest deployment configuration
+ *
+ * Required env vars:
+ *   PYTH_PACKAGE_ID, DEEP_PRICE_INFO_OBJECT_ID, SUI_PRICE_INFO_OBJECT_ID
  */
 
 const DEFAULT_CONFIG: OracleConfig = {
@@ -26,30 +25,10 @@ const DEFAULT_CONFIG: OracleConfig = {
 	historicalDataHours: 24, // Fetch data from 24 hours ago
 };
 
-async function loadLatestDeployment() {
-	const deploymentsDir = path.join(getSandboxRoot(), 'deployments');
-
-	try {
-		const files = await fs.readdir(deploymentsDir);
-		const jsonFiles = files
-			.filter((f) => f.endsWith('.json'))
-			.sort()
-			.reverse(); // Latest first
-
-		if (jsonFiles.length === 0) {
-			throw new Error('No deployment files found');
-		}
-
-		const latestFile = jsonFiles[0];
-		const deploymentPath = path.join(deploymentsDir, latestFile);
-		const content = await fs.readFile(deploymentPath, 'utf-8');
-		const deployment = JSON.parse(content);
-
-		console.log(`📄 Loaded deployment: ${latestFile}`);
-		return deployment;
-	} catch (error) {
-		throw new Error(`Failed to load deployment: ${error}`);
-	}
+function requireEnv(name: string): string {
+	const value = process.env[name];
+	if (!value) throw new Error(`Missing required env var: ${name}`);
+	return value;
 }
 
 async function main() {
@@ -63,18 +42,9 @@ async function main() {
 		);
 	}
 
-	// Load deployment configuration
-	const deployment = await loadLatestDeployment();
-
-	if (!deployment.pythOracles) {
-		throw new Error(
-			'No pythOracles found in deployment. Make sure you ran deploy-all first.',
-		);
-	}
-
-	const { deepPriceInfoObjectId, suiPriceInfoObjectId } =
-		deployment.pythOracles;
-	const pythPackageId = deployment.packages.pyth.packageId;
+	const pythPackageId = requireEnv('PYTH_PACKAGE_ID');
+	const deepPriceInfoObjectId = requireEnv('DEEP_PRICE_INFO_OBJECT_ID');
+	const suiPriceInfoObjectId = requireEnv('SUI_PRICE_INFO_OBJECT_ID');
 
 	console.log('📋 Configuration:');
 	console.log(`  Network: ${network}`);
