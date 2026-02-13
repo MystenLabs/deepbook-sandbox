@@ -135,7 +135,7 @@ async function main() {
 			}),
 			pool: {
 				poolId: pool.poolId,
-				baseCoin: `${deployedPackages.get('deepbook')!.packageId}::deep::DEEP`,
+				baseCoin: `${deployedPackages.get('token')!.packageId}::deep::DEEP`,
 				quoteCoin: '0x2::sui::SUI',
 				transactionDigest: pool.transactionDigest,
 			},
