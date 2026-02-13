@@ -1,3 +1,4 @@
 [submodule "external/deepbook"]
 	path = external/deepbook
 	url = https://github.com/MystenLabs/deepbookv3
+	ignore = dirty
