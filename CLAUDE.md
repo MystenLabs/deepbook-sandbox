@@ -27,6 +27,16 @@ deepbook-sandbox/
 ├── README.md              # Project overview
 ├── sandbox/
 │   ├── docker-compose.yml # Docker orchestration
+│   ├── scripts/
+│   │   ├── deploy-all.ts          # Main deployment script
+│   │   ├── utils/                 # Shared utilities (config, deployer, env, helpers, pool, oracle)
+│   │   └── oracle-service/        # Pyth price feed updater (Dockerized)
+│   │       ├── Dockerfile
+│   │       ├── index.ts           # Service loop + status HTTP server (port 9010)
+│   │       ├── pyth-client.ts     # Pyth API client
+│   │       ├── oracle-updater.ts  # On-chain update logic
+│   │       ├── constants.ts       # Price feed IDs
+│   │       └── types.ts           # TypeScript types
 │   └── faucet/            # Faucet service (TypeScript/Hono)
 │       ├── Dockerfile
 │       ├── package.json
@@ -58,6 +68,7 @@ Services in the stack:
 | **DeepBook Indexer** | `remote` | Indexes DeepBook events (testnet/mainnet only) | 9184 (metrics) |
 | **DeepBook Server** | `remote` | REST API for querying indexed data | 9008 |
 | **DeepBook Faucet** | `localnet`, `remote` | Distributes SUI (proxied) and DEEP tokens | 9009 |
+| **Oracle Service** | `localnet` | Updates Pyth price feeds for DEEP/SUI every 10s | 9010 (status) |
 
 > **Note:** The indexer only supports testnet/mainnet (hardcoded checkpoint URLs). It cannot index a local Sui node.
 
@@ -89,14 +100,17 @@ docker compose logs -f
 ```bash
 cd sandbox
 
-# Deploy all contracts and start localnet
+# Deploy all contracts, start localnet + oracle service
 pnpm deploy-all
-
-# Start oracle service (updates SUI/DEEP price feeds every 3s)
-pnpm oracle-service
 
 # Stop all services
 pnpm down
+
+# Check oracle service status/prices
+curl http://localhost:9010/
+
+# View oracle service logs
+docker compose logs -f oracle-service
 ```
 
 ### Git Submodules
@@ -123,18 +137,25 @@ bunx prettier-move -c *.move --write        # Format Move files
 
 ## Oracle Service
 
-The oracle service (`./sandbox/scripts/oracle-service/`) provides automated price feed updates for localnet testing:
+The oracle service (`./sandbox/scripts/oracle-service/`) runs as a Docker container and provides automated price feed updates for localnet testing:
 
+- **Deployment**: Runs in Docker as part of the `localnet` profile, started automatically by `pnpm deploy-all`
 - **Purpose**: Updates Pyth price oracle contracts for SUI and DEEP every 10 seconds
+- **Status endpoint**: `http://localhost:9010` — returns JSON with latest prices, update count, and errors
 - **Data Source**: Fetches historical price data from Pyth Network API (24h ago)
+- **Env vars** (set automatically by deploy-all):
+  - `PYTH_PACKAGE_ID`: Deployed pyth package address
+  - `DEEP_PRICE_INFO_OBJECT_ID`: DEEP PriceInfoObject ID
+  - `SUI_PRICE_INFO_OBJECT_ID`: SUI PriceInfoObject ID
 - **Price Feeds**:
   - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
   - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
 - **Files**:
-  - `index.ts`: Main service loop
+  - `index.ts`: Main service loop + status HTTP server
   - `pyth-client.ts`: Pyth API client
   - `oracle-updater.ts`: On-chain update logic
   - `types.ts`: TypeScript types
+  - `Dockerfile`: Container image definition
 
 See [./sandbox/scripts/oracle-service/README.md](./sandbox/scripts/oracle-service/README.md) for detailed documentation.
 

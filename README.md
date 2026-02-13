@@ -10,6 +10,7 @@ This repository provides a complete local development environment for DeepBook V
 - PostgreSQL database
 - DeepBook Move package deployment
 - DeepBook indexer
+- Pyth oracle price feeds with automated updates (oracle service)
 - Pre-configured DEEP-SUI liquidity pool
 
 ## Prerequisites
@@ -35,8 +36,10 @@ This repository provides a complete local development environment for DeepBook V
    This single command will:
    - Start a Sui localnet in Docker (with faucet)
    - Start a PostgreSQL database
-   - Deploy all DeepBook Move packages (token, deepbook, deepbook_margin, etc.)
+   - Deploy all DeepBook Move packages (token, deepbook, deepbook_margin, pyth, etc.)
    - Start the DeepBook indexer
+   - Create Pyth oracle price feeds for SUI and DEEP
+   - Start the oracle service (updates prices every 10s)
    - Create a DEEP-SUI liquidity pool
    - Generate a config file with all deployment artifacts
 
@@ -45,7 +48,8 @@ This repository provides a complete local development environment for DeepBook V
    After deployment completes, you'll have:
    - **RPC endpoint**: `http://localhost:9000`
    - **Faucet**: `http://localhost:9123`
-   - **Deployment config**: `deployments/{DATE}_{TIME}_{NETWORK}.json` (e.g. `deployments/2025-01-30_14-30-45_localnet.json`)
+   - **Oracle status**: `http://localhost:9010` (latest SUI/DEEP prices)
+   - **Deployment config**: `deployments/{DATE}_{TIME}_{NETWORK}.json`
 
 ## Configuration
 
