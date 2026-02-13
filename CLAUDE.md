@@ -40,6 +40,10 @@ deepbook-sandbox/
 │   │       │   └── deep-faucet.ts # Signs DEEP transfers from deployer
 │   │       └── routes/
 │   │           └── faucet.ts      # POST /faucet endpoint
+│   ├── docker/
+│   │   └── market-maker/  # Market maker Docker image
+│   │       ├── Dockerfile
+│   │       └── entrypoint.sh
 │   └── scripts/
 │       ├── deploy-all.ts      # Deploy DeepBook to localnet
 │       ├── seed-liquidity.ts  # One-shot initial liquidity seeding
@@ -66,6 +70,7 @@ Services in the stack:
 |---------|---------|-------------|-------|
 | **PostgreSQL** | (always) | Database for the indexer | 5432 |
 | **Sui Localnet** | `localnet` | Local Sui blockchain for testing | 9000 (RPC), 9123 (faucet) |
+| **Market Maker** | `localnet` | Automated market maker for DEEP/SUI pool | 3001 (health), 9091 (metrics) |
 | **DeepBook Indexer** | `remote` | Indexes DeepBook events (testnet/mainnet only) | 9184 (metrics) |
 | **DeepBook Server** | `remote` | REST API for querying indexed data | 9008 |
 | **DeepBook Faucet** | `localnet`, `remote` | Distributes SUI (proxied) and DEEP tokens | 9009 |
@@ -82,8 +87,9 @@ docker compose --profile remote up -d
 docker compose --profile remote down      # Stop services
 docker compose --profile remote down -v   # Fresh start (remove volumes)
 
-# Localnet (Sui node only - for Move development)
-docker compose --profile localnet up -d
+# Localnet (Sui node + market maker)
+docker compose --profile localnet up -d   # Start sui-localnet + market-maker
+pnpm deploy-all                           # Deploy contracts (market maker auto-starts when manifest appears)
 docker compose --profile localnet down
 
 # Stop all services (any profile)
@@ -91,7 +97,10 @@ docker compose --profile remote --profile localnet down
 
 # View logs
 docker compose logs -f
+docker compose logs -f market-maker       # Market maker logs only
 ```
+
+> **Localnet workflow:** The market maker container starts immediately but waits (polls) for a deployment manifest in `deployments/`. Run `pnpm deploy-all` on the host to deploy contracts -- the market maker detects the manifest and begins trading automatically.
 
 ## Development Commands
 
@@ -135,6 +144,24 @@ sui move test --skip-fetch-latest-git-deps  # Skip fetching deps if unchanged
 bunx prettier-move -c *.move --write        # Format Move files
 ```
 
+## Sandbox Scripts
+
+```bash
+cd sandbox
+
+# Deploy DeepBook to localnet (starts containers, deploys Move packages, creates DEEP/SUI pool, seeds liquidity)
+pnpm deploy-all
+
+# Seed initial liquidity into the latest deployed pool (standalone, runs once and exits)
+pnpm seed-liquidity
+
+# Run the market maker (requires deploy-all first)
+pnpm market-maker
+
+# Stop localnet containers
+pnpm down
+```
+
 ## Oracle Service
 
 The oracle service (`./sandbox/scripts/oracle-service/`) provides automated price feed updates for localnet testing:
@@ -152,11 +179,12 @@ The oracle service (`./sandbox/scripts/oracle-service/`) provides automated pric
 
 See [./sandbox/scripts/oracle-service/README.md](./sandbox/scripts/oracle-service/README.md) for detailed documentation.
 
-## Market Maker Configuration
+### Market Maker Configuration
 
 Environment variables for `pnpm market-maker`:
 - `MM_SPREAD_BPS` - Spread in basis points (default: 10 = 0.1%)
 - `MM_LEVELS_PER_SIDE` - Orders per side (default: 5)
+- `MM_ORDER_SIZE_BASE` - Order size in base asset units (default: 10_000_000 = 10 DEEP)
 - `MM_REBALANCE_INTERVAL_MS` - Rebalance interval (default: 10000)
 - `MM_HEALTH_CHECK_PORT` - Health server port (default: 3000)
 - `MM_METRICS_PORT` - Prometheus metrics port (default: 9090)
