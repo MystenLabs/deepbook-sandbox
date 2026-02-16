@@ -181,6 +181,7 @@ async function main() {
 			console.log(`  • SUI pyth oracle (PriceInfoObject): ${pythOracleIds?.suiPriceInfoObjectId}`);
 			console.log(`  • Oracle Service status: http://localhost:9010`);
 		}
+		console.log(`  • Market Maker status: http://localhost:3001/health`);
 		console.log(`  • Deployer Address: ${signerAddress}`);
 		console.log(`  • DEEP/SUI Pool: ${pool.poolId}`);
 		console.log(`  • Deployment File: ${deploymentPath}\n`);
