@@ -165,6 +165,32 @@ export async function configureAndStartLocalnetServices(
 	await waitForIndexer('http://127.0.0.1:9184/metrics');
 }
 
+/**
+ * Start the oracle service container.
+ * Reads pyth oracle IDs from the .env file (via Docker Compose env substitution).
+ * Uses --force-recreate so the container picks up the latest env values.
+ */
+export async function startOracleService(
+	sandboxRoot?: string,
+	envOverlay?: Record<string, string>,
+): Promise<void> {
+	const cwd = sandboxRoot ?? getSandboxRoot();
+	const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
+	const result = spawnSync(
+		'docker',
+		['compose', '--profile', 'localnet', 'up', '-d', '--force-recreate', 'oracle-service'],
+		{
+			cwd,
+			encoding: 'utf-8',
+			stdio: 'inherit',
+			env,
+		},
+	);
+	if (result.status !== 0) {
+		throw new Error(`Failed to start oracle service (exit ${result.status})`);
+	}
+}
+
 async function waitForIndexer(url: string, maxAttempts = 60): Promise<void> {
 	for (let i = 0; i < maxAttempts; i++) {
 		try {

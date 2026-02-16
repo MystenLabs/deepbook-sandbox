@@ -1,10 +1,8 @@
-import fs from 'fs/promises';
-import path from 'path';
+import http from 'http';
 import { getClient, getNetwork, getSigner } from '../utils/config';
-import { getSandboxRoot } from '../utils/docker-compose';
 import { PythClient } from './pyth-client';
 import { OracleUpdater } from './oracle-updater';
-import type { OracleConfig } from './types';
+import type { OracleConfig, ParsedPriceData } from './types';
 import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from './constants';
 
 /**
@@ -13,8 +11,13 @@ import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from './constants';
  * This service:
  * 1. Fetches historical price data from Pyth Network API every 10 seconds
  * 2. Updates the SUI and DEEP PriceInfoObjects on-chain
- * 3. Uses the latest deployment configuration
+ * 3. Exposes a health/status endpoint on port 9010
+ *
+ * Required env vars:
+ *   PYTH_PACKAGE_ID, DEEP_PRICE_INFO_OBJECT_ID, SUI_PRICE_INFO_OBJECT_ID
  */
+
+const STATUS_PORT = 9010;
 
 const DEFAULT_CONFIG: OracleConfig = {
 	pythApiUrl: 'https://benchmarks.pyth.network',
@@ -26,30 +29,73 @@ const DEFAULT_CONFIG: OracleConfig = {
 	historicalDataHours: 24, // Fetch data from 24 hours ago
 };
 
-async function loadLatestDeployment() {
-	const deploymentsDir = path.join(getSandboxRoot(), 'deployments');
+function requireEnv(name: string): string {
+	const value = process.env[name];
+	if (!value) throw new Error(`Missing required env var: ${name}`);
+	return value;
+}
 
-	try {
-		const files = await fs.readdir(deploymentsDir);
-		const jsonFiles = files
-			.filter((f) => f.endsWith('.json'))
-			.sort()
-			.reverse(); // Latest first
+/** Shared state for the status endpoint */
+const status = {
+	updateCount: 0,
+	errorCount: 0,
+	lastUpdateTime: null as string | null,
+	lastSuiPrice: null as string | null,
+	lastDeepPrice: null as string | null,
+};
 
-		if (jsonFiles.length === 0) {
-			throw new Error('No deployment files found');
+function formatPrice(price: string, expo: number): string {
+	const priceNum = Number.parseInt(price);
+	const formatted = priceNum * Math.pow(10, expo);
+	return formatted.toFixed(Math.abs(expo));
+}
+
+function updateStatus(suiData: ParsedPriceData, deepData: ParsedPriceData) {
+	status.lastUpdateTime = new Date().toISOString();
+	status.lastSuiPrice = formatPrice(suiData.price.price, suiData.price.expo);
+	status.lastDeepPrice = formatPrice(deepData.price.price, deepData.price.expo);
+}
+
+function startStatusServer() {
+	const server = http.createServer((req, res) => {
+		const path = req.url?.split('?')[0] ?? '';
+		const isStatusPath = path === '/' || path === '/status';
+
+		if (!isStatusPath) {
+			res.writeHead(404, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ error: 'Not Found' }, null, 2));
+			return;
+		}
+		if (req.method !== 'GET') {
+			res.writeHead(405, {
+				'Content-Type': 'application/json',
+				Allow: 'GET',
+			});
+			res.end(JSON.stringify({ error: 'Method Not Allowed' }, null, 2));
+			return;
 		}
 
-		const latestFile = jsonFiles[0];
-		const deploymentPath = path.join(deploymentsDir, latestFile);
-		const content = await fs.readFile(deploymentPath, 'utf-8');
-		const deployment = JSON.parse(content);
-
-		console.log(`📄 Loaded deployment: ${latestFile}`);
-		return deployment;
-	} catch (error) {
-		throw new Error(`Failed to load deployment: ${error}`);
-	}
+		res.writeHead(200, { 'Content-Type': 'application/json' });
+		res.end(
+			JSON.stringify(
+				{
+					status: 'ok',
+					updates: status.updateCount,
+					errors: status.errorCount,
+					lastUpdate: status.lastUpdateTime,
+					prices: {
+						sui: status.lastSuiPrice ? `$${status.lastSuiPrice}` : null,
+						deep: status.lastDeepPrice ? `$${status.lastDeepPrice}` : null,
+					},
+				},
+				null,
+				2,
+			),
+		);
+	});
+	server.listen(STATUS_PORT, () => {
+		console.log(`📊 Status endpoint: http://localhost:${STATUS_PORT}\n`);
+	});
 }
 
 async function main() {
@@ -63,18 +109,9 @@ async function main() {
 		);
 	}
 
-	// Load deployment configuration
-	const deployment = await loadLatestDeployment();
-
-	if (!deployment.pythOracles) {
-		throw new Error(
-			'No pythOracles found in deployment. Make sure you ran deploy-all first.',
-		);
-	}
-
-	const { deepPriceInfoObjectId, suiPriceInfoObjectId } =
-		deployment.pythOracles;
-	const pythPackageId = deployment.packages.pyth.packageId;
+	const pythPackageId = requireEnv('PYTH_PACKAGE_ID');
+	const deepPriceInfoObjectId = requireEnv('DEEP_PRICE_INFO_OBJECT_ID');
+	const suiPriceInfoObjectId = requireEnv('SUI_PRICE_INFO_OBJECT_ID');
 
 	console.log('📋 Configuration:');
 	console.log(`  Network: ${network}`);
@@ -99,8 +136,8 @@ async function main() {
 		throw new Error(`Failed to connect to Sui RPC: ${error}`);
 	}
 
-	let updateCount = 0;
-	let errorCount = 0;
+	// Start status/health endpoint
+	startStatusServer();
 
 	console.log('🚀 Starting price feed updates...\n');
 
@@ -112,20 +149,26 @@ async function main() {
 			// Fetch price data from Pyth
 			const priceUpdate = await pythClient.fetchPriceUpdates();
 
+			// Find SUI and DEEP data for status tracking
+			const suiData = priceUpdate.parsed.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
+			const deepData = priceUpdate.parsed.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
+
 			// Update on-chain oracles
 			await oracleUpdater.updatePriceFeeds(priceUpdate.parsed, {
 				sui: suiPriceInfoObjectId,
 				deep: deepPriceInfoObjectId,
 			});
 
-			updateCount++;
+			status.updateCount++;
+			if (suiData && deepData) updateStatus(suiData, deepData);
+
 			const elapsed = Date.now() - startTime;
 			console.log(
-				`  ⏱️  Update #${updateCount} completed in ${elapsed}ms (errors: ${errorCount})\n`,
+				`  ⏱️  Update #${status.updateCount} completed in ${elapsed}ms (errors: ${status.errorCount})\n`,
 			);
 		} catch (error) {
-			errorCount++;
-			console.error(`❌ Update failed (error #${errorCount}):`, error);
+			status.errorCount++;
+			console.error(`❌ Update failed (error #${status.errorCount}):`, error);
 			console.log('  Continuing...\n');
 		}
 	};
