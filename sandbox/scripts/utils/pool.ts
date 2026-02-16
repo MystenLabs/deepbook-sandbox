@@ -73,10 +73,10 @@ export class PoolCreator {
 		const tx = new Transaction();
 
 		// Parameters: base = DEEP (6 decimals), quote = SUI (9 decimals). All must be power of ten.
-		const tickSize = 10_000_000; // 0.00001 SUI (price tick in quote, 9 decimals)
+		const tickSize = 1_000_000; // 0.001 SUI (price tick in quote, 9 decimals)
 		const lotSize = 1_000_000; // 1 DEEP (base quantity step, 6 decimals)
 		const minSize = 10_000_000; // 10 DEEP minimum order (base, 6 decimals)
-		const whitelistedPool = false;
+		const whitelistedPool = true;
 		const stablePool = false;
 
 		tx.setGasBudget(200_000_000);

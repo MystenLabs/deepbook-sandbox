@@ -146,7 +146,7 @@ async function main() {
 			}),
 			pool: {
 				poolId: pool.poolId,
-				baseCoin: `${deployedPackages.get('deepbook')!.packageId}::deep::DEEP`,
+				baseCoin: `${deployedPackages.get('token')!.packageId}::deep::DEEP`,
 				quoteCoin: '0x2::sui::SUI',
 				transactionDigest: pool.transactionDigest,
 			},
@@ -164,7 +164,11 @@ async function main() {
 
 		console.log(`  ✅ Deployment written to ${deploymentPath}\n`);
 
-		// Phase 8: Success!
+		// Note: Seed liquidity is skipped by default.
+		// The market maker will place its own grid when it starts.
+		// Run `pnpm seed-liquidity` manually if you need orders before the MM starts.
+
+		// Phase 9: Success!
 		console.log('✨ DeepBook environment ready!\n');
 		console.log('📋 Deployment Info:');
 		console.log(`  • RPC URL: ${getRpcUrl(network)}`);
