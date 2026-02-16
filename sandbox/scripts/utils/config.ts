@@ -17,7 +17,7 @@ const envSchema = z
 		PRIVATE_KEY: z.string().min(1, 'PRIVATE_KEY is required'),
 		NETWORK: z.string().optional(),
 		RPC_URL: z.string().optional(),
-		SUI_TOOLS_IMAGE: z.string().min(1, 'SUI_TOOLS_IMAGE is required (e.g. mysten/sui-tools:compat-arm64 or :compat for x86)'),
+		SUI_TOOLS_IMAGE: z.string().optional(),
 	})
 	.transform((raw) => {
 		const network = raw.NETWORK?.toLowerCase();
@@ -29,7 +29,7 @@ const envSchema = z
 			privateKey: raw.PRIVATE_KEY.trim(),
 			network: validNetwork,
 			rpcUrl: raw.RPC_URL?.trim() || undefined,
-			suiToolsImage: raw.SUI_TOOLS_IMAGE.trim(),
+			suiToolsImage: raw.SUI_TOOLS_IMAGE?.trim(),
 		};
 	});
 
