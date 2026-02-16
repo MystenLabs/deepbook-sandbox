@@ -1,23 +1,23 @@
 repos:
-- repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v5.0.0
-  hooks:
-  - id: check-merge-conflict
-  - id: check-yaml
-  - id: trailing-whitespace
-  - id: check-symlinks
-  - id: end-of-file-fixer
-  - id: mixed-line-ending
-  - id: trailing-whitespace
-- repo: https://github.com/editorconfig-checker/editorconfig-checker.python
-  rev: "3.0.3"
-  hooks:
-  - id: editorconfig-checker
-    alias: ec
-- repo: local
-  hooks:
-  - id: prettier
-    name: prettier
-    entry: prettier --check --ignore-unknown
-    language: system
-    types: [text]
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v5.0.0
+      hooks:
+          - id: check-merge-conflict
+          - id: check-yaml
+          - id: trailing-whitespace
+          - id: check-symlinks
+          - id: end-of-file-fixer
+          - id: mixed-line-ending
+          - id: trailing-whitespace
+    - repo: https://github.com/editorconfig-checker/editorconfig-checker.python
+      rev: "3.0.3"
+      hooks:
+          - id: editorconfig-checker
+            alias: ec
+    - repo: local
+      hooks:
+          - id: prettier
+            name: prettier
+            entry: prettier --write --ignore-unknown
+            language: system
+            types: [text]

@@ -15,6 +15,11 @@ max_line_length = 100
 # Markdown — trailing whitespace creates <br> line breaks
 [*.md]
 trim_trailing_whitespace = false
+indent_size = 2
+
+# YAML — standard convention is 2-space indent
+[*.{yaml,yml}]
+indent_size = 2
 
 # Move-specific settings
 [*.move]
