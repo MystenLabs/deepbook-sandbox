@@ -1,0 +1,31 @@
+# EditorConfig is awesome: https://editorconfig.org
+
+root = true
+
+# Global settings (applies to all files unless overridden)
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+# Config files (YAML, JSON, TOML)
+[*.{yml,yaml,json,toml}]
+indent_size = 2
+
+# Markdown — trailing whitespace creates <br> line breaks
+[*.md]
+trim_trailing_whitespace = false
+
+# Rust-specific settings
+[*.rs]
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+# Move-specific settings
+[*.move]
+indent_size = 4
