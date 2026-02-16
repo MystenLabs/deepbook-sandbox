@@ -6,7 +6,7 @@ RUN corepack enable
 WORKDIR /app
 
 # Copy package files and install dependencies
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml ./
 RUN pnpm install
 
 # Copy TypeScript config and scripts

@@ -57,18 +57,41 @@ function updateStatus(suiData: ParsedPriceData, deepData: ParsedPriceData) {
 }
 
 function startStatusServer() {
-	const server = http.createServer((_req, res) => {
+	const server = http.createServer((req, res) => {
+		const path = req.url?.split('?')[0] ?? '';
+		const isStatusPath = path === '/' || path === '/status';
+
+		if (!isStatusPath) {
+			res.writeHead(404, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ error: 'Not Found' }, null, 2));
+			return;
+		}
+		if (req.method !== 'GET') {
+			res.writeHead(405, {
+				'Content-Type': 'application/json',
+				Allow: 'GET',
+			});
+			res.end(JSON.stringify({ error: 'Method Not Allowed' }, null, 2));
+			return;
+		}
+
 		res.writeHead(200, { 'Content-Type': 'application/json' });
-		res.end(JSON.stringify({
-			status: 'ok',
-			updates: status.updateCount,
-			errors: status.errorCount,
-			lastUpdate: status.lastUpdateTime,
-			prices: {
-				sui: status.lastSuiPrice ? `$${status.lastSuiPrice}` : null,
-				deep: status.lastDeepPrice ? `$${status.lastDeepPrice}` : null,
-			},
-		}, null, 2));
+		res.end(
+			JSON.stringify(
+				{
+					status: 'ok',
+					updates: status.updateCount,
+					errors: status.errorCount,
+					lastUpdate: status.lastUpdateTime,
+					prices: {
+						sui: status.lastSuiPrice ? `$${status.lastSuiPrice}` : null,
+						deep: status.lastDeepPrice ? `$${status.lastDeepPrice}` : null,
+					},
+				},
+				null,
+				2,
+			),
+		);
 	});
 	server.listen(STATUS_PORT, () => {
 		console.log(`📊 Status endpoint: http://localhost:${STATUS_PORT}\n`);
