@@ -175,7 +175,7 @@ BEGIN
 END;
 $$;
 
--- combine intervals 
+-- combine intervals
 CREATE OR REPLACE FUNCTION get_ohclv(
     p_interval TEXT,
     p_pool_id TEXT DEFAULT NULL,

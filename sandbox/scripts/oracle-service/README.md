@@ -12,16 +12,17 @@ This service continuously fetches historical price data from Pyth Network and up
 - 📊 **Historical Data**: Fetches prices from 24 hours ago using Pyth's timestamp API
 - 🎯 **SUI & DEEP**: Updates both price feeds simultaneously
 - 📡 **Real Pyth Data**: Uses actual Pyth Network price feeds:
-  - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
-  - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
+    - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
+    - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
 - 🔧 **Self-Configuring**: Automatically loads deployment configuration
 
 ## Prerequisites
 
 1. Deploy the DeepBook contracts and Pyth oracles:
-   ```bash
-   pnpm deploy-all
-   ```
+
+    ```bash
+    pnpm deploy-all
+    ```
 
 2. Make sure localnet is running (started by deploy-all)
 
@@ -54,8 +55,8 @@ You should see output like:
   ✅ Received 2 price feeds
 🔄 Updating on-chain price feeds...
   ✅ Updated price feeds (digest: 8a9b2c3d...)
-     SUI:  $3.45000000
-     DEEP: $0.02150000
+    SUI:  $3.45000000
+    DEEP: $0.02150000
   ⏱️  Update #1 completed in 1234ms (errors: 0)
 
 👀 Oracle service is running. Press Ctrl+C to stop.
@@ -82,18 +83,23 @@ Default configuration in `index.ts`:
 ## Troubleshooting
 
 ### "No deployment files found"
+
 Run `pnpm deploy-all` first to deploy the contracts.
 
 ### "No pythOracles found in deployment"
+
 The deployment didn't include Pyth oracles. This only works on localnet. Make sure you're using the latest deployment script.
 
 ### "Transaction failed"
+
 Check that:
+
 - Localnet is still running
 - Your deployer address has sufficient SUI balance
 - The PriceInfoObject IDs in the deployment are correct
 
 ### Connection errors to Pyth API
+
 The Pyth benchmark API may be rate-limited or temporarily unavailable. The service will continue retrying on the next interval.
 
 ## Testing

@@ -19,7 +19,7 @@ module pyth::pyth {
             let new_price_info_object = price_info::new_price_info_object(cur_price_info, ctx);
             transfer::public_share_object(new_price_info_object);
         };
-    } 
+    }
 
     /// MOCK IMPLEMENTATION
     /// Update a singular Pyth PriceInfoObject (containing a price feed)
@@ -27,7 +27,7 @@ module pyth::pyth {
         update: &PriceInfo,
         price_info_object: &mut PriceInfoObject,
     ) {
-        if (is_fresh_update(update, price_info_object)){          
+        if (is_fresh_update(update, price_info_object)){
             price_info::update_price_info_object(
                 price_info_object,
                 update

@@ -10,7 +10,6 @@ insert_final_newline = true
 trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
-max_line_length = 100
 
 # Markdown — trailing whitespace creates <br> line breaks
 [*.md]
@@ -20,6 +19,14 @@ indent_size = 2
 # YAML — standard convention is 2-space indent
 [*.{yaml,yml}]
 indent_size = 2
+
+# Shell scripts — convention is 2-space indent
+[*.sh]
+indent_size = 2
+
+# SQL — mixed indentation in queries
+[*.sql]
+indent_size = unset
 
 # Move-specific settings
 [*.move]

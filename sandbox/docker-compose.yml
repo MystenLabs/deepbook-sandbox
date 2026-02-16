@@ -110,8 +110,8 @@ services:
         volumes:
             - ./deployments:/app/deployments
         ports:
-            - "3001:3000"  # Health check (offset to avoid host conflict)
-            - "9091:9090"  # Prometheus metrics (offset)
+            - "3001:3000" # Health check (offset to avoid host conflict)
+            - "9091:9090" # Prometheus metrics (offset)
         networks:
             - deepbook-net
         depends_on:
@@ -153,11 +153,7 @@ services:
             postgres:
                 condition: service_healthy
         healthcheck:
-            test:
-                [
-                    "CMD-SHELL",
-                    "curl -sf http://localhost:9184/metrics || exit 1",
-                ]
+            test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
             interval: 30s
             timeout: 10s
             retries: 5
@@ -193,11 +189,7 @@ services:
             sui-localnet:
                 condition: service_healthy
         healthcheck:
-            test:
-                [
-                    "CMD-SHELL",
-                    "curl -sf http://localhost:9184/metrics || exit 1",
-                ]
+            test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
             interval: 30s
             timeout: 10s
             retries: 5

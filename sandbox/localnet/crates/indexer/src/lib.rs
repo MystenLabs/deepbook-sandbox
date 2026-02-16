@@ -20,7 +20,7 @@ const MAINNET_PACKAGES: &[&str] = &[
     "0x2d93777cc8b67c064b495e8606f2f8f5fd578450347bbe7b36e0bc03963c1c40", // Latest
 ];
 
-// TODO: 
+// TODO:
 const TESTNET_PACKAGES: &[&str] = &[
     "0x467e34e75debeea8b89d03aea15755373afc39a7c96c9959549c7f5f689843cf",
     "0x5d520a3e3059b68530b2ef4080126dbb5d234e0afd66561d0d9bd48127a06044",

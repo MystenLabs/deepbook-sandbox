@@ -5,13 +5,14 @@ A TypeScript market maker service for DeepBook V3 on Sui. The service maintains 
 ## Prerequisites
 
 1. Deploy DeepBook to localnet:
-   ```bash
-   cd sandbox
-   cp .env.example .env
-   # Edit .env: set PRIVATE_KEY and SUI_TOOLS_IMAGE
-   pnpm install
-   pnpm deploy-all
-   ```
+
+    ```bash
+    cd sandbox
+    cp .env.example .env
+    # Edit .env: set PRIVATE_KEY and SUI_TOOLS_IMAGE
+    pnpm install
+    pnpm deploy-all
+    ```
 
 2. Ensure you have SUI in your wallet (the faucet is called during deploy-all)
 
@@ -26,63 +27,69 @@ pnpm market-maker
 
 Configuration can be set via environment variables:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MM_FALLBACK_MID_PRICE` | Fallback mid price when oracle is unavailable (9 decimals for SUI) | `100000000` (0.1 DEEP/SUI) |
-| `MM_SPREAD_BPS` | Spread in basis points | `10` (0.1%) |
-| `MM_LEVELS_PER_SIDE` | Number of orders per side | `5` |
-| `MM_LEVEL_SPACING_BPS` | Spacing between levels in bps | `5` (0.05%) |
-| `MM_ORDER_SIZE_BASE` | Order size in base units (6 decimals for DEEP) | `10000000` (10 DEEP) |
-| `MM_REBALANCE_INTERVAL_MS` | Rebalance interval in ms | `10000` (10s) |
-| `MM_HEALTH_CHECK_PORT` | Health check server port | `3000` |
-| `MM_METRICS_PORT` | Prometheus metrics port | `9090` |
-| `DEPLOYMENT_PATH` | Path to deployment manifest | Auto-detects latest |
+| Variable                   | Description                                                        | Default                    |
+| -------------------------- | ------------------------------------------------------------------ | -------------------------- |
+| `MM_FALLBACK_MID_PRICE`    | Fallback mid price when oracle is unavailable (9 decimals for SUI) | `100000000` (0.1 DEEP/SUI) |
+| `MM_SPREAD_BPS`            | Spread in basis points                                             | `10` (0.1%)                |
+| `MM_LEVELS_PER_SIDE`       | Number of orders per side                                          | `5`                        |
+| `MM_LEVEL_SPACING_BPS`     | Spacing between levels in bps                                      | `5` (0.05%)                |
+| `MM_ORDER_SIZE_BASE`       | Order size in base units (6 decimals for DEEP)                     | `10000000` (10 DEEP)       |
+| `MM_REBALANCE_INTERVAL_MS` | Rebalance interval in ms                                           | `10000` (10s)              |
+| `MM_HEALTH_CHECK_PORT`     | Health check server port                                           | `3000`                     |
+| `MM_METRICS_PORT`          | Prometheus metrics port                                            | `9090`                     |
+| `DEPLOYMENT_PATH`          | Path to deployment manifest                                        | Auto-detects latest        |
 
 ## Endpoints
 
 ### Health Check
+
 ```bash
 curl http://localhost:3000/health
 ```
 
 Response:
+
 ```json
 {
-  "status": "healthy",
-  "timestamp": "2025-01-15T10:30:00.000Z",
-  "uptime": 60000,
-  "details": {
-    "activeOrders": 10,
-    "totalOrdersPlaced": 50,
-    "totalRebalances": 5,
-    "errors": 0
-  }
+    "status": "healthy",
+    "timestamp": "2025-01-15T10:30:00.000Z",
+    "uptime": 60000,
+    "details": {
+        "activeOrders": 10,
+        "totalOrdersPlaced": 50,
+        "totalRebalances": 5,
+        "errors": 0
+    }
 }
 ```
 
 ### Readiness Check
+
 ```bash
 curl http://localhost:3000/ready
 ```
 
 Response:
+
 ```json
 {
-  "ready": true,
-  "timestamp": "2025-01-15T10:30:00.000Z",
-  "checks": {
-    "balanceManager": true,
-    "pool": true
-  }
+    "ready": true,
+    "timestamp": "2025-01-15T10:30:00.000Z",
+    "checks": {
+        "balanceManager": true,
+        "pool": true
+    }
 }
 ```
 
 ### Prometheus Metrics
+
 ```bash
 curl http://localhost:9090/metrics
 ```
 
 Available metrics:
+
 - `mm_orders_placed_total` - Counter of total orders placed
 - `mm_orders_canceled_total` - Counter of total orders canceled
 - `mm_rebalances_total` - Counter of rebalance cycles
@@ -101,6 +108,7 @@ The market maker uses a simple grid strategy:
 5. Every `rebalanceIntervalMs`, cancel all orders and replace the grid
 
 Example with defaults (mid=0.1 SUI, spread=10bps, 5 levels, 5bps spacing):
+
 ```
 Ask Level 5: 0.10125 SUI
 Ask Level 4: 0.10100 SUI
@@ -118,6 +126,7 @@ Bid Level 5: 0.09875 SUI
 ## Graceful Shutdown
 
 Press `Ctrl+C` to stop the market maker. It will:
+
 1. Cancel all outstanding orders
 2. Stop the health and metrics servers
 3. Exit cleanly

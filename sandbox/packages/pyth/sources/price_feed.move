@@ -23,7 +23,7 @@ module pyth::price_feed {
         }
     }
 
-     public fun from(
+    public fun from(
         price_feed: &PriceFeed
     ): PriceFeed {
         PriceFeed {

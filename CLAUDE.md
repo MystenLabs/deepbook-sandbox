@@ -14,6 +14,7 @@ When making changes in this repository:
 This project provides a toolset for reducing builder friction with one-liner deployments, Dockerized stack, and a web dashboard for DeepBook V3 instances.
 
 **DeepBookV3** is included as a git submodule at `./external/deepbook/`. It's a decentralized central limit order book (CLOB) built on Sui. Key resources:
+
 - Submodule README: `./external/deepbook/README.md`
 - Move code guidelines: `./external/deepbook/CLAUDE.md` (use `/deepbookv3` skill for comprehensive Move guidance)
 - [Contract Documentation](https://docs.sui.io/standards/deepbookv3)
@@ -73,15 +74,15 @@ Docker compose file: `./sandbox/docker-compose.yml`
 
 Services in the stack:
 
-| Service | Profile | Description | Ports |
-|---------|---------|-------------|-------|
-| **PostgreSQL** | (always) | Database for the indexer | 5432 |
-| **Sui Localnet** | `localnet` | Local Sui blockchain for testing | 9000 (RPC), 9123 (faucet) |
-| **Market Maker** | `localnet` | Automated market maker for DEEP/SUI pool | 3001 (health), 9091 (metrics) |
-| **DeepBook Indexer** | `remote` | Indexes DeepBook events (testnet/mainnet only) | 9184 (metrics) |
-| **DeepBook Server** | `remote` | REST API for querying indexed data | 9008 |
-| **DeepBook Faucet** | `localnet`, `remote` | Distributes SUI (proxied) and DEEP tokens | 9009 |
-| **Oracle Service** | `localnet` | Updates Pyth price feeds for DEEP/SUI every 10s | 9010 (status) |
+| Service              | Profile              | Description                                     | Ports                         |
+| -------------------- | -------------------- | ----------------------------------------------- | ----------------------------- |
+| **PostgreSQL**       | (always)             | Database for the indexer                        | 5432                          |
+| **Sui Localnet**     | `localnet`           | Local Sui blockchain for testing                | 9000 (RPC), 9123 (faucet)     |
+| **Market Maker**     | `localnet`           | Automated market maker for DEEP/SUI pool        | 3001 (health), 9091 (metrics) |
+| **DeepBook Indexer** | `remote`             | Indexes DeepBook events (testnet/mainnet only)  | 9184 (metrics)                |
+| **DeepBook Server**  | `remote`             | REST API for querying indexed data              | 9008                          |
+| **DeepBook Faucet**  | `localnet`, `remote` | Distributes SUI (proxied) and DEEP tokens       | 9009                          |
+| **Oracle Service**   | `localnet`           | Updates Pyth price feeds for DEEP/SUI every 10s | 9010 (status)                 |
 
 > **Note:** The indexer only supports testnet/mainnet (hardcoded checkpoint URLs). It cannot index a local Sui node.
 
@@ -179,24 +180,25 @@ The oracle service (`./sandbox/scripts/oracle-service/`) runs as a Docker contai
 - **Status endpoint**: `http://localhost:9010` — returns JSON with latest prices, update count, and errors
 - **Data Source**: Fetches historical price data from Pyth Network API (24h ago)
 - **Env vars** (set automatically by deploy-all):
-  - `PYTH_PACKAGE_ID`: Deployed pyth package address
-  - `DEEP_PRICE_INFO_OBJECT_ID`: DEEP PriceInfoObject ID
-  - `SUI_PRICE_INFO_OBJECT_ID`: SUI PriceInfoObject ID
+    - `PYTH_PACKAGE_ID`: Deployed pyth package address
+    - `DEEP_PRICE_INFO_OBJECT_ID`: DEEP PriceInfoObject ID
+    - `SUI_PRICE_INFO_OBJECT_ID`: SUI PriceInfoObject ID
 - **Price Feeds**:
-  - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
-  - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
+    - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
+    - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
 - **Files**:
-  - `index.ts`: Main service loop + status HTTP server
-  - `pyth-client.ts`: Pyth API client
-  - `oracle-updater.ts`: On-chain update logic
-  - `types.ts`: TypeScript types
-  - `Dockerfile`: Container image definition
+    - `index.ts`: Main service loop + status HTTP server
+    - `pyth-client.ts`: Pyth API client
+    - `oracle-updater.ts`: On-chain update logic
+    - `types.ts`: TypeScript types
+    - `Dockerfile`: Container image definition
 
 See [./sandbox/scripts/oracle-service/README.md](./sandbox/scripts/oracle-service/README.md) for detailed documentation.
 
 ### Market Maker Configuration
 
 Environment variables for `pnpm market-maker`:
+
 - `MM_SPREAD_BPS` - Spread in basis points (default: 10 = 0.1%)
 - `MM_LEVELS_PER_SIDE` - Orders per side (default: 5)
 - `MM_ORDER_SIZE_BASE` - Order size in base asset units (default: 10_000_000 = 10 DEEP)

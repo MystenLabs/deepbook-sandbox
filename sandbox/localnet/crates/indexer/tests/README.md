@@ -34,20 +34,20 @@ Sui testnet provides a GraphQL API at `https://graphql.testnet.sui.io/graphql` f
 
 ```bash
 curl -X POST https://graphql.testnet.sui.io/graphql \
-     -H "Content-Type: application/json" \
-     -d '{
-          "query": "query { events(filter: { type: \"0x442d21fd044b90274934614c3c41416c83582f42eaa8feb4fecea301aa6bdd54::margin_registry::DeepbookPoolRegistered\" }) { nodes { transaction { effects { checkpoint { sequenceNumber } } } sender { address } timestamp } } }"
-     }'
+    -H "Content-Type: application/json" \
+    -d '{
+        "query": "query { events(filter: { type: \"0x442d21fd044b90274934614c3c41416c83582f42eaa8feb4fecea301aa6bdd54::margin_registry::DeepbookPoolRegistered\" }) { nodes { transaction { effects { checkpoint { sequenceNumber } } } sender { address } timestamp } } }"
+    }'
 ```
 
 #### Get Checkpoint Information
 
 ```bash
 curl -X POST https://graphql.testnet.sui.io/graphql \
-     -H "Content-Type: application/json" \
-     -d '{
-          "query": "query { checkpoint(sequenceNumber: 248053954) { sequenceNumber timestamp } }"
-     }'
+    -H "Content-Type: application/json" \
+    -d '{
+        "query": "query { checkpoint(sequenceNumber: 248053954) { sequenceNumber timestamp } }"
+    }'
 ```
 
 ### 2. Downloading Checkpoint Files
@@ -82,6 +82,7 @@ curl -I "https://checkpoints.testnet.sui.io/248053954.chk"
 ```
 
 Expected response should include:
+
 - `HTTP/2 200` (success)
 - `content-length: [size]` (file size > 0)
 - `content-type: application/octet-stream`
@@ -94,25 +95,25 @@ Expected response should include:
 - **Network:** Sui Testnet
 - **GraphQL Endpoint:** `https://graphql.testnet.sui.io/graphql`
 
-
-
 ### 3. Snapshot Management
 
 #### Review New Snapshots
+
 ```bash
 cargo insta review
 ```
 
 #### Accept All Snapshots
+
 ```bash
 cargo insta accept
 ```
 
 #### Run All Snapshot Tests
+
 ```bash
 cargo insta test
 ```
-
 
 ## Adding New Event Tests
 
@@ -122,10 +123,10 @@ Use the GraphQL API to search for events:
 
 ```bash
 curl -X POST https://graphql.testnet.sui.io/graphql \
-     -H "Content-Type: application/json" \
-     -d '{
-          "query": "query { events(filter: { type: \"[EVENT_TYPE]\" }) { nodes { transaction { effects { checkpoint { sequenceNumber } } } sender { address } timestamp } } }"
-     }'
+    -H "Content-Type: application/json" \
+    -d '{
+        "query": "query { events(filter: { type: \"[EVENT_TYPE]\" }) { nodes { transaction { effects { checkpoint { sequenceNumber } } } sender { address } timestamp } } }"
+    }'
 ```
 
 ### 2. Download Checkpoint Files
@@ -173,6 +174,7 @@ cargo insta review
 ### Common Issues
 
 #### 1. `initdb` Command Not Found
+
 ```bash
 # Install PostgreSQL development tools
 sudo apt install -y postgresql-server-dev-all
@@ -182,14 +184,17 @@ export PATH="/usr/lib/postgresql/16/bin:$PATH"
 ```
 
 #### 2. Database Connection Issues
+
 The tests use temporary databases, so no external database setup is required. If you see connection errors, ensure PostgreSQL development tools are properly installed.
 
 #### 3. Checkpoint File Not Found
+
 - Verify the checkpoint number is correct
 - Check that the checkpoint file exists: `curl -I "https://checkpoints.testnet.sui.io/[checkpoint].chk"`
 - Ensure the checkpoint is from the testnet (not mainnet)
 
 #### 4. No Events Found
+
 - Verify the event type string is correct
 - Check that events exist on the testnet using GraphQL API
 - Some events may not have been triggered yet on testnet
@@ -197,17 +202,20 @@ The tests use temporary databases, so no external database setup is required. If
 ### Debug Commands
 
 #### Check PostgreSQL Installation
+
 ```bash
 which initdb
 initdb --version
 ```
 
 #### Verify Checkpoint Files
+
 ```bash
 ls -la <project_root>/crates/indexer/tests/checkpoints/*/
 ```
 
 #### Check Test Compilation
+
 ```bash
 cd <project_root>
 cargo check --package deepbook-indexer
