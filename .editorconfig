@@ -12,19 +12,9 @@ indent_style = space
 indent_size = 4
 max_line_length = 100
 
-# Config files (YAML, JSON, TOML)
-[*.{yml,yaml,json,toml}]
-indent_size = 2
-
 # Markdown — trailing whitespace creates <br> line breaks
 [*.md]
 trim_trailing_whitespace = false
-
-# Rust-specific settings
-[*.rs]
-indent_style = space
-indent_size = 4
-max_line_length = 100
 
 # Move-specific settings
 [*.move]
