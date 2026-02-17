@@ -1,40 +1,65 @@
 import 'dotenv/config';
-import fs from 'fs/promises';
-import path from 'path';
-import { getClient, getSigner } from '../utils/config';
+import { getClient, getNetwork, getSigner } from '../utils/config';
 import { loadConfig, parseEnvConfig } from './config';
 import type { DeploymentManifest } from './types';
-import { explorerObjectUrl, explorerTxUrl } from './types';
+import { explorerObjectUrl } from './types';
 import { MarketMaker } from './market-maker';
 
-async function findLatestDeployment(): Promise<string> {
-	const deploymentsDir = path.join(process.cwd(), 'deployments');
-
-	try {
-		const files = await fs.readdir(deploymentsDir);
-		const jsonFiles = files.filter((f) => f.endsWith('.json'));
-
-		if (jsonFiles.length === 0) {
-			throw new Error('No deployment files found. Run `pnpm deploy-all` first.');
-		}
-
-		// Sort by name (which includes timestamp) to get latest
-		jsonFiles.sort().reverse();
-		return path.join(deploymentsDir, jsonFiles[0]);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-			throw new Error('Deployments directory not found. Run `pnpm deploy-all` first.');
-		}
-		throw error;
+function requireEnv(name: string): string {
+	const value = process.env[name];
+	if (!value) {
+		throw new Error(`Missing required environment variable: ${name}. Run \`pnpm deploy-all\` first.`);
 	}
+	return value;
 }
 
-async function loadDeployment(deploymentPath?: string): Promise<DeploymentManifest> {
-	const filePath = deploymentPath || (await findLatestDeployment());
-	console.log(`Loading deployment from: ${filePath}`);
+function loadManifestFromEnv(): DeploymentManifest {
+	const network = getNetwork() as 'localnet' | 'testnet';
+	const deepbookPackageId = requireEnv('DEEPBOOK_PACKAGE_ID');
+	const poolId = requireEnv('POOL_ID');
+	const baseCoinType = requireEnv('BASE_COIN_TYPE');
+	const deployerAddress = requireEnv('DEPLOYER_ADDRESS');
 
-	const content = await fs.readFile(filePath, 'utf-8');
-	return JSON.parse(content) as DeploymentManifest;
+	// Oracle env vars are optional (only set on localnet)
+	const pythPackageId = process.env.PYTH_PACKAGE_ID;
+	const deepPriceInfoObjectId = process.env.DEEP_PRICE_INFO_OBJECT_ID;
+	const suiPriceInfoObjectId = process.env.SUI_PRICE_INFO_OBJECT_ID;
+
+	return {
+		network: {
+			type: network,
+			rpcUrl: process.env.RPC_URL ?? '',
+			faucetUrl: '',
+		},
+		packages: {
+			deepbook: {
+				packageId: deepbookPackageId,
+				objects: [],
+				transactionDigest: '',
+			},
+			...(pythPackageId && {
+				pyth: {
+					packageId: pythPackageId,
+					objects: [],
+					transactionDigest: '',
+				},
+			}),
+		},
+		...(deepPriceInfoObjectId && suiPriceInfoObjectId && {
+			pythOracles: {
+				deepPriceInfoObjectId,
+				suiPriceInfoObjectId,
+			},
+		}),
+		pool: {
+			poolId,
+			baseCoin: baseCoinType,
+			quoteCoin: '0x2::sui::SUI',
+			transactionDigest: '',
+		},
+		deploymentTime: '',
+		deployerAddress,
+	};
 }
 
 async function main() {
@@ -42,9 +67,8 @@ async function main() {
 	console.log('  DeepBook V3 Market Maker');
 	console.log('='.repeat(50));
 
-	// Load deployment manifest
-	const deploymentPath = process.env.DEPLOYMENT_PATH;
-	const manifest = await loadDeployment(deploymentPath);
+	// Build manifest from environment variables
+	const manifest = loadManifestFromEnv();
 
 	const network = manifest.network.type;
 	console.log(`Network: ${network}`);

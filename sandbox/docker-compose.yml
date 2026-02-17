@@ -88,27 +88,32 @@ services:
     # ============================================================
     # Market Maker
     # Automated market maker for localnet DEEP/SUI pool
-    # Waits for deployment manifest before starting
+    # Started by deploy-all after pool creation (env vars set via .env)
     # ============================================================
     market-maker:
         profiles:
             - localnet
         build:
             context: .
-            dockerfile: docker/market-maker/Dockerfile
+            dockerfile: ./scripts/market-maker/Dockerfile
         container_name: deepbook-market-maker
         environment:
             NETWORK: localnet
             RPC_URL: http://sui-localnet:9000
             PRIVATE_KEY: ${PRIVATE_KEY:?Set PRIVATE_KEY in .env}
+            DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID}
+            POOL_ID: ${POOL_ID}
+            BASE_COIN_TYPE: ${BASE_COIN_TYPE}
+            DEPLOYER_ADDRESS: ${DEPLOYER_ADDRESS}
+            PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID}
+            DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID}
+            SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID}
             MM_SPREAD_BPS: ${MM_SPREAD_BPS:-10}
             MM_LEVELS_PER_SIDE: ${MM_LEVELS_PER_SIDE:-5}
             MM_ORDER_SIZE_BASE: ${MM_ORDER_SIZE_BASE:-}
             MM_REBALANCE_INTERVAL_MS: ${MM_REBALANCE_INTERVAL_MS:-10000}
             MM_HEALTH_CHECK_PORT: ${MM_HEALTH_CHECK_PORT:-3000}
             MM_METRICS_PORT: ${MM_METRICS_PORT:-9090}
-        volumes:
-            - ./deployments:/app/deployments
         ports:
             - "3001:3000"  # Health check (offset to avoid host conflict)
             - "9091:9090"  # Prometheus metrics (offset)

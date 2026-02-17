@@ -151,7 +151,7 @@ export async function configureAndStartLocalnetServices(
 
 	// Start the indexer (explicit service name to avoid starting other localnet services)
 	// --force-recreate ensures containers pick up new env vars on re-deploys
-	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', '--force-recreate', 'deepbook-local-indexer', 'deepbook-server', 'deepbook-faucet', 'market-maker'], {
+	const result = spawnSync('docker', ['compose', '--profile', 'localnet', 'up', '-d', '--force-recreate', 'deepbook-local-indexer', 'deepbook-server', 'deepbook-faucet'], {
 		cwd,
 		encoding: 'utf-8',
 		stdio: 'inherit',
@@ -178,7 +178,7 @@ export async function startOracleService(
 	const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
 	const result = spawnSync(
 		'docker',
-		['compose', '--profile', 'localnet', 'up', '-d', '--force-recreate', 'oracle-service'],
+		['compose', '--profile', 'localnet', 'up', '-d', '--build', '--force-recreate', 'oracle-service'],
 		{
 			cwd,
 			encoding: 'utf-8',
@@ -188,6 +188,32 @@ export async function startOracleService(
 	);
 	if (result.status !== 0) {
 		throw new Error(`Failed to start oracle service (exit ${result.status})`);
+	}
+}
+
+/**
+ * Start the market maker container.
+ * Reads pool/package IDs from the .env file (via Docker Compose env substitution).
+ * Uses --force-recreate so the container picks up the latest env values.
+ */
+export async function startMarketMaker(
+	sandboxRoot?: string,
+	envOverlay?: Record<string, string>,
+): Promise<void> {
+	const cwd = sandboxRoot ?? getSandboxRoot();
+	const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
+	const result = spawnSync(
+		'docker',
+		['compose', '--profile', 'localnet', 'up', '-d', '--build', '--force-recreate', 'market-maker'],
+		{
+			cwd,
+			encoding: 'utf-8',
+			stdio: 'inherit',
+			env,
+		},
+	);
+	if (result.status !== 0) {
+		throw new Error(`Failed to start market maker (exit ${result.status})`);
 	}
 }
 

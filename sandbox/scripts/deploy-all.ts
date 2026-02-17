@@ -1,6 +1,6 @@
 import path from 'path';
 import { getClient, getFaucetUrl, getNetwork, getRpcUrl, getSigner } from './utils/config';
-import { getSandboxRoot, startLocalnet, startRemote, configureAndStartLocalnetServices, startOracleService } from './utils/docker-compose';
+import { getSandboxRoot, startLocalnet, startRemote, configureAndStartLocalnetServices, startOracleService, startMarketMaker } from './utils/docker-compose';
 import { MoveDeployer } from './utils/deployer';
 import { updateEnvFile } from './utils/env';
 import { ensureMinimumBalance, getDeploymentEnv } from './utils/helpers';
@@ -164,11 +164,26 @@ async function main() {
 
 		console.log(`  ✅ Deployment written to ${deploymentPath}\n`);
 
+		// Phase 7: Start market maker (localnet only)
+		if (network === 'localnet') {
+			console.log('🤖 Phase 7: Starting market maker...');
+			updateEnvFile(sandboxRoot, {
+				DEEPBOOK_PACKAGE_ID: deployedPackages.get('deepbook')!.packageId,
+				POOL_ID: pool.poolId,
+				BASE_COIN_TYPE: `${deployedPackages.get('token')!.packageId}::deep::DEEP`,
+				DEPLOYER_ADDRESS: signerAddress,
+			});
+			console.log('  ✅ Updated .env with market maker IDs');
+
+			await startMarketMaker(sandboxRoot);
+			console.log('  ✅ Market maker started\n');
+		}
+
 		// Note: Seed liquidity is skipped by default.
 		// The market maker will place its own grid when it starts.
 		// Run `pnpm seed-liquidity` manually if you need orders before the MM starts.
 
-		// Phase 9: Success!
+		// Phase 8: Success!
 		console.log('✨ DeepBook environment ready!\n');
 		console.log('📋 Deployment Info:');
 		console.log(`  • RPC URL: ${getRpcUrl(network)}`);
