@@ -1,4 +1,4 @@
-exclude: '(sandbox/localnet/crates/|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|Cargo\.lock|bun\.lockb|\.lock)$'
+exclude: 'sandbox/localnet/crates/|(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|Cargo\.lock|bun\.lockb|\.lock)$'
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
