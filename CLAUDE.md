@@ -14,6 +14,7 @@ When making changes in this repository:
 This project provides a toolset for reducing builder friction with one-liner deployments, Dockerized stack, and a web dashboard for DeepBook V3 instances.
 
 **DeepBookV3** is included as a git submodule at `./external/deepbook/`. It's a decentralized central limit order book (CLOB) built on Sui. Key resources:
+
 - Submodule README: `./external/deepbook/README.md`
 - Move code guidelines: `./external/deepbook/CLAUDE.md` (use `/deepbookv3` skill for comprehensive Move guidance)
 - [Contract Documentation](https://docs.sui.io/standards/deepbookv3)
@@ -73,15 +74,15 @@ Docker compose file: `./sandbox/docker-compose.yml`
 
 Services in the stack:
 
-| Service | Profile | Description | Ports |
-|---------|---------|-------------|-------|
-| **PostgreSQL** | (always) | Database for the indexer | 5432 |
-| **Sui Localnet** | `localnet` | Local Sui blockchain for testing | 9000 (RPC), 9123 (faucet) |
-| **Market Maker** | `localnet` | Automated market maker for DEEP/SUI pool | 3001 (health), 9091 (metrics) |
-| **DeepBook Indexer** | `remote` | Indexes DeepBook events (testnet/mainnet only) | 9184 (metrics) |
-| **DeepBook Server** | `remote` | REST API for querying indexed data | 9008 |
-| **DeepBook Faucet** | `localnet`, `remote` | Distributes SUI (proxied) and DEEP tokens | 9009 |
-| **Oracle Service** | `localnet` | Updates Pyth price feeds for DEEP/SUI every 10s | 9010 (status) |
+| Service              | Profile              | Description                                     | Ports                         |
+| -------------------- | -------------------- | ----------------------------------------------- | ----------------------------- |
+| **PostgreSQL**       | (always)             | Database for the indexer                        | 5432                          |
+| **Sui Localnet**     | `localnet`           | Local Sui blockchain for testing                | 9000 (RPC), 9123 (faucet)     |
+| **Market Maker**     | `localnet`           | Automated market maker for DEEP/SUI pool        | 3001 (health), 9091 (metrics) |
+| **DeepBook Indexer** | `remote`             | Indexes DeepBook events (testnet/mainnet only)  | 9184 (metrics)                |
+| **DeepBook Server**  | `remote`             | REST API for querying indexed data              | 9008                          |
+| **DeepBook Faucet**  | `localnet`, `remote` | Distributes SUI (proxied) and DEEP tokens       | 9009                          |
+| **Oracle Service**   | `localnet`           | Updates Pyth price feeds for DEEP/SUI every 10s | 9010 (status)                 |
 
 > **Note:** The indexer only supports testnet/mainnet (hardcoded checkpoint URLs). It cannot index a local Sui node.
 
@@ -197,6 +198,7 @@ See [./sandbox/scripts/oracle-service/README.md](./sandbox/scripts/oracle-servic
 ### Market Maker Configuration
 
 Environment variables for `pnpm market-maker`:
+
 - `MM_SPREAD_BPS` - Spread in basis points (default: 10 = 0.1%)
 - `MM_LEVELS_PER_SIDE` - Orders per side (default: 5)
 - `MM_ORDER_SIZE_BASE` - Order size in base asset units (default: 10_000_000 = 10 DEEP)

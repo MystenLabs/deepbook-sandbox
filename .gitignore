@@ -146,3 +146,4 @@ sandbox/docker/sui_localnet_data/
 sandbox/deployments/
 
 target/
+.vscode/

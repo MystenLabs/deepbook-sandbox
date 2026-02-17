@@ -1,9 +1,9 @@
-import http from 'http';
-import { getClient, getNetwork, getSigner } from '../utils/config';
-import { PythClient } from './pyth-client';
-import { OracleUpdater } from './oracle-updater';
-import type { OracleConfig, ParsedPriceData } from './types';
-import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from './constants';
+import http from "http";
+import { getClient, getNetwork, getSigner } from "../utils/config";
+import { PythClient } from "./pyth-client";
+import { OracleUpdater } from "./oracle-updater";
+import type { OracleConfig, ParsedPriceData } from "./types";
+import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from "./constants";
 
 /**
  * Oracle Service - Updates Pyth price feeds on localnet
@@ -20,182 +20,179 @@ import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from './constants';
 const STATUS_PORT = 9010;
 
 const DEFAULT_CONFIG: OracleConfig = {
-	pythApiUrl: 'https://benchmarks.pyth.network',
-	priceFeeds: {
-		sui: SUI_PRICE_FEED_ID,
-		deep: DEEP_PRICE_FEED_ID,
-	},
-	updateIntervalMs: 10000, // 10 seconds
-	historicalDataHours: 24, // Fetch data from 24 hours ago
+    pythApiUrl: "https://benchmarks.pyth.network",
+    priceFeeds: {
+        sui: SUI_PRICE_FEED_ID,
+        deep: DEEP_PRICE_FEED_ID,
+    },
+    updateIntervalMs: 10000, // 10 seconds
+    historicalDataHours: 24, // Fetch data from 24 hours ago
 };
 
 function requireEnv(name: string): string {
-	const value = process.env[name];
-	if (!value) throw new Error(`Missing required env var: ${name}`);
-	return value;
+    const value = process.env[name];
+    if (!value) throw new Error(`Missing required env var: ${name}`);
+    return value;
 }
 
 /** Shared state for the status endpoint */
 const status = {
-	updateCount: 0,
-	errorCount: 0,
-	lastUpdateTime: null as string | null,
-	lastSuiPrice: null as string | null,
-	lastDeepPrice: null as string | null,
+    updateCount: 0,
+    errorCount: 0,
+    lastUpdateTime: null as string | null,
+    lastSuiPrice: null as string | null,
+    lastDeepPrice: null as string | null,
 };
 
 function formatPrice(price: string, expo: number): string {
-	const priceNum = Number.parseInt(price);
-	const formatted = priceNum * Math.pow(10, expo);
-	return formatted.toFixed(Math.abs(expo));
+    const priceNum = Number.parseInt(price);
+    const formatted = priceNum * Math.pow(10, expo);
+    return formatted.toFixed(Math.abs(expo));
 }
 
 function updateStatus(suiData: ParsedPriceData, deepData: ParsedPriceData) {
-	status.lastUpdateTime = new Date().toISOString();
-	status.lastSuiPrice = formatPrice(suiData.price.price, suiData.price.expo);
-	status.lastDeepPrice = formatPrice(deepData.price.price, deepData.price.expo);
+    status.lastUpdateTime = new Date().toISOString();
+    status.lastSuiPrice = formatPrice(suiData.price.price, suiData.price.expo);
+    status.lastDeepPrice = formatPrice(deepData.price.price, deepData.price.expo);
 }
 
 function startStatusServer() {
-	const server = http.createServer((req, res) => {
-		const path = req.url?.split('?')[0] ?? '';
-		const isStatusPath = path === '/' || path === '/status';
+    const server = http.createServer((req, res) => {
+        const path = req.url?.split("?")[0] ?? "";
+        const isStatusPath = path === "/" || path === "/status";
 
-		if (!isStatusPath) {
-			res.writeHead(404, { 'Content-Type': 'application/json' });
-			res.end(JSON.stringify({ error: 'Not Found' }, null, 2));
-			return;
-		}
-		if (req.method !== 'GET') {
-			res.writeHead(405, {
-				'Content-Type': 'application/json',
-				Allow: 'GET',
-			});
-			res.end(JSON.stringify({ error: 'Method Not Allowed' }, null, 2));
-			return;
-		}
+        if (!isStatusPath) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Not Found" }, null, 2));
+            return;
+        }
+        if (req.method !== "GET") {
+            res.writeHead(405, {
+                "Content-Type": "application/json",
+                Allow: "GET",
+            });
+            res.end(JSON.stringify({ error: "Method Not Allowed" }, null, 2));
+            return;
+        }
 
-		res.writeHead(200, { 'Content-Type': 'application/json' });
-		res.end(
-			JSON.stringify(
-				{
-					status: 'ok',
-					updates: status.updateCount,
-					errors: status.errorCount,
-					lastUpdate: status.lastUpdateTime,
-					prices: {
-						sui: status.lastSuiPrice ? `$${status.lastSuiPrice}` : null,
-						deep: status.lastDeepPrice ? `$${status.lastDeepPrice}` : null,
-					},
-				},
-				null,
-				2,
-			),
-		);
-	});
-	server.listen(STATUS_PORT, () => {
-		console.log(`📊 Status endpoint: http://localhost:${STATUS_PORT}\n`);
-	});
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+            JSON.stringify(
+                {
+                    status: "ok",
+                    updates: status.updateCount,
+                    errors: status.errorCount,
+                    lastUpdate: status.lastUpdateTime,
+                    prices: {
+                        sui: status.lastSuiPrice ? `$${status.lastSuiPrice}` : null,
+                        deep: status.lastDeepPrice ? `$${status.lastDeepPrice}` : null,
+                    },
+                },
+                null,
+                2,
+            ),
+        );
+    });
+    server.listen(STATUS_PORT, () => {
+        console.log(`📊 Status endpoint: http://localhost:${STATUS_PORT}\n`);
+    });
 }
 
 async function main() {
-	console.log('🔮 Starting Oracle Service...\n');
+    console.log("🔮 Starting Oracle Service...\n");
 
-	const network = getNetwork();
-	if (network !== 'localnet') {
-		throw new Error(
-			'Oracle service is only supported on localnet. Current network: ' +
-				network,
-		);
-	}
+    const network = getNetwork();
+    if (network !== "localnet") {
+        throw new Error(
+            "Oracle service is only supported on localnet. Current network: " + network,
+        );
+    }
 
-	const pythPackageId = requireEnv('PYTH_PACKAGE_ID');
-	const deepPriceInfoObjectId = requireEnv('DEEP_PRICE_INFO_OBJECT_ID');
-	const suiPriceInfoObjectId = requireEnv('SUI_PRICE_INFO_OBJECT_ID');
+    const pythPackageId = requireEnv("PYTH_PACKAGE_ID");
+    const deepPriceInfoObjectId = requireEnv("DEEP_PRICE_INFO_OBJECT_ID");
+    const suiPriceInfoObjectId = requireEnv("SUI_PRICE_INFO_OBJECT_ID");
 
-	console.log('📋 Configuration:');
-	console.log(`  Network: ${network}`);
-	console.log(`  Pyth Package: ${pythPackageId}`);
-	console.log(`  SUI Oracle: ${suiPriceInfoObjectId}`);
-	console.log(`  DEEP Oracle: ${deepPriceInfoObjectId}`);
-	console.log(
-		`  Update Interval: ${DEFAULT_CONFIG.updateIntervalMs / 1000}s\n`,
-	);
+    console.log("📋 Configuration:");
+    console.log(`  Network: ${network}`);
+    console.log(`  Pyth Package: ${pythPackageId}`);
+    console.log(`  SUI Oracle: ${suiPriceInfoObjectId}`);
+    console.log(`  DEEP Oracle: ${deepPriceInfoObjectId}`);
+    console.log(`  Update Interval: ${DEFAULT_CONFIG.updateIntervalMs / 1000}s\n`);
 
-	// Initialize clients
-	const client = getClient(network);
-	const signer = getSigner();
-	const pythClient = new PythClient(DEFAULT_CONFIG);
-	const oracleUpdater = new OracleUpdater(client, signer, pythPackageId);
+    // Initialize clients
+    const client = getClient(network);
+    const signer = getSigner();
+    const pythClient = new PythClient(DEFAULT_CONFIG);
+    const oracleUpdater = new OracleUpdater(client, signer, pythPackageId);
 
-	// Test connection
-	try {
-		const chainId = await client.getChainIdentifier();
-		console.log(`✅ Connected to chain: ${chainId}\n`);
-	} catch (error) {
-		throw new Error(`Failed to connect to Sui RPC: ${error}`);
-	}
+    // Test connection
+    try {
+        const chainId = await client.getChainIdentifier();
+        console.log(`✅ Connected to chain: ${chainId}\n`);
+    } catch (error) {
+        throw new Error(`Failed to connect to Sui RPC: ${error}`);
+    }
 
-	// Start status/health endpoint
-	startStatusServer();
+    // Start status/health endpoint
+    startStatusServer();
 
-	console.log('🚀 Starting price feed updates...\n');
+    console.log("🚀 Starting price feed updates...\n");
 
-	// Update loop
-	const updatePrices = async () => {
-		try {
-			const startTime = Date.now();
+    // Update loop
+    const updatePrices = async () => {
+        try {
+            const startTime = Date.now();
 
-			// Fetch price data from Pyth
-			const priceUpdate = await pythClient.fetchPriceUpdates();
+            // Fetch price data from Pyth
+            const priceUpdate = await pythClient.fetchPriceUpdates();
 
-			// Find SUI and DEEP data for status tracking
-			const suiData = priceUpdate.parsed.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
-			const deepData = priceUpdate.parsed.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
+            // Find SUI and DEEP data for status tracking
+            const suiData = priceUpdate.parsed.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
+            const deepData = priceUpdate.parsed.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
 
-			// Update on-chain oracles
-			await oracleUpdater.updatePriceFeeds(priceUpdate.parsed, {
-				sui: suiPriceInfoObjectId,
-				deep: deepPriceInfoObjectId,
-			});
+            // Update on-chain oracles
+            await oracleUpdater.updatePriceFeeds(priceUpdate.parsed, {
+                sui: suiPriceInfoObjectId,
+                deep: deepPriceInfoObjectId,
+            });
 
-			status.updateCount++;
-			if (suiData && deepData) updateStatus(suiData, deepData);
+            status.updateCount++;
+            if (suiData && deepData) updateStatus(suiData, deepData);
 
-			const elapsed = Date.now() - startTime;
-			console.log(
-				`  ⏱️  Update #${status.updateCount} completed in ${elapsed}ms (errors: ${status.errorCount})\n`,
-			);
-		} catch (error) {
-			status.errorCount++;
-			console.error(`❌ Update failed (error #${status.errorCount}):`, error);
-			console.log('  Continuing...\n');
-		}
-	};
+            const elapsed = Date.now() - startTime;
+            console.log(
+                `  ⏱️  Update #${status.updateCount} completed in ${elapsed}ms (errors: ${status.errorCount})\n`,
+            );
+        } catch (error) {
+            status.errorCount++;
+            console.error(`❌ Update failed (error #${status.errorCount}):`, error);
+            console.log("  Continuing...\n");
+        }
+    };
 
-	// Initial update
-	await updatePrices();
+    // Initial update
+    await updatePrices();
 
-	// Schedule periodic updates
-	setInterval(updatePrices, DEFAULT_CONFIG.updateIntervalMs);
+    // Schedule periodic updates
+    setInterval(updatePrices, DEFAULT_CONFIG.updateIntervalMs);
 
-	// Keep process alive
-	console.log('👀 Oracle service is running. Press Ctrl+C to stop.\n');
+    // Keep process alive
+    console.log("👀 Oracle service is running. Press Ctrl+C to stop.\n");
 }
 
 // Handle graceful shutdown
-process.on('SIGINT', () => {
-	console.log('\n\n🛑 Shutting down oracle service...');
-	process.exit(0);
+process.on("SIGINT", () => {
+    console.log("\n\n🛑 Shutting down oracle service...");
+    process.exit(0);
 });
 
-process.on('SIGTERM', () => {
-	console.log('\n\n🛑 Shutting down oracle service...');
-	process.exit(0);
+process.on("SIGTERM", () => {
+    console.log("\n\n🛑 Shutting down oracle service...");
+    process.exit(0);
 });
 
 // Start service
 main().catch((error) => {
-	console.error('\n❌ Oracle service failed:', error);
-	process.exit(1);
+    console.error("\n❌ Oracle service failed:", error);
+    process.exit(1);
 });

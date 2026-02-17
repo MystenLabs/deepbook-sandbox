@@ -1,24 +1,24 @@
 {
-  "name": "deepbook-sandbox",
-  "version": "1.0.0",
-  "type": "module",
-  "private": true,
-  "description": "DeepBook V3 localnet deployment sandbox",
-  "scripts": {
-    "deploy-all": "tsx scripts/deploy-all.ts",
-    "down": "tsx scripts/down.ts",
-    "oracle-service": "tsx scripts/oracle-service/index.ts",
-    "market-maker": "tsx scripts/market-maker/index.ts",
-    "seed-liquidity": "tsx scripts/seed-liquidity.ts"
-  },
-  "dependencies": {
-    "@mysten/sui": "^1.45.2",
-    "dotenv": "^17.2.3",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@types/node": "^20.19.32",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
-  }
+    "name": "deepbook-sandbox",
+    "version": "1.0.0",
+    "type": "module",
+    "private": true,
+    "description": "DeepBook V3 localnet deployment sandbox",
+    "scripts": {
+        "deploy-all": "tsx scripts/deploy-all.ts",
+        "down": "tsx scripts/down.ts",
+        "oracle-service": "tsx scripts/oracle-service/index.ts",
+        "market-maker": "tsx scripts/market-maker/index.ts",
+        "seed-liquidity": "tsx scripts/seed-liquidity.ts"
+    },
+    "dependencies": {
+        "@mysten/sui": "^1.45.2",
+        "dotenv": "^17.2.3",
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "@types/node": "^20.19.32",
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.3"
+    }
 }

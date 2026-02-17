@@ -1,0 +1,35 @@
+# EditorConfig is awesome: https://editorconfig.org
+
+root = true
+
+# Global settings (applies to all files unless overridden)
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Markdown — trailing whitespace creates <br> line breaks
+# indent_size left unset; Prettier owns markdown formatting and uses
+# 3-space indent for ordered list content (aligns with text after "1. ")
+[*.md]
+trim_trailing_whitespace = false
+indent_size = unset
+
+# YAML — standard convention is 2-space indent
+[*.{yaml,yml}]
+indent_size = 2
+
+# Shell scripts — convention is 2-space indent
+[*.sh]
+indent_size = 2
+
+# SQL — mixed indentation in queries
+[*.sql]
+indent_size = unset
+
+# Move-specific settings
+[*.move]
+indent_size = 4

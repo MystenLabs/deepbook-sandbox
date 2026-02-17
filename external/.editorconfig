@@ -1,0 +1,2 @@
+# Prevent root EditorConfig from cascading into submodules
+root = true

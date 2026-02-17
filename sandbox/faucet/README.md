@@ -4,10 +4,10 @@ Lightweight token faucet for the DeepBook sandbox. Distributes **SUI** (proxied 
 
 ## Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | Health check — returns service info and deployer address |
-| `POST` | `/faucet` | Request SUI or DEEP tokens |
+| Method | Path      | Description                                              |
+| ------ | --------- | -------------------------------------------------------- |
+| `GET`  | `/`       | Health check — returns service info and deployer address |
+| `POST` | `/faucet` | Request SUI or DEEP tokens                               |
 
 ## Request Format
 
@@ -18,11 +18,11 @@ Content-Type: application/json
 
 ### Body
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `address` | `string` | Yes | Recipient Sui address (`0x` + 64 hex chars) |
-| `token` | `string` | Yes | `"SUI"` or `"DEEP"` |
-| `amount` | `number` | No | DEEP only — whole tokens to send (default: `1000`, max: `10000`) |
+| Field     | Type     | Required | Description                                                      |
+| --------- | -------- | -------- | ---------------------------------------------------------------- |
+| `address` | `string` | Yes      | Recipient Sui address (`0x` + 64 hex chars)                      |
+| `token`   | `string` | Yes      | `"SUI"` or `"DEEP"`                                              |
+| `amount`  | `number` | No       | DEEP only — whole tokens to send (default: `1000`, max: `10000`) |
 
 > `amount` is ignored for SUI requests. The upstream Sui faucet determines the SUI amount.
 
@@ -76,14 +76,14 @@ curl -X POST http://localhost:9009/faucet \
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `NETWORK` | Yes | — | `localnet` or `testnet` |
-| `PRIVATE_KEY` | Yes | — | Bech32-encoded Sui private key (deployer wallet) |
-| `DEEP_TOKEN_PACKAGE_ID` | Yes | — | Package ID of the deployed DEEP token |
-| `RPC_URL` | No | Per-network default | Sui RPC endpoint |
-| `PORT` | No | `9009` | Server listen port |
-| `MAX_DEEP_PER_REQUEST` | No | `10000` | Maximum DEEP tokens per request |
+| Variable                | Required | Default             | Description                                      |
+| ----------------------- | -------- | ------------------- | ------------------------------------------------ |
+| `NETWORK`               | Yes      | —                   | `localnet` or `testnet`                          |
+| `PRIVATE_KEY`           | Yes      | —                   | Bech32-encoded Sui private key (deployer wallet) |
+| `DEEP_TOKEN_PACKAGE_ID` | Yes      | —                   | Package ID of the deployed DEEP token            |
+| `RPC_URL`               | No       | Per-network default | Sui RPC endpoint                                 |
+| `PORT`                  | No       | `9009`              | Server listen port                               |
+| `MAX_DEEP_PER_REQUEST`  | No       | `10000`             | Maximum DEEP tokens per request                  |
 
 ## Running
 

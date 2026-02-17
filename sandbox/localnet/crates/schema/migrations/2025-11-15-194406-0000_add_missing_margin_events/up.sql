@@ -154,4 +154,3 @@ CREATE INDEX IF NOT EXISTS idx_referral_fees_claimed_referral_id
 
 CREATE INDEX IF NOT EXISTS idx_referral_fees_claimed_owner
     ON referral_fees_claimed (owner);
-

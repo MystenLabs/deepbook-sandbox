@@ -17,6 +17,7 @@ The `ReferralFeeEvent` is emitted when a spot trade executes through a balance m
 that has an associated referral ID set via `set_balance_manager_referral()`.
 
 Event fields:
+
 - `pool_id`: The trading pool where the order executed
 - `referral_id`: The DeepBookPoolReferral object linked to the balance manager
 - `base_fee`: Fee amount in base token (e.g., SUI)
@@ -34,6 +35,7 @@ npx tsx generate-referral-event-simple.ts
 ```
 
 The script will output the checkpoint number. Download with:
+
 ```bash
 curl -o <checkpoint>.chk "https://checkpoints.mainnet.sui.io/<checkpoint>.chk"
 ```
