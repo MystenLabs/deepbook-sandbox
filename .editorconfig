@@ -12,9 +12,11 @@ indent_style = space
 indent_size = 4
 
 # Markdown — trailing whitespace creates <br> line breaks
+# indent_size left unset; Prettier owns markdown formatting and uses
+# 3-space indent for ordered list content (aligns with text after "1. ")
 [*.md]
 trim_trailing_whitespace = false
-indent_size = 2
+indent_size = unset
 
 # YAML — standard convention is 2-space indent
 [*.{yaml,yml}]

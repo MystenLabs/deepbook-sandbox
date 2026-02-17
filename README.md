@@ -28,38 +28,38 @@ for DeepBook V3, including:
 
 1. **Install dependencies:**
 
-    ```bash
-    pnpm install
-    ```
+   ```bash
+   pnpm install
+   ```
 
 2. **Deploy the full stack:**
 
-    ```bash
-    pnpm deploy-all
-    ```
+   ```bash
+   pnpm deploy-all
+   ```
 
-    This single command will:
+   This single command will:
 
-    - Start a Sui localnet in Docker (with faucet)
-    - Start a PostgreSQL database
-    - Deploy all DeepBook Move packages
-      (token, deepbook, deepbook_margin, pyth, etc.)
-    - Start the DeepBook indexer
-    - Create Pyth oracle price feeds for SUI and DEEP
-    - Start the oracle service (updates prices every 10s)
-    - Create a DEEP-SUI liquidity pool
-    - Generate a config file with all deployment artifacts
+   - Start a Sui localnet in Docker (with faucet)
+   - Start a PostgreSQL database
+   - Deploy all DeepBook Move packages
+     (token, deepbook, deepbook_margin, pyth, etc.)
+   - Start the DeepBook indexer
+   - Create Pyth oracle price feeds for SUI and DEEP
+   - Start the oracle service (updates prices every 10s)
+   - Create a DEEP-SUI liquidity pool
+   - Generate a config file with all deployment artifacts
 
 3. **Access the environment:**
 
-    After deployment completes, you'll have:
+   After deployment completes, you'll have:
 
-    - **RPC endpoint**: `http://localhost:9000`
-    - **Faucet**: `http://localhost:9123`
-    - **Oracle status**: `http://localhost:9010`
-      (latest SUI/DEEP prices)
-    - **Deployment config**:
-      `deployments/{DATE}_{TIME}_{NETWORK}.json`
+   - **RPC endpoint**: `http://localhost:9000`
+   - **Faucet**: `http://localhost:9123`
+   - **Oracle status**: `http://localhost:9010`
+     (latest SUI/DEEP prices)
+   - **Deployment config**:
+     `deployments/{DATE}_{TIME}_{NETWORK}.json`
 
 ## Configuration
 
@@ -68,20 +68,20 @@ folder with the format `{DATE}_{TIME}_{NETWORK}.json`, for example:
 
 ```json
 {
-    "network": {
-        "type": "localnet",
-        "rpcUrl": "http://localhost:9000",
-        "faucetUrl": "http://localhost:9123"
-    },
-    "packages": {
-        "token": { "packageId": "0x...", "...": "..." },
-        "deepbook": { "packageId": "0x...", "...": "..." }
-    },
-    "pool": {
-        "poolId": "0x...",
-        "baseCoin": "0x...::deep::DEEP",
-        "quoteCoin": "0x2::sui::SUI"
-    }
+  "network": {
+    "type": "localnet",
+    "rpcUrl": "http://localhost:9000",
+    "faucetUrl": "http://localhost:9123"
+  },
+  "packages": {
+    "token": { "packageId": "0x...", "...": "..." },
+    "deepbook": { "packageId": "0x...", "...": "..." }
+  },
+  "pool": {
+    "poolId": "0x...",
+    "baseCoin": "0x...::deep::DEEP",
+    "quoteCoin": "0x2::sui::SUI"
+  }
 }
 ```
 
@@ -122,8 +122,8 @@ const client = new SuiClient({ url: config.network.rpcUrl });
 
 // Query the deployed pool
 const pool = await client.getObject({
-    id: config.pool.poolId,
-    options: { showContent: true },
+  id: config.pool.poolId,
+  options: { showContent: true },
 });
 ```
 
