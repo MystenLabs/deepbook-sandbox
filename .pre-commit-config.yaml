@@ -1,4 +1,4 @@
-exclude: "sandbox/localnet/crates/"
+exclude: '(sandbox/localnet/crates/|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|Cargo\.lock|bun\.lockb|\.lock)$'
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -15,7 +15,7 @@ repos:
     hooks:
       - id: editorconfig-checker
         alias: ec
-        exclude: '(pnpm-lock\.yaml|\.lock|LICENSE|\.gitmodules|\.bru|sandbox/localnet/crates/indexer/)$'
+        exclude: '(LICENSE|\.gitmodules|\.bru)$'
   - repo: local
     hooks:
       - id: prettier
