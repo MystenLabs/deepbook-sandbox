@@ -39,7 +39,6 @@ for DeepBook V3, including:
    ```
 
    This single command will:
-
    - Start a Sui localnet in Docker (with faucet)
    - Start a PostgreSQL database
    - Deploy all DeepBook Move packages
@@ -53,7 +52,6 @@ for DeepBook V3, including:
 3. **Access the environment:**
 
    After deployment completes, you'll have:
-
    - **RPC endpoint**: `http://localhost:9000`
    - **Faucet**: `http://localhost:9123`
    - **Oracle status**: `http://localhost:9010`
