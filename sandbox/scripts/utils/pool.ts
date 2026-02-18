@@ -3,6 +3,7 @@ import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
 import type { SuiObjectChangeCreated, SuiTransactionBlockResponse } from "@mysten/sui/client";
 import type { DeploymentResult } from "./deployer";
+import log from "./logger";
 
 export interface PoolInfo {
     poolId: string;
@@ -20,7 +21,7 @@ export class PoolCreator {
     async requestSuiFromFaucet(address?: string): Promise<void> {
         const recipient = address || this.signer.getPublicKey().toSuiAddress();
 
-        console.log(`    Requesting SUI for ${recipient}...`);
+        log.spin(`Requesting SUI for ${recipient}`);
 
         const response = await fetch(`${this.faucetUrl}/gas`, {
             method: "POST",
@@ -59,9 +60,9 @@ export class PoolCreator {
             );
         }
 
-        console.log(`    Creating DEEP/SUI pool (DEEP base, SUI quote)...`);
-        console.log(`    Registry: ${registry.objectId}`);
-        console.log(`    AdminCap: ${adminCap.objectId}`);
+        log.spin("Creating DEEP/SUI pool (DEEP base, SUI quote)");
+        log.detail(`Registry: ${registry.objectId}`);
+        log.detail(`AdminCap: ${adminCap.objectId}`);
 
         // Create pool via Move call — DEEP/SUI (DEEP base, SUI quote)
         const tx = new Transaction();
@@ -123,7 +124,7 @@ export class PoolCreator {
 
         const poolId = poolCreated.objectId;
 
-        console.log(`    ✅ Pool created: ${poolId}`);
+        log.success(`Pool created: ${poolId}`);
 
         return {
             poolId,

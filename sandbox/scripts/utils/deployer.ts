@@ -6,6 +6,7 @@ import type { SuiClient } from "@mysten/sui/client";
 import type { Keypair } from "@mysten/sui/cryptography";
 import type { SuiObjectChangeCreated, SuiTransactionBlockResponse } from "@mysten/sui/client";
 import type { Network } from "./config";
+import log from "./logger";
 
 const PACKAGES_BASE = "../external/deepbook/packages";
 
@@ -116,7 +117,7 @@ export class MoveDeployer {
     }
 
     async deployPackage(packagePath: string, packageName: string): Promise<DeploymentResult> {
-        console.log(`    Publishing ${packageName} (sui client publish)...`);
+        log.spin(`Publishing ${packageName} (sui client publish)`);
 
         const resolvedPath = path.resolve(process.cwd(), packagePath);
         const args =
@@ -127,21 +128,24 @@ export class MoveDeployer {
         try {
             output = execFileSync(this.suiBinary, args, {
                 encoding: "utf-8",
-                stdio: ["inherit", "pipe", "inherit"],
+                stdio: ["inherit", "pipe", "pipe"],
             }) as string;
         } catch (err: unknown) {
-            const out =
+            const stderr =
+                err && typeof err === "object" && "stderr" in err
+                    ? String((err as { stderr: unknown }).stderr)
+                    : "";
+            const stdout =
                 err && typeof err === "object" && "stdout" in err
                     ? String((err as { stdout: unknown }).stdout)
                     : "";
-            throw new Error(
-                `Failed to publish ${packageName}. ${out ? `Output: ${out.slice(-500)}` : String(err)}`,
-            );
+            const detail = stderr || stdout || String(err);
+            throw new Error(`Failed to publish ${packageName}.\n${detail.slice(-800)}`);
         }
 
         const { packageId, transactionDigest, createdObjects } = parsePublishOutput(output);
 
-        console.log(`    ✅ ${packageName} deployed: ${packageId}`);
+        log.success(`${packageName} deployed: ${packageId}`);
 
         const result: SuiTransactionBlockResponse = {
             digest: transactionDigest,
@@ -329,7 +333,7 @@ export class MoveDeployer {
             writeFileSync(tomlPath, backup);
             unlinkSync(backupPath);
         } catch (error) {
-            console.warn(`    Warning: Could not restore Move.toml for ${pkg.name}`);
+            log.warn(`Could not restore Move.toml for ${pkg.name}`);
         }
     }
 

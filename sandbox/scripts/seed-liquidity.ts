@@ -12,6 +12,7 @@ import { BalanceManagerService } from "./market-maker/balance-manager";
 import { OrderManager } from "./market-maker/order-manager";
 import { calculateGridLevels } from "./market-maker/grid-strategy";
 import { fetchOracleMidPrice } from "./market-maker/price-feed";
+import log from "./utils/logger";
 
 async function findLatestDeployment(): Promise<string> {
     const deploymentsDir = path.join(process.cwd(), "deployments");
@@ -36,7 +37,7 @@ async function findLatestDeployment(): Promise<string> {
 
 async function loadDeployment(deploymentPath?: string): Promise<DeploymentManifest> {
     const filePath = deploymentPath || (await findLatestDeployment());
-    console.log(`Loading deployment from: ${filePath}`);
+    log.info(`Loading deployment from: ${filePath}`);
 
     const content = await fs.readFile(filePath, "utf-8");
     return JSON.parse(content) as DeploymentManifest;
@@ -70,52 +71,53 @@ export async function seedLiquidity(options: SeedLiquidityOptions): Promise<void
     const midPrice = oraclePrice ?? undefined;
     const priceSource = oraclePrice ? "oracle" : "fallback";
 
-    console.log("\n=== Seeding Initial Liquidity ===\n");
-    console.log(`  Pool: ${poolId}`);
-    console.log(
-        `  Mid price: ${Number(midPrice ?? config.fallbackMidPrice) / 1e9} DEEP/SUI (${priceSource})`,
+    log.resetSteps();
+    log.phase("Seeding Initial Liquidity");
+    log.detail(`Pool: ${poolId}`);
+    log.detail(
+        `Mid price: ${Number(midPrice ?? config.fallbackMidPrice) / 1e9} DEEP/SUI (${priceSource})`,
     );
-    console.log(`  Spread: ${config.spreadBps} bps (${(config.spreadBps / 100).toFixed(2)}%)`);
-    console.log(`  Levels per side: ${config.levelsPerSide}`);
-    console.log(`  Order size: ${Number(config.orderSizeBase) / 1e6} DEEP`);
+    log.detail(`Spread: ${config.spreadBps} bps (${(config.spreadBps / 100).toFixed(2)}%)`);
+    log.detail(`Levels per side: ${config.levelsPerSide}`);
+    log.detail(`Order size: ${Number(config.orderSizeBase) / 1e6} DEEP`);
 
     // Create BalanceManager
-    console.log("\n1. Creating BalanceManager...");
+    log.step("Creating BalanceManager...");
     const bmService = new BalanceManagerService(client, signer, packageId);
     const bmInfo = await bmService.createBalanceManager();
     const balanceManagerId = bmInfo.balanceManagerId;
-    console.log(`   Created: ${balanceManagerId}`);
-    console.log(`   ${explorerObjectUrl(balanceManagerId, network)}`);
+    log.success(`Created: ${balanceManagerId}`);
+    log.detail(explorerObjectUrl(balanceManagerId, network));
 
     // Wait for object to be available
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Deposit SUI for quote asset (for buying DEEP)
-    console.log("2. Depositing SUI...");
+    log.step("Depositing SUI...");
     const suiDepositAmount = 10_000_000_000n; // 10 SUI
     await bmService.deposit(balanceManagerId, "0x2::sui::SUI", suiDepositAmount);
-    console.log(`   Deposited: ${Number(suiDepositAmount) / 1e9} SUI`);
+    log.success(`Deposited: ${Number(suiDepositAmount) / 1e9} SUI`);
 
     // Wait for SUI deposit to propagate before touching another coin object
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Deposit DEEP for base asset (for selling DEEP)
-    console.log("3. Depositing DEEP...");
+    log.step("Depositing DEEP...");
     const deepDepositAmount = 1_000_000_000n; // 1000 DEEP (6 decimals)
     let hasDeepBalance = false;
     try {
         await bmService.deposit(balanceManagerId, baseType, deepDepositAmount);
-        console.log(`   Deposited: ${Number(deepDepositAmount) / 1e6} DEEP`);
+        log.success(`Deposited: ${Number(deepDepositAmount) / 1e6} DEEP`);
         hasDeepBalance = true;
     } catch {
-        console.log("   DEEP deposit failed (no DEEP tokens). Placing bid-only orders.");
+        log.warn("DEEP deposit failed (no DEEP tokens). Placing bid-only orders.");
     }
 
     // Wait for deposits to propagate
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Calculate grid levels
-    console.log("4. Calculating grid levels...");
+    log.step("Calculating grid levels...");
     let levels = calculateGridLevels(config, midPrice);
     if (!hasDeepBalance) {
         levels = levels.filter((l) => l.isBid);
@@ -125,7 +127,7 @@ export async function seedLiquidity(options: SeedLiquidityOptions): Promise<void
     const asks = levels.filter((l) => !l.isBid);
 
     // Place orders
-    console.log("5. Placing orders...");
+    log.step("Placing orders...");
     const orderManager = new OrderManager(
         client,
         signer,
@@ -143,31 +145,34 @@ export async function seedLiquidity(options: SeedLiquidityOptions): Promise<void
     const totalBidSize = bids.reduce((sum, l) => sum + l.quantity, 0n);
     const totalAskSize = asks.reduce((sum, l) => sum + l.quantity, 0n);
 
-    console.log("\n=== Seed Liquidity Summary ===\n");
+    const summaryEntries: Array<{ label: string; value: string }> = [];
     if (bids.length > 0) {
         const bestBid = bids.reduce((max, l) => (l.price > max ? l.price : max), 0n);
         const worstBid = bids.reduce((min, l) => (l.price < min ? l.price : min), bids[0].price);
-        console.log(
-            `  Bids: ${bids.length} orders from ${formatPrice(worstBid)} to ${formatPrice(bestBid)} DEEP/SUI (${formatDeep(totalBidSize)} DEEP total)`,
-        );
+        summaryEntries.push({
+            label: "Bids",
+            value: `${bids.length} orders from ${formatPrice(worstBid)} to ${formatPrice(bestBid)} DEEP/SUI (${formatDeep(totalBidSize)} DEEP total)`,
+        });
     }
     if (asks.length > 0) {
         const bestAsk = asks.reduce((min, l) => (l.price < min ? l.price : min), asks[0].price);
         const worstAsk = asks.reduce((max, l) => (l.price > max ? l.price : max), 0n);
-        console.log(
-            `  Asks: ${asks.length} orders from ${formatPrice(bestAsk)} to ${formatPrice(worstAsk)} DEEP/SUI (${formatDeep(totalAskSize)} DEEP total)`,
-        );
+        summaryEntries.push({
+            label: "Asks",
+            value: `${asks.length} orders from ${formatPrice(bestAsk)} to ${formatPrice(worstAsk)} DEEP/SUI (${formatDeep(totalAskSize)} DEEP total)`,
+        });
     }
-    console.log(`  Balance Manager: ${balanceManagerId}`);
-    console.log(`  Total orders: ${levels.length}`);
-    console.log("");
+    summaryEntries.push(
+        { label: "Balance Manager", value: balanceManagerId },
+        { label: "Total orders", value: String(levels.length) },
+    );
+
+    log.summary("Seed Liquidity Summary", summaryEntries);
 }
 
 // Standalone entry point
 async function main() {
-    console.log("=".repeat(50));
-    console.log("  DeepBook V3 - Seed Initial Liquidity");
-    console.log("=".repeat(50));
+    log.banner("DeepBook V3 - Seed Initial Liquidity");
 
     const deploymentPath = process.env.DEPLOYMENT_PATH;
     const manifest = await loadDeployment(deploymentPath);
@@ -182,7 +187,8 @@ const isDirectExecution =
     process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isDirectExecution) {
     main().catch((error) => {
-        console.error("Seed liquidity failed:", error);
+        log.fail("Seed liquidity failed");
+        log.loopError("", error);
         process.exit(1);
     });
 }

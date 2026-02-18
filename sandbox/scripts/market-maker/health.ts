@@ -1,4 +1,5 @@
 import http from "node:http";
+import log from "../utils/logger";
 
 export interface HealthStatus {
     status: "healthy" | "unhealthy";
@@ -55,7 +56,7 @@ export class HealthServer {
 
             this.server.on("error", reject);
             this.server.listen(port, () => {
-                console.log(`  Health server listening on http://localhost:${port}`);
+                log.success(`Health server: http://localhost:${port}`);
                 resolve();
             });
         });
