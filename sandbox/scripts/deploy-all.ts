@@ -17,7 +17,7 @@ import log from "./utils/logger";
 
 async function main() {
     const network = getNetwork();
-    log.banner(`DeepBook ${network} Deployment`);
+    log.banner(` DeepBook sandbox [${network}] deployment`);
 
     try {
         // Start localnet network if localnet is selected

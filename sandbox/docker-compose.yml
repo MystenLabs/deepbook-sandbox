@@ -217,8 +217,8 @@ services:
       RPC_URL: http://host.docker.internal:9000
       DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-0x22be4cade64bf2d02412c7e8d0e8beea2f78828b948118d46735315409371a3c}
       DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270}
-      DEEP_TREASURY_ID: ${DEEP_TREASURY_ID}
-      MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID}
+      DEEP_TREASURY_ID: ${DEEP_TREASURY_ID:-}
+      MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID:-}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       - "9008:9008" # REST API
@@ -251,8 +251,8 @@ services:
     container_name: deepbook-faucet
     environment:
       NETWORK: ${NETWORK:-localnet}
-      PRIVATE_KEY: ${PRIVATE_KEY}
-      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID}
+      PRIVATE_KEY: ${PRIVATE_KEY:-}
+      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
       RPC_URL: ${RPC_URL:-}
       PORT: 9009
       MAX_DEEP_PER_REQUEST: 10000
@@ -285,11 +285,11 @@ services:
     container_name: oracle-service
     environment:
       NETWORK: localnet
-      PRIVATE_KEY: ${PRIVATE_KEY}
+      PRIVATE_KEY: ${PRIVATE_KEY:-}
       RPC_URL: http://sui-localnet:9000
-      PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID}
-      DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID}
-      SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID}
+      PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID:-}
+      DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID:-}
+      SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID:-}
     ports:
       - "9010:9010"
     networks:
