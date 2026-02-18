@@ -1,4 +1,5 @@
 import type { PythPriceUpdate, OracleConfig } from "./types";
+import log from "../utils/logger";
 
 /**
  * Client for fetching price data from Pyth Network API
@@ -24,7 +25,7 @@ export class PythClient {
 
         const url = `${this.config.pythApiUrl}/v1/updates/price/${timestamp}?${params.toString()}`;
 
-        console.log(`📡 Fetching price updates from Pyth (timestamp: ${timestamp})...`);
+        log.loop(`Fetching price updates from Pyth (timestamp: ${timestamp})`);
 
         try {
             const response = await fetch(url);
@@ -41,10 +42,10 @@ export class PythClient {
                 throw new Error("No price data returned from Pyth API");
             }
 
-            console.log(`  ✅ Received ${data.parsed.length} price feeds`);
+            log.loopSuccess(`Received ${data.parsed.length} price feeds`);
             return data;
         } catch (error) {
-            console.error(`  ❌ Failed to fetch from Pyth:`, error);
+            log.loopError("Failed to fetch from Pyth", error);
             throw error;
         }
     }

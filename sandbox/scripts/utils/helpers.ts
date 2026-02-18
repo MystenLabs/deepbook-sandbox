@@ -1,6 +1,7 @@
 import type { SuiClient } from "@mysten/sui/client";
 import { requestSuiFromFaucetV2 } from "@mysten/sui/faucet";
 import type { DeploymentResult } from "./deployer";
+import log from "./logger";
 
 export type DeploymentEnvOptions = { firstCheckpoint?: string };
 
@@ -19,7 +20,7 @@ export async function requestFaucetWithRetry(
         } catch (error) {
             if (attempt === maxRetries) break;
             const delay = 3000 * attempt;
-            console.log(`  Faucet attempt ${attempt} failed, retrying in ${delay / 1000}s...`);
+            log.warn(`Faucet attempt ${attempt} failed, retrying in ${delay / 1000}s...`);
             await new Promise((r) => setTimeout(r, delay));
         }
     }
@@ -40,13 +41,13 @@ export async function ensureMinimumBalance(
     const { totalBalance } = await client.getBalance({ owner: recipient });
     const balanceMist = BigInt(totalBalance);
     if (balanceMist >= minSuiMist) {
-        console.log(`  ✅ Has sufficient balance (≥1 SUI)\n`);
+        log.success("Has sufficient balance (>= 1 SUI)");
         return;
     }
     await requestFaucetWithRetry(faucetHost, recipient, maxFaucetRetries);
     await new Promise((r) => setTimeout(r, 2000));
     const after = await client.getBalance({ owner: recipient });
-    console.log(`  ✅ Has ${after.totalBalance} MIST balance\n`);
+    log.success(`Has ${after.totalBalance} MIST balance`);
 }
 
 /**

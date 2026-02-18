@@ -1,7 +1,30 @@
-import { spawnSync } from "child_process";
+import { spawnSync, type SpawnSyncReturns } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+
+/**
+ * Run a docker compose command, suppressing stdout/stderr.
+ * On failure, throws with the captured stderr for debugging.
+ */
+function runDockerCompose(
+    args: string[],
+    opts: { cwd: string; env?: NodeJS.ProcessEnv },
+): SpawnSyncReturns<string> {
+    const result = spawnSync("docker", ["compose", ...args], {
+        cwd: opts.cwd,
+        encoding: "utf-8",
+        stdio: ["inherit", "pipe", "pipe"],
+        env: opts.env,
+    });
+    if (result.status !== 0) {
+        const stderr = result.stderr?.trim() || "";
+        throw new Error(
+            `docker compose ${args.join(" ")} failed (exit ${result.status})${stderr ? `:\n${stderr}` : ""}`,
+        );
+    }
+    return result;
+}
 
 /** Default RPC and faucet ports for localnet (from docker-compose). */
 export const LOCALNET_RPC_PORT = 9000;

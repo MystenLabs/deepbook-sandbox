@@ -4,6 +4,7 @@ import { PythClient } from "./pyth-client";
 import { OracleUpdater } from "./oracle-updater";
 import type { OracleConfig, ParsedPriceData } from "./types";
 import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from "./constants";
+import log from "../utils/logger";
 
 /**
  * Oracle Service - Updates Pyth price feeds on localnet
@@ -94,12 +95,12 @@ function startStatusServer() {
         );
     });
     server.listen(STATUS_PORT, () => {
-        console.log(`📊 Status endpoint: http://localhost:${STATUS_PORT}\n`);
+        log.success(`Status endpoint: http://localhost:${STATUS_PORT}`);
     });
 }
 
 async function main() {
-    console.log("🔮 Starting Oracle Service...\n");
+    log.banner("Oracle Service");
 
     const network = getNetwork();
     if (network !== "localnet") {
@@ -112,12 +113,11 @@ async function main() {
     const deepPriceInfoObjectId = requireEnv("DEEP_PRICE_INFO_OBJECT_ID");
     const suiPriceInfoObjectId = requireEnv("SUI_PRICE_INFO_OBJECT_ID");
 
-    console.log("📋 Configuration:");
-    console.log(`  Network: ${network}`);
-    console.log(`  Pyth Package: ${pythPackageId}`);
-    console.log(`  SUI Oracle: ${suiPriceInfoObjectId}`);
-    console.log(`  DEEP Oracle: ${deepPriceInfoObjectId}`);
-    console.log(`  Update Interval: ${DEFAULT_CONFIG.updateIntervalMs / 1000}s\n`);
+    log.detail(`Network: ${network}`);
+    log.detail(`Pyth Package: ${pythPackageId}`);
+    log.detail(`SUI Oracle: ${suiPriceInfoObjectId}`);
+    log.detail(`DEEP Oracle: ${deepPriceInfoObjectId}`);
+    log.detail(`Update Interval: ${DEFAULT_CONFIG.updateIntervalMs / 1000}s`);
 
     // Initialize clients
     const client = getClient(network);
@@ -128,7 +128,7 @@ async function main() {
     // Test connection
     try {
         const chainId = await client.getChainIdentifier();
-        console.log(`✅ Connected to chain: ${chainId}\n`);
+        log.success(`Connected to chain: ${chainId}`);
     } catch (error) {
         throw new Error(`Failed to connect to Sui RPC: ${error}`);
     }
@@ -136,7 +136,7 @@ async function main() {
     // Start status/health endpoint
     startStatusServer();
 
-    console.log("🚀 Starting price feed updates...\n");
+    log.phase("Starting price feed updates");
 
     // Update loop
     const updatePrices = async () => {
@@ -160,13 +160,12 @@ async function main() {
             if (suiData && deepData) updateStatus(suiData, deepData);
 
             const elapsed = Date.now() - startTime;
-            console.log(
-                `  ⏱️  Update #${status.updateCount} completed in ${elapsed}ms (errors: ${status.errorCount})\n`,
+            log.loopSuccess(
+                `Update #${status.updateCount} completed in ${elapsed}ms (errors: ${status.errorCount})`,
             );
         } catch (error) {
             status.errorCount++;
-            console.error(`❌ Update failed (error #${status.errorCount}):`, error);
-            console.log("  Continuing...\n");
+            log.loopError(`Update failed (error #${status.errorCount})`, error);
         }
     };
 
@@ -177,22 +176,23 @@ async function main() {
     setInterval(updatePrices, DEFAULT_CONFIG.updateIntervalMs);
 
     // Keep process alive
-    console.log("👀 Oracle service is running. Press Ctrl+C to stop.\n");
+    log.info("Oracle service is running. Press Ctrl+C to stop.");
 }
 
 // Handle graceful shutdown
 process.on("SIGINT", () => {
-    console.log("\n\n🛑 Shutting down oracle service...");
+    log.warn("Shutting down oracle service...");
     process.exit(0);
 });
 
 process.on("SIGTERM", () => {
-    console.log("\n\n🛑 Shutting down oracle service...");
+    log.warn("Shutting down oracle service...");
     process.exit(0);
 });
 
 // Start service
 main().catch((error) => {
-    console.error("\n❌ Oracle service failed:", error);
+    log.fail("Oracle service failed");
+    log.loopError("", error);
     process.exit(1);
 });

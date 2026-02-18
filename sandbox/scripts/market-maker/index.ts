@@ -4,6 +4,7 @@ import { loadConfig, parseEnvConfig } from "./config";
 import type { DeploymentManifest } from "./types";
 import { explorerObjectUrl } from "./types";
 import { MarketMaker } from "./market-maker";
+import log from "../utils/logger";
 
 function requireEnv(name: string): string {
     const value = process.env[name];
@@ -66,38 +67,31 @@ function loadManifestFromEnv(): DeploymentManifest {
 }
 
 async function main() {
-    console.log("=".repeat(50));
-    console.log("  DeepBook V3 Market Maker");
-    console.log("=".repeat(50));
+    log.banner("DeepBook V3 Market Maker");
 
     // Build manifest from environment variables
     const manifest = loadManifestFromEnv();
 
     const network = manifest.network.type;
-    console.log(`Network: ${network}`);
-    console.log(`Pool: ${manifest.pool.poolId}`);
-    console.log(`  ${explorerObjectUrl(manifest.pool.poolId, network)}`);
-    console.log(`Package: ${manifest.packages.deepbook.packageId}`);
+    log.detail(`Network: ${network}`);
+    log.detail(`Pool: ${manifest.pool.poolId}`);
+    log.detail(explorerObjectUrl(manifest.pool.poolId, network));
+    log.detail(`Package: ${manifest.packages.deepbook.packageId}`);
 
     // Load configuration
     const envConfig = parseEnvConfig();
     const config = loadConfig(envConfig);
 
-    console.log("\nConfiguration:");
-    console.log(
-        `  Pricing: on-chain Pyth oracle (fallback: ${Number(config.fallbackMidPrice) / 1e9} DEEP/SUI)`,
+    log.detail(
+        `Spread: ${config.spreadBps} bps | Levels: ${config.levelsPerSide}/side | Order: ${Number(config.orderSizeBase) / 1e6} DEEP`,
     );
-    console.log(`  Spread: ${config.spreadBps} bps (${(config.spreadBps / 100).toFixed(2)}%)`);
-    console.log(`  Levels per side: ${config.levelsPerSide}`);
-    console.log(`  Order size: ${Number(config.orderSizeBase) / 1e6} DEEP`);
-    console.log(`  Rebalance interval: ${config.rebalanceIntervalMs}ms`);
+    log.detail(`Rebalance: ${config.rebalanceIntervalMs}ms`);
 
     // Create Sui client and signer
     const client = getClient();
     const signer = getSigner();
     const signerAddress = signer.getPublicKey().toSuiAddress();
-    console.log(`\nSigner: ${signerAddress}`);
-    console.log(`  ${explorerObjectUrl(signerAddress, network)}`);
+    log.detail(`Signer: ${signerAddress}`);
 
     // Create and initialize market maker
     const marketMaker = new MarketMaker({
@@ -125,15 +119,17 @@ async function main() {
         await marketMaker.start();
 
         // Keep the process running
-        console.log("\nMarket maker running. Press Ctrl+C to stop.\n");
+        log.info("Market maker running. Press Ctrl+C to stop.");
     } catch (error) {
-        console.error("\nFatal error:", error);
+        log.fail("Fatal error");
+        log.loopError("", error);
         await marketMaker.stop();
         process.exit(1);
     }
 }
 
 main().catch((error) => {
-    console.error("Unhandled error:", error);
+    log.fail("Unhandled error");
+    log.loopError("", error);
     process.exit(1);
 });

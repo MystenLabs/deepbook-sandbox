@@ -1,6 +1,7 @@
 import type { SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 import type { DeploymentManifest } from "./types";
+import log from "../utils/logger";
 
 /**
  * Read a u64 (8 bytes, little-endian) from a byte array at the given offset.
@@ -112,19 +113,19 @@ export async function fetchOracleMidPrice(
         ]);
 
         if (deepPrice.magnitude === 0n || suiPrice.magnitude === 0n) {
-            console.error("  Oracle returned zero price");
+            log.loopError("Oracle returned zero price");
             return null;
         }
 
         const midPrice = calculateDeepSuiPrice(deepPrice, suiPrice);
         if (midPrice <= 0n) {
-            console.error("  Oracle returned non-positive DEEP/SUI price");
+            log.loopError("Oracle returned non-positive DEEP/SUI price");
             return null;
         }
 
         return midPrice;
     } catch (error) {
-        console.error("  Failed to read on-chain oracle:", error);
+        log.loopError("Failed to read on-chain oracle", error);
         return null;
     }
 }

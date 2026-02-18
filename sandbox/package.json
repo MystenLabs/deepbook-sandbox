@@ -14,6 +14,8 @@
     "dependencies": {
         "@mysten/sui": "^1.45.2",
         "dotenv": "^17.2.3",
+        "ora": "^8.2.0",
+        "picocolors": "^1.1.0",
         "zod": "^4.3.6"
     },
     "devDependencies": {

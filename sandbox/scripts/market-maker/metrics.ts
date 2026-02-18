@@ -1,4 +1,5 @@
 import http from "node:http";
+import log from "../utils/logger";
 
 interface Metrics {
     ordersPlacedTotal: number;
@@ -102,7 +103,7 @@ export class MetricsServer {
 
             this.server.on("error", reject);
             this.server.listen(port, () => {
-                console.log(`  Metrics server listening on http://localhost:${port}`);
+                log.success(`Metrics server: http://localhost:${port}`);
                 resolve();
             });
         });
