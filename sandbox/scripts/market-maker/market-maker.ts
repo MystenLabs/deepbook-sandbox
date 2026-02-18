@@ -9,6 +9,7 @@ import { fetchOracleMidPrice } from "./price-feed";
 import { explorerObjectUrl, formatPrice, formatDeep } from "./types";
 import { HealthServer, type HealthStatus, type ReadinessStatus } from "./health";
 import { MetricsServer, updateMetrics, getMetrics } from "./metrics";
+import log from "../utils/logger";
 
 export interface MarketMakerContext {
     client: SuiClient;
@@ -46,7 +47,8 @@ export class MarketMaker {
      * Initialize the market maker: create BalanceManager, deposit funds, start servers.
      */
     async initialize(): Promise<void> {
-        console.log("\n=== Initializing Market Maker ===\n");
+        log.phase("Initializing Market Maker");
+        log.resetSteps();
 
         const packageId = this.manifest.packages.deepbook.packageId;
         const poolId = this.manifest.pool.poolId;
@@ -54,35 +56,34 @@ export class MarketMaker {
         const quoteType = this.manifest.pool.quoteCoin;
 
         // Create BalanceManager
-        console.log("1. Creating BalanceManager...");
+        log.step("Creating BalanceManager...");
         const bmService = new BalanceManagerService(this.client, this.signer, packageId);
         const bmInfo = await bmService.createBalanceManager();
         this.balanceManagerId = bmInfo.balanceManagerId;
-        console.log(`   Created: ${this.balanceManagerId}`);
-        console.log(`   ${explorerObjectUrl(this.balanceManagerId, this.manifest.network.type)}`);
+        log.success(`Created: ${this.balanceManagerId}`);
+        log.detail(explorerObjectUrl(this.balanceManagerId, this.manifest.network.type));
 
         // Wait for object to be available on localnet
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
         // Deposit SUI for quote asset (for buying DEEP)
-        console.log("2. Depositing SUI...");
+        log.step("Depositing SUI...");
         const suiDepositAmount = 10_000_000_000n; // 10 SUI
         await bmService.deposit(this.balanceManagerId, "0x2::sui::SUI", suiDepositAmount);
-        console.log(`   Deposited: ${Number(suiDepositAmount) / 1e9} SUI`);
+        log.success(`Deposited: ${Number(suiDepositAmount) / 1e9} SUI`);
 
         // Wait for SUI deposit to propagate before touching another coin object
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
         // Deposit DEEP for base asset (for selling DEEP)
-        console.log("3. Depositing DEEP...");
+        log.step("Depositing DEEP...");
         const deepDepositAmount = 1_000_000_000n; // 1000 DEEP (6 decimals)
         try {
             await bmService.deposit(this.balanceManagerId, baseType, deepDepositAmount);
-            console.log(`   Deposited: ${Number(deepDepositAmount) / 1e6} DEEP`);
+            log.success(`Deposited: ${Number(deepDepositAmount) / 1e6} DEEP`);
             this.hasDeepBalance = true;
         } catch (e) {
-            console.error("DEEP deposit failed:", e);
-            console.log("   DEEP deposit failed (no DEEP tokens). Running bid-only mode.");
+            log.warn("DEEP deposit failed (no DEEP tokens). Running bid-only mode.");
         }
 
         // Create OrderManager
@@ -98,7 +99,7 @@ export class MarketMaker {
         );
 
         // Start health check server
-        console.log("4. Starting health check server...");
+        log.step("Starting health check server...");
         this.healthServer = new HealthServer(
             () => this.getHealthStatus(),
             () => this.getReadinessStatus(),
@@ -106,7 +107,7 @@ export class MarketMaker {
         await this.healthServer.start(this.config.healthCheckPort);
 
         // Start metrics server
-        console.log("5. Starting metrics server...");
+        log.step("Starting metrics server...");
         this.metricsServer = new MetricsServer();
         await this.metricsServer.start(this.config.metricsPort);
 
@@ -114,7 +115,7 @@ export class MarketMaker {
         await new Promise((resolve) => setTimeout(resolve, 3000));
 
         this.isReady = true;
-        console.log("\n=== Market Maker Initialized ===\n");
+        log.success("Market Maker Initialized");
     }
 
     /**
@@ -122,7 +123,7 @@ export class MarketMaker {
      */
     async start(): Promise<void> {
         if (this.isRunning) {
-            console.log("Market maker is already running");
+            log.warn("Market maker is already running");
             return;
         }
 
@@ -131,11 +132,10 @@ export class MarketMaker {
         }
 
         this.isRunning = true;
-        console.log("Starting market maker rebalance loop...");
-        console.log(`  Rebalance interval: ${this.config.rebalanceIntervalMs}ms`);
-        console.log(`  Levels per side: ${this.config.levelsPerSide}`);
-        console.log(`  Spread: ${this.config.spreadBps} bps`);
-        console.log("");
+        log.phase("Starting rebalance loop");
+        log.detail(`Rebalance interval: ${this.config.rebalanceIntervalMs}ms`);
+        log.detail(`Levels per side: ${this.config.levelsPerSide}`);
+        log.detail(`Spread: ${this.config.spreadBps} bps`);
 
         // Run initial rebalance
         await this.rebalance();
@@ -150,7 +150,7 @@ export class MarketMaker {
     async stop(): Promise<void> {
         if (this.isShuttingDown) return; // Prevent multiple shutdown attempts
         this.isShuttingDown = true;
-        console.log("\nGraceful shutdown initiated...");
+        log.warn("Graceful shutdown initiated...");
         this.isRunning = false;
 
         // Stop the rebalance timer
@@ -161,11 +161,11 @@ export class MarketMaker {
 
         // Cancel all outstanding orders
         if (this.orderManager && this.orderManager.getActiveOrderCount() > 0) {
-            console.log("Canceling outstanding orders...");
+            log.info("Canceling outstanding orders...");
             try {
                 await this.orderManager.cancelAllOrders();
             } catch (error) {
-                console.error("Error canceling orders:", error);
+                log.loopError("Error canceling orders", error);
             }
         }
 
@@ -177,7 +177,7 @@ export class MarketMaker {
             await this.metricsServer.stop();
         }
 
-        console.log("Market maker stopped.");
+        log.success("Market maker stopped.");
     }
 
     /**
@@ -186,7 +186,7 @@ export class MarketMaker {
     private async rebalance(): Promise<void> {
         if (!this.orderManager || this.isShuttingDown) return;
 
-        console.log(`[${new Date().toISOString()}] Rebalancing...`);
+        log.loop("Rebalancing...");
 
         try {
             // Fetch mid price from Pyth oracle
@@ -195,15 +195,15 @@ export class MarketMaker {
             if (oraclePrice) {
                 this.lastMidPrice = oraclePrice;
                 midPrice = oraclePrice;
-                console.log(`  Mid price: ${Number(oraclePrice) / 1e9} DEEP/SUI (oracle)`);
+                log.loopDetail(`Mid price: ${Number(oraclePrice) / 1e9} DEEP/SUI (oracle)`);
             } else if (this.lastMidPrice) {
                 midPrice = this.lastMidPrice;
-                console.log(
-                    `  Mid price: ${Number(midPrice) / 1e9} DEEP/SUI (last known -- oracle unavailable)`,
+                log.loopDetail(
+                    `Mid price: ${Number(midPrice) / 1e9} DEEP/SUI (last known -- oracle unavailable)`,
                 );
             } else {
-                console.log(
-                    `  Mid price: ${Number(this.config.fallbackMidPrice) / 1e9} DEEP/SUI (fallback -- oracle unavailable)`,
+                log.loopDetail(
+                    `Mid price: ${Number(this.config.fallbackMidPrice) / 1e9} DEEP/SUI (fallback -- oracle unavailable)`,
                 );
             }
 
@@ -220,25 +220,26 @@ export class MarketMaker {
             }
             const bids = levels.filter((l) => l.isBid);
             const asks = levels.filter((l) => !l.isBid);
-            console.log(`  Grid: ${bids.length} bids, ${asks.length} asks`);
+            log.loopDetail(`Grid: ${bids.length} bids, ${asks.length} asks`);
             for (const level of asks) {
-                console.log(
-                    `    ASK  ${formatPrice(level.price)} DEEP/SUI  ${formatDeep(level.quantity)} DEEP`,
+                log.loopDetail(
+                    `  ASK  ${formatPrice(level.price)} DEEP/SUI  ${formatDeep(level.quantity)} DEEP`,
                 );
             }
             for (const level of bids) {
-                console.log(
-                    `    BID  ${formatPrice(level.price)} DEEP/SUI  ${formatDeep(level.quantity)} DEEP`,
+                log.loopDetail(
+                    `  BID  ${formatPrice(level.price)} DEEP/SUI  ${formatDeep(level.quantity)} DEEP`,
                 );
             }
 
             // Place new orders
             await this.orderManager.placeOrders(levels);
+            log.loopSuccess(`Placed ${bids.length} bids + ${asks.length} asks`);
 
             // Update metrics
             updateMetrics({ rebalance: true });
         } catch (error) {
-            console.error("  Rebalance error:", error);
+            log.loopError("Rebalance error", error);
             updateMetrics({ error: true });
         }
     }

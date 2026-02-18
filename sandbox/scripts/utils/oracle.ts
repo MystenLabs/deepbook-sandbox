@@ -5,6 +5,7 @@ import { Transaction } from "@mysten/sui/transactions";
 import { fromHex } from "@mysten/sui/utils";
 import type { DeploymentResult } from "./deployer";
 import { SUI_PRICE_FEED_ID, DEEP_PRICE_FEED_ID } from "../oracle-service/constants";
+import log from "./logger";
 
 const SUI_PRICE_FEED_ID_BYTES = fromHex(SUI_PRICE_FEED_ID);
 const DEEP_PRICE_FEED_ID_BYTES = fromHex(DEEP_PRICE_FEED_ID);
@@ -139,8 +140,8 @@ export async function setupPythOracles(
         };
     }
 
-    console.log(`    ✅ DEEP PriceInfoObject: ${ids.deepPriceInfoObjectId}`);
-    console.log(`    ✅ SUI PriceInfoObject: ${ids.suiPriceInfoObjectId}`);
+    log.success(`DEEP PriceInfoObject: ${ids.deepPriceInfoObjectId}`);
+    log.success(`SUI PriceInfoObject: ${ids.suiPriceInfoObjectId}`);
 
     return ids;
 }

@@ -4,6 +4,7 @@ import { Transaction } from "@mysten/sui/transactions";
 import { ORDER_TYPE, SELF_MATCHING, SUI_CLOCK_OBJECT_ID, explorerTxUrl } from "./types";
 import type { ActiveOrder, GridLevel } from "./types";
 import { updateMetrics } from "./metrics";
+import log from "../utils/logger";
 
 export class OrderManager {
     private activeOrders: Map<string, ActiveOrder> = new Map();
@@ -110,7 +111,7 @@ export class OrderManager {
         }
 
         if (missingOrderIds > 0) {
-            console.warn(`  Warning: Could not extract order IDs for ${missingOrderIds} orders`);
+            log.warn(`Could not extract order IDs for ${missingOrderIds} orders`);
         }
 
         // Update metrics
@@ -119,8 +120,8 @@ export class OrderManager {
             activeOrders: this.activeOrders.size,
         });
 
-        console.log(`  Placed ${placedOrderIds.length} orders`);
-        console.log(`  ${explorerTxUrl(result.digest, this.network)}`);
+        log.loopDetail(`Placed ${placedOrderIds.length} orders`);
+        log.loopDetail(explorerTxUrl(result.digest, this.network));
         return placedOrderIds;
     }
 
@@ -176,8 +177,8 @@ export class OrderManager {
             activeOrders: 0,
         });
 
-        console.log(`  Canceled ${canceledCount} orders`);
-        console.log(`  ${explorerTxUrl(result.digest, this.network)}`);
+        log.loopDetail(`Canceled ${canceledCount} orders`);
+        log.loopDetail(explorerTxUrl(result.digest, this.network));
         return result.digest;
     }
 

@@ -13,53 +13,48 @@ import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
 import { PoolCreator } from "./utils/pool";
 import fs from "fs/promises";
 import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
+import log from "./utils/logger";
 
 async function main() {
     const network = getNetwork();
-    console.log(`🚀 Starting DeepBook ${network} deployment...\n`);
+    log.banner(` DeepBook sandbox [${network}] deployment`);
 
     try {
         // Start localnet network if localnet is selected
         if (network === "localnet") {
-            console.log("📦 Starting localnet (docker compose)...");
-            const { rpcPort, faucetPort } = await startLocalnet(getSandboxRoot());
-            console.log(`  ✅ RPC: http://127.0.0.1:${rpcPort}`);
-            console.log(`  ✅ Faucet: http://127.0.0.1:${faucetPort}\n`);
+            log.phase("Starting localnet (docker compose)");
+            await startLocalnet(getSandboxRoot());
+            log.success("RPC: http://127.0.0.1:9000");
+            log.success("Faucet: http://127.0.0.1:9123");
         }
 
         // Phase 1: Setup Sui client and keypair
-        console.log("🔑 Phase 1: Setting up Sui client...");
+        log.phase("Phase 1/6: Setting up Sui client");
         const signer = getSigner();
         const signerAddress = signer.getPublicKey().toSuiAddress();
-        console.log(`  Signer address: ${signerAddress}`);
-        console.log(`  Network: ${network}`);
+        log.detail(`Signer: ${signerAddress}`);
+        log.detail(`Network: ${network}`);
 
         const client = getClient(network);
 
         // Verify RPC is working
         try {
             const chainId = await client.getChainIdentifier();
-            console.log(`  ✅ Connected to chain: ${chainId}\n`);
+            log.success(`Connected to chain: ${chainId}`);
         } catch (error) {
             throw new Error(`Failed to connect to Sui RPC: ${error}`);
         }
 
         // Phase 2: Fund deployer address
-        console.log("💰 Phase 2: Funding deployer address...");
+        log.phase("Phase 2/6: Funding deployer address");
         const poolCreator = new PoolCreator(client, signer, getFaucetUrl(network));
         await ensureMinimumBalance(client, signerAddress, getFaucetUrl(network));
 
         // Phase 3: Deploy Move packages
-        console.log("📝 Phase 3: Deploying Move packages...");
-        console.log("  This will take several minutes...\n");
+        log.phase("Phase 3/6: Deploying Move packages");
+        log.info("This will take a few seconds...");
         const deployer = new MoveDeployer(client, signer, network);
         const deployedPackages = await deployer.deployAll();
-
-        console.log("\n  📦 Deployment Summary:");
-        for (const [name, result] of deployedPackages.entries()) {
-            console.log(`    - ${name}: ${result.packageId}`);
-        }
-        console.log();
 
         const sandboxRoot = getSandboxRoot();
         let firstCheckpoint: string | undefined;
@@ -78,17 +73,15 @@ async function main() {
         }
 
         updateEnvFile(sandboxRoot, envUpdates);
-        console.log("  ✅ Updated .env with deployment IDs and FIRST_CHECKPOINT\n");
+        log.success("Updated .env with deployment IDs and FIRST_CHECKPOINT");
 
         // Phase 4: Start deepbook-indexer and server (testnet only)
         if (network === "testnet") {
-            console.log(
-                "📡 Phase 4: Starting deepbook-indexer and server (docker compose --profile remote)...",
-            );
+            log.phase("Phase 4/6: Starting deepbook-indexer and server");
             const { serverPort } = await startRemote(sandboxRoot, envUpdates);
-            console.log(`  ✅ DeepBook server: http://127.0.0.1:${serverPort}\n`);
+            log.success(`DeepBook server: http://127.0.0.1:${serverPort}`);
         } else {
-            console.log("📡 Phase 4: Starting custom server and indexer for localnet\n");
+            log.phase("Phase 4/6: Starting indexer and services for localnet");
             const deepbookPkg = deployedPackages.get("deepbook")!;
             const marginPkg = deployedPackages.get("deepbook_margin");
             await configureAndStartLocalnetServices(
@@ -103,7 +96,8 @@ async function main() {
         // Setup the pyth oracles for localnet
         let pythOracleIds: PythOracleIds | undefined;
         if (network === "localnet") {
-            console.log("🔍 Setting up pyth oracles...");
+            log.phase("Setting up pyth oracles");
+            log.spin("Creating price feed objects...");
             pythOracleIds = await setupPythOracles(client, signer, deployedPackages);
 
             const pythPkg = deployedPackages.get("pyth")!;
@@ -112,21 +106,19 @@ async function main() {
                 DEEP_PRICE_INFO_OBJECT_ID: pythOracleIds.deepPriceInfoObjectId,
                 SUI_PRICE_INFO_OBJECT_ID: pythOracleIds.suiPriceInfoObjectId,
             });
-            console.log("  ✅ Updated .env with pyth oracle IDs\n");
+            log.success("Updated .env with pyth oracle IDs");
 
-            console.log("🔮 Starting oracle service container...");
+            log.spin("Starting oracle service container...");
             await startOracleService(sandboxRoot);
-            console.log("  ✅ Oracle service started\n");
+            log.success("Oracle service started");
         }
 
         // Phase 5: Create DEEP/SUI pool
-        console.log("🏊 Phase 5: Creating DEEP/SUI pool...");
-        console.log(deployedPackages);
+        log.phase("Phase 5/6: Creating DEEP/SUI pool");
         const pool = await poolCreator.createPool(deployedPackages);
-        console.log();
 
         // Phase 6: Write configuration file
-        console.log("📄 Phase 6: Writing configuration...");
+        log.phase("Phase 6/6: Writing configuration");
         const config = {
             network: {
                 type: network,
@@ -170,44 +162,33 @@ async function main() {
         await fs.mkdir(deploymentsDir, { recursive: true });
         await fs.writeFile(deploymentPath, JSON.stringify(config, null, 2));
 
-        console.log(`  ✅ Deployment written to ${deploymentPath}\n`);
+        log.success(`Deployment written to ${deploymentPath}`);
 
         // Note: Seed liquidity is skipped by default.
         // The market maker will place its own grid when it starts.
         // Run `pnpm seed-liquidity` manually if you need orders before the MM starts.
 
-        // Phase 9: Success!
-        console.log("✨ DeepBook environment ready!\n");
-        console.log("📋 Deployment Info:");
-        console.log(`  • RPC URL: ${getRpcUrl(network)}`);
-        console.log(`  • Faucet URL: http://localhost:9009`);
+        // Build summary — only user-facing URLs and key identifiers
+        const summaryEntries: Array<{ label: string; value: string }> = [
+            { label: "DEEP/SUI Pool", value: pool.poolId },
+            { label: "Deployment File", value: deploymentPath },
+        ];
         if (network === "testnet") {
-            console.log(`  • DeepBook Server: http://127.0.0.1:9008`);
+            summaryEntries.push({ label: "DeepBook Server", value: "http://127.0.0.1:9008" });
         }
-        if (network === "localnet") {
-            console.log(
-                `  • DEEP pyth oracle (PriceInfoObject): ${pythOracleIds?.deepPriceInfoObjectId}`,
-            );
-            console.log(
-                `  • SUI pyth oracle (PriceInfoObject): ${pythOracleIds?.suiPriceInfoObjectId}`,
-            );
-            console.log(`  • Oracle Service status: http://localhost:9010`);
-        }
-        console.log(`  • Market Maker status: http://localhost:3001/health`);
-        console.log(`  • Deployer Address: ${signerAddress}`);
-        console.log(`  • DEEP/SUI Pool: ${pool.poolId}`);
-        console.log(`  • Deployment File: ${deploymentPath}\n`);
-        console.log("⚠️  Containers are running. Stop with:");
-        console.log("   pnpm down\n");
+
+        log.summary("DeepBook Sandbox Ready!", summaryEntries);
+        log.warn("The Deepbook Sandbox is running. To stop it run: pnpm down");
     } catch (error) {
-        console.error("\n❌ Deployment failed:");
-        console.error(error);
-        console.error("\n⚠️  Containers may still be running. Check with: docker ps");
+        log.fail("Deployment failed");
+        log.loopError("", error);
+        log.warn("Containers may still be running. Check with: docker ps");
         process.exit(1);
     }
 }
 
 main().catch((error) => {
-    console.error("Fatal error:", error);
+    log.fail("Fatal error");
+    log.loopError("", error);
     process.exit(1);
 });

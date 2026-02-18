@@ -4,6 +4,7 @@ import { Transaction } from "@mysten/sui/transactions";
 import type { ParsedPriceData } from "./types";
 import { SUI_PRICE_FEED_ID, DEEP_PRICE_FEED_ID } from "./constants";
 import { fromHex } from "@mysten/sui/utils";
+import log from "../utils/logger";
 
 /**
  * Handles updating Pyth oracle contracts on Sui
@@ -22,8 +23,7 @@ export class OracleUpdater {
         priceData: ParsedPriceData[],
         priceInfoObjectIds: { sui: string; deep: string },
     ): Promise<void> {
-        console.log("🔄 Updating on-chain price feeds...");
-        console.log(priceData);
+        log.loop("Updating on-chain price feeds");
         const suiData = priceData.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
         const deepData = priceData.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
 
@@ -63,10 +63,10 @@ export class OracleUpdater {
                 );
             }
 
-            console.log(`  ✅ Updated price feeds (digest: ${result.digest}`);
+            log.loopSuccess(`Updated price feeds (digest: ${result.digest})`);
             this.logPriceData(suiData, deepData);
         } catch (error) {
-            console.error(`  ❌ Failed to update price feeds:`, error);
+            log.loopError("Failed to update price feeds", error);
             throw error;
         }
     }
@@ -162,7 +162,7 @@ export class OracleUpdater {
             return formatted.toFixed(Math.abs(expo));
         };
 
-        console.log(`     SUI:  $${formatPrice(suiData.price.price, suiData.price.expo)}`);
-        console.log(`     DEEP: $${formatPrice(deepData.price.price, deepData.price.expo)}`);
+        log.loopDetail(`SUI:  $${formatPrice(suiData.price.price, suiData.price.expo)}`);
+        log.loopDetail(`DEEP: $${formatPrice(deepData.price.price, deepData.price.expo)}`);
     }
 }
