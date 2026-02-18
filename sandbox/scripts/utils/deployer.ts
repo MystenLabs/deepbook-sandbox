@@ -1,4 +1,7 @@
-import { execFileSync } from "child_process";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -126,10 +129,11 @@ export class MoveDeployer {
                 : ["client", "publish", resolvedPath];
         let output: string;
         try {
-            output = execFileSync(this.suiBinary, args, {
+            const { stdout } = await execFileAsync(this.suiBinary, args, {
                 encoding: "utf-8",
-                stdio: ["inherit", "pipe", "pipe"],
-            }) as string;
+                maxBuffer: 10 * 1024 * 1024,
+            });
+            output = stdout;
         } catch (err: unknown) {
             const stderr =
                 err && typeof err === "object" && "stderr" in err
