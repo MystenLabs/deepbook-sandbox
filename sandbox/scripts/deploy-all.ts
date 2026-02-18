@@ -52,7 +52,7 @@ async function main() {
 
         // Phase 3: Deploy Move packages
         log.phase("Phase 3/6: Deploying Move packages");
-        log.info("This will take several minutes...");
+        log.info("This will take a few seconds...");
         const deployer = new MoveDeployer(client, signer, network);
         const deployedPackages = await deployer.deployAll();
 
