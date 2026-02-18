@@ -29,7 +29,7 @@ async function main() {
         }
 
         // Phase 1: Setup Sui client and keypair
-        log.phase("Phase 1: Setting up Sui client");
+        log.phase("Phase 1/6: Setting up Sui client");
         const signer = getSigner();
         const signerAddress = signer.getPublicKey().toSuiAddress();
         log.detail(`Signer: ${signerAddress}`);
@@ -46,12 +46,12 @@ async function main() {
         }
 
         // Phase 2: Fund deployer address
-        log.phase("Phase 2: Funding deployer address");
+        log.phase("Phase 2/6: Funding deployer address");
         const poolCreator = new PoolCreator(client, signer, getFaucetUrl(network));
         await ensureMinimumBalance(client, signerAddress, getFaucetUrl(network));
 
         // Phase 3: Deploy Move packages
-        log.phase("Phase 3: Deploying Move packages");
+        log.phase("Phase 3/6: Deploying Move packages");
         log.info("This will take several minutes...");
         const deployer = new MoveDeployer(client, signer, network);
         const deployedPackages = await deployer.deployAll();
@@ -77,11 +77,11 @@ async function main() {
 
         // Phase 4: Start deepbook-indexer and server (testnet only)
         if (network === "testnet") {
-            log.phase("Phase 4: Starting deepbook-indexer and server");
+            log.phase("Phase 4/6: Starting deepbook-indexer and server");
             const { serverPort } = await startRemote(sandboxRoot, envUpdates);
             log.success(`DeepBook server: http://127.0.0.1:${serverPort}`);
         } else {
-            log.phase("Phase 4: Starting indexer and services for localnet");
+            log.phase("Phase 4/6: Starting indexer and services for localnet");
             const deepbookPkg = deployedPackages.get("deepbook")!;
             const marginPkg = deployedPackages.get("deepbook_margin");
             await configureAndStartLocalnetServices(
@@ -114,11 +114,11 @@ async function main() {
         }
 
         // Phase 5: Create DEEP/SUI pool
-        log.phase("Phase 5: Creating DEEP/SUI pool");
+        log.phase("Phase 5/6: Creating DEEP/SUI pool");
         const pool = await poolCreator.createPool(deployedPackages);
 
         // Phase 6: Write configuration file
-        log.phase("Phase 6: Writing configuration");
+        log.phase("Phase 6/6: Writing configuration");
         const config = {
             network: {
                 type: network,
