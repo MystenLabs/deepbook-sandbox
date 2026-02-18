@@ -26,6 +26,7 @@ pnpm deploy-all   # Deploys contracts and starts the market maker container
 ```
 
 To view logs:
+
 ```bash
 docker compose logs -f market-maker
 ```
@@ -34,15 +35,15 @@ docker compose logs -f market-maker
 
 ### Required Environment Variables (set by deploy-all)
 
-| Variable | Description |
-|----------|-------------|
-| `DEEPBOOK_PACKAGE_ID` | Deployed DeepBook package address |
-| `POOL_ID` | DEEP/SUI pool object ID |
-| `BASE_COIN_TYPE` | Base coin type (e.g. `0x...::deep::DEEP`) |
-| `DEPLOYER_ADDRESS` | Deployer's Sui address |
-| `PYTH_PACKAGE_ID` | Deployed Pyth package address |
-| `DEEP_PRICE_INFO_OBJECT_ID` | DEEP PriceInfoObject ID |
-| `SUI_PRICE_INFO_OBJECT_ID` | SUI PriceInfoObject ID |
+| Variable                    | Description                               |
+| --------------------------- | ----------------------------------------- |
+| `DEEPBOOK_PACKAGE_ID`       | Deployed DeepBook package address         |
+| `POOL_ID`                   | DEEP/SUI pool object ID                   |
+| `BASE_COIN_TYPE`            | Base coin type (e.g. `0x...::deep::DEEP`) |
+| `DEPLOYER_ADDRESS`          | Deployer's Sui address                    |
+| `PYTH_PACKAGE_ID`           | Deployed Pyth package address             |
+| `DEEP_PRICE_INFO_OBJECT_ID` | DEEP PriceInfoObject ID                   |
+| `SUI_PRICE_INFO_OBJECT_ID`  | SUI PriceInfoObject ID                    |
 
 ### Tunable Parameters
 
