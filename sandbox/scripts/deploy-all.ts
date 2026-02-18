@@ -177,8 +177,8 @@ async function main() {
             summaryEntries.push({ label: "DeepBook Server", value: "http://127.0.0.1:9008" });
         }
 
-        log.summary("DeepBook Environment Ready", summaryEntries);
-        log.warn("Containers are running. Stop with: pnpm down");
+        log.summary("DeepBook Sandbox Ready!", summaryEntries);
+        log.warn("The Deepbook Sandbox is running. To stop it run: pnpm down");
     } catch (error) {
         log.fail("Deployment failed");
         log.loopError("", error);
