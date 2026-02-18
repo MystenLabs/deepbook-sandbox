@@ -22,298 +22,290 @@
 #   - x86_64 (Intel/AMD):    SUI_TOOLS_IMAGE=mysten/sui-tools:compat
 
 networks:
-    deepbook-net:
-        driver: bridge
+  deepbook-net:
+    driver: bridge
 
 volumes:
-    postgres_data:
-    sui_data:
-    checkpoint_data:
+  postgres_data:
+  sui_data:
+  checkpoint_data:
 
 services:
-    # ============================================================
-    # PostgreSQL Database
-    # ============================================================
-    postgres:
-        image: postgres:16-alpine
-        container_name: deepbook-postgres
-        environment:
-            POSTGRES_USER: postgres
-            POSTGRES_PASSWORD: postgres
-            POSTGRES_DB: deepbook
-        ports:
-            - "5432:5432"
-        volumes:
-            - postgres_data:/var/lib/postgresql/data
-        networks:
-            - deepbook-net
-        healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U postgres -d deepbook"]
-            interval: 5s
-            timeout: 5s
-            retries: 10
-            start_period: 10s
-        restart: unless-stopped
+  # ============================================================
+  # PostgreSQL Database
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: deepbook-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: deepbook
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - deepbook-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d deepbook"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
 
-    # ============================================================
-    # Sui Localnet
-    # Start with: docker compose --profile localnet up -d
-    # Dumps checkpoints to shared volume for the indexer
-    # ============================================================
-    sui-localnet:
-        image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:compat-arm64 (ARM) or mysten/sui-tools:compat (x86)}
-        container_name: sui-localnet
-        profiles:
-            - localnet
-        environment:
-            FORCE_REGENESIS: ${FORCE_REGENESIS:-true}
-        command: >
-            sh -c 'RUST_LOG="off,sui_node=info" sui start --data-ingestion-dir /checkpoints --with-faucet ${FORCE_REGENESIS:+--force-regenesis}'
-        ports:
-            - "9000:9000" # RPC
-            - "9123:9123" # Faucet
-        volumes:
-            - sui_data:/root/.sui
-            - checkpoint_data:/checkpoints
-        networks:
-            - deepbook-net
-        healthcheck:
-            test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9000'"]
-            interval: 10s
-            timeout: 5s
-            retries: 30
-            start_period: 30s
-        restart: unless-stopped
+  # ============================================================
+  # Sui Localnet
+  # Start with: docker compose --profile localnet up -d
+  # Dumps checkpoints to shared volume for the indexer
+  # ============================================================
+  sui-localnet:
+    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:compat-arm64 (ARM) or mysten/sui-tools:compat (x86)}
+    container_name: sui-localnet
+    profiles:
+      - localnet
+    environment:
+      FORCE_REGENESIS: ${FORCE_REGENESIS:-true}
+    command: >
+      sh -c 'RUST_LOG="off,sui_node=info" sui start --data-ingestion-dir /checkpoints --with-faucet ${FORCE_REGENESIS:+--force-regenesis}'
+    ports:
+      - "9000:9000" # RPC
+      - "9123:9123" # Faucet
+    volumes:
+      - sui_data:/root/.sui
+      - checkpoint_data:/checkpoints
+    networks:
+      - deepbook-net
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9000'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
 
-    # ============================================================
-    # Market Maker
-    # Automated market maker for localnet DEEP/SUI pool
-    # Started by deploy-all after pool creation (env vars set via .env)
-    # ============================================================
-    market-maker:
-        profiles:
-            - localnet
-        build:
-            context: .
-            dockerfile: ./scripts/market-maker/Dockerfile
-        container_name: deepbook-market-maker
-        environment:
-            NETWORK: localnet
-            RPC_URL: http://sui-localnet:9000
-            PRIVATE_KEY: ${PRIVATE_KEY:?Set PRIVATE_KEY in .env}
-            DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID}
-            POOL_ID: ${POOL_ID}
-            BASE_COIN_TYPE: ${BASE_COIN_TYPE}
-            DEPLOYER_ADDRESS: ${DEPLOYER_ADDRESS}
-            PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID}
-            DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID}
-            SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID}
-            MM_SPREAD_BPS: ${MM_SPREAD_BPS:-10}
-            MM_LEVELS_PER_SIDE: ${MM_LEVELS_PER_SIDE:-5}
-            MM_ORDER_SIZE_BASE: ${MM_ORDER_SIZE_BASE:-}
-            MM_REBALANCE_INTERVAL_MS: ${MM_REBALANCE_INTERVAL_MS:-10000}
-            MM_HEALTH_CHECK_PORT: ${MM_HEALTH_CHECK_PORT:-3000}
-            MM_METRICS_PORT: ${MM_METRICS_PORT:-9090}
-        ports:
-            - "3001:3000"  # Health check (offset to avoid host conflict)
-            - "9091:9090"  # Prometheus metrics (offset)
-        networks:
-            - deepbook-net
-        depends_on:
-            sui-localnet:
-                condition: service_healthy
-        healthcheck:
-            test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
-            interval: 10s
-            timeout: 5s
-            retries: 30
-            start_period: 30s
-        restart: unless-stopped
+  # ============================================================
+  # Market Maker
+  # Automated market maker for localnet DEEP/SUI pool
+  # Started by deploy-all after pool creation (env vars set via .env)
+  # ============================================================
+  market-maker:
+    profiles:
+      - localnet
+    build:
+      context: .
+      dockerfile: ./scripts/market-maker/Dockerfile
+    container_name: deepbook-market-maker
+    environment:
+      NETWORK: localnet
+      RPC_URL: http://sui-localnet:9000
+      PRIVATE_KEY: ${PRIVATE_KEY:?Set PRIVATE_KEY in .env}
+      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID}
+      POOL_ID: ${POOL_ID}
+      BASE_COIN_TYPE: ${BASE_COIN_TYPE}
+      DEPLOYER_ADDRESS: ${DEPLOYER_ADDRESS}
+      PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID}
+      DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID}
+      SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID}
+      MM_SPREAD_BPS: ${MM_SPREAD_BPS:-10}
+      MM_LEVELS_PER_SIDE: ${MM_LEVELS_PER_SIDE:-5}
+      MM_ORDER_SIZE_BASE: ${MM_ORDER_SIZE_BASE:-}
+      MM_REBALANCE_INTERVAL_MS: ${MM_REBALANCE_INTERVAL_MS:-10000}
+      MM_HEALTH_CHECK_PORT: ${MM_HEALTH_CHECK_PORT:-3000}
+      MM_METRICS_PORT: ${MM_METRICS_PORT:-9090}
+    ports:
+      - "3001:3000" # Health check (offset to avoid host conflict)
+      - "9091:9090" # Prometheus metrics (offset)
+    networks:
+      - deepbook-net
+    depends_on:
+      sui-localnet:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
 
-    # ============================================================
-    # DeepBook Indexer
-    # Indexes DeepBook events from Sui testnet/mainnet
-    # Note: Only supports testnet/mainnet (hardcoded checkpoint URLs)
-    # ============================================================
-    deepbook-indexer:
-        profiles:
-            - remote
-        build:
-            context: ../external/deepbook
-            dockerfile: docker/deepbook-indexer/Dockerfile
-            args:
-                PROFILE: release
-                GIT_REVISION: ${GIT_REVISION:-local}
-        container_name: deepbook-indexer
-        environment:
-            DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-            NETWORK: ${NETWORK:-testnet}
-            RUST_LOG: ${RUST_LOG:-info}
-            FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-}
-        ports:
-            - "9184:9184" # Prometheus metrics
-        networks:
-            - deepbook-net
-        depends_on:
-            postgres:
-                condition: service_healthy
-        healthcheck:
-            test:
-                [
-                    "CMD-SHELL",
-                    "curl -sf http://localhost:9184/metrics || exit 1",
-                ]
-            interval: 30s
-            timeout: 10s
-            retries: 5
-            start_period: 120s
-        restart: unless-stopped
+  # ============================================================
+  # DeepBook Indexer
+  # Indexes DeepBook events from Sui testnet/mainnet
+  # Note: Only supports testnet/mainnet (hardcoded checkpoint URLs)
+  # ============================================================
+  deepbook-indexer:
+    profiles:
+      - remote
+    build:
+      context: ../external/deepbook
+      dockerfile: docker/deepbook-indexer/Dockerfile
+      args:
+        PROFILE: release
+        GIT_REVISION: ${GIT_REVISION:-local}
+    container_name: deepbook-indexer
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
+      NETWORK: ${NETWORK:-testnet}
+      RUST_LOG: ${RUST_LOG:-info}
+      FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-}
+    ports:
+      - "9184:9184" # Prometheus metrics
+    networks:
+      - deepbook-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
 
-    deepbook-local-indexer:
-        profiles:
-            - localnet
-        build:
-            context: ./localnet
-            dockerfile: ./docker/deepbook-indexer/Dockerfile
-            args:
-                PROFILE: release
-                GIT_REVISION: ${GIT_REVISION:-local}
-        container_name: deepbook-local-indexer
-        environment:
-            DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-            LOCAL_CHECKPOINTS_DIR: /checkpoints
-            CORE_PACKAGES: ${DEEPBOOK_PACKAGE_ID:-}
-            MARGIN_PACKAGES: ${MARGIN_PACKAGES:-}
-            RUST_LOG: ${RUST_LOG:-info}
-            FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-0}
-        volumes:
-            - checkpoint_data:/checkpoints:ro
-        ports:
-            - "9184:9184" # Prometheus metrics
-        networks:
-            - deepbook-net
-        depends_on:
-            postgres:
-                condition: service_healthy
-            sui-localnet:
-                condition: service_healthy
-        healthcheck:
-            test:
-                [
-                    "CMD-SHELL",
-                    "curl -sf http://localhost:9184/metrics || exit 1",
-                ]
-            interval: 30s
-            timeout: 10s
-            retries: 5
-            start_period: 120s
-        restart: unless-stopped
+  deepbook-local-indexer:
+    profiles:
+      - localnet
+    build:
+      context: ./localnet
+      dockerfile: ./docker/deepbook-indexer/Dockerfile
+      args:
+        PROFILE: release
+        GIT_REVISION: ${GIT_REVISION:-local}
+    container_name: deepbook-local-indexer
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
+      LOCAL_CHECKPOINTS_DIR: /checkpoints
+      CORE_PACKAGES: ${DEEPBOOK_PACKAGE_ID:-}
+      MARGIN_PACKAGES: ${MARGIN_PACKAGES:-}
+      RUST_LOG: ${RUST_LOG:-info}
+      FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-0}
+    volumes:
+      - checkpoint_data:/checkpoints:ro
+    ports:
+      - "9184:9184" # Prometheus metrics
+    networks:
+      - deepbook-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sui-localnet:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
 
-    # ============================================================
-    # DeepBook Server (REST API)
-    # Provides HTTP API for querying indexed DeepBook data
-    # Requires indexer to populate database
-    # ============================================================
-    deepbook-server:
-        profiles:
-            - remote
-            - localnet
-        build:
-            context: ../external/deepbook
-            dockerfile: docker/deepbook-server/Dockerfile
-            args:
-                PROFILE: release
-                GIT_REVISION: ${GIT_REVISION:-local}
-        container_name: deepbook-server
-        environment:
-            DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-            RPC_URL: http://host.docker.internal:9000
-            DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-0x22be4cade64bf2d02412c7e8d0e8beea2f78828b948118d46735315409371a3c}
-            DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270}
-            DEEP_TREASURY_ID: ${DEEP_TREASURY_ID}
-            MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID}
-            RUST_LOG: ${RUST_LOG:-info}
-        ports:
-            - "9008:9008" # REST API
-            - "9185:9184" # Prometheus metrics (offset to avoid conflict with indexer)
-        networks:
-            - deepbook-net
-        depends_on:
-            postgres:
-                condition: service_healthy
-            # deepbook-indexer:
-            #     condition: service_started
-        healthcheck:
-            test: ["CMD-SHELL", "curl -sf http://localhost:9008/ || exit 1"]
-            interval: 30s
-            timeout: 10s
-            retries: 5
-            start_period: 60s
-        restart: unless-stopped
+  # ============================================================
+  # DeepBook Server (REST API)
+  # Provides HTTP API for querying indexed DeepBook data
+  # Requires indexer to populate database
+  # ============================================================
+  deepbook-server:
+    profiles:
+      - remote
+      - localnet
+    build:
+      context: ../external/deepbook
+      dockerfile: docker/deepbook-server/Dockerfile
+      args:
+        PROFILE: release
+        GIT_REVISION: ${GIT_REVISION:-local}
+    container_name: deepbook-server
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
+      RPC_URL: http://host.docker.internal:9000
+      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-0x22be4cade64bf2d02412c7e8d0e8beea2f78828b948118d46735315409371a3c}
+      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270}
+      DEEP_TREASURY_ID: ${DEEP_TREASURY_ID}
+      MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "9008:9008" # REST API
+      - "9185:9184" # Prometheus metrics (offset to avoid conflict with indexer)
+    networks:
+      - deepbook-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # deepbook-indexer:
+      #     condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9008/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
 
-    # ============================================================
-    # DeepBook Faucet
-    # Distributes SUI (proxied) and DEEP tokens for testing
-    # ============================================================
-    deepbook-faucet:
-        profiles:
-            - localnet
-            - remote
-        build:
-            context: ./faucet
-        container_name: deepbook-faucet
-        environment:
-            NETWORK: ${NETWORK:-localnet}
-            PRIVATE_KEY: ${PRIVATE_KEY}
-            DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID}
-            RPC_URL: ${RPC_URL:-}
-            PORT: 9009
-            MAX_DEEP_PER_REQUEST: 10000
-        ports:
-            - "9009:9009"
-        networks:
-            - deepbook-net
-        depends_on:
-            sui-localnet:
-                condition: service_healthy
-                required: false
-        healthcheck:
-            test: ["CMD-SHELL", "wget -qO- http://localhost:9009/ || exit 1"]
-            interval: 30s
-            timeout: 10s
-            retries: 5
-            start_period: 15s
-        restart: unless-stopped
+  # ============================================================
+  # DeepBook Faucet
+  # Distributes SUI (proxied) and DEEP tokens for testing
+  # ============================================================
+  deepbook-faucet:
+    profiles:
+      - localnet
+      - remote
+    build:
+      context: ./faucet
+    container_name: deepbook-faucet
+    environment:
+      NETWORK: ${NETWORK:-localnet}
+      PRIVATE_KEY: ${PRIVATE_KEY}
+      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID}
+      RPC_URL: ${RPC_URL:-}
+      PORT: 9009
+      MAX_DEEP_PER_REQUEST: 10000
+    ports:
+      - "9009:9009"
+    networks:
+      - deepbook-net
+    depends_on:
+      sui-localnet:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9009/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
 
-    # ============================================================
-    # Oracle Service
-    # Updates Pyth price feeds for SUI and DEEP on localnet
-    # ============================================================
-    oracle-service:
-        profiles:
-            - localnet
-        build:
-            context: .
-            dockerfile: ./scripts/oracle-service/Dockerfile
-        container_name: oracle-service
-        environment:
-            NETWORK: localnet
-            PRIVATE_KEY: ${PRIVATE_KEY}
-            RPC_URL: http://sui-localnet:9000
-            PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID}
-            DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID}
-            SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID}
-        ports:
-            - "9010:9010"
-        networks:
-            - deepbook-net
-        depends_on:
-            sui-localnet:
-                condition: service_healthy
-        healthcheck:
-            test: ["CMD-SHELL", "wget -qO- http://localhost:9010/ || exit 1"]
-            interval: 30s
-            timeout: 10s
-            retries: 5
-            start_period: 30s
-        restart: unless-stopped
+  # ============================================================
+  # Oracle Service
+  # Updates Pyth price feeds for SUI and DEEP on localnet
+  # ============================================================
+  oracle-service:
+    profiles:
+      - localnet
+    build:
+      context: .
+      dockerfile: ./scripts/oracle-service/Dockerfile
+    container_name: oracle-service
+    environment:
+      NETWORK: localnet
+      PRIVATE_KEY: ${PRIVATE_KEY}
+      RPC_URL: http://sui-localnet:9000
+      PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID}
+      DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID}
+      SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID}
+    ports:
+      - "9010:9010"
+    networks:
+      - deepbook-net
+    depends_on:
+      sui-localnet:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9010/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped

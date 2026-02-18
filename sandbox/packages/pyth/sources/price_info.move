@@ -132,7 +132,7 @@ module pyth::price_info {
         }
     }
 
-     public fun uid_to_inner(price_info: &PriceInfoObject): ID {
+    public fun uid_to_inner(price_info: &PriceInfoObject): ID {
         object::uid_to_inner(&price_info.id)
     }
 

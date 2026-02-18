@@ -26,4 +26,3 @@ DROP TABLE IF EXISTS supply_referral_minted;
 DROP TABLE IF EXISTS pause_cap_updated;
 DROP TABLE IF EXISTS protocol_fees_increased;
 DROP TABLE IF EXISTS referral_fees_claimed;
-
