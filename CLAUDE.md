@@ -41,15 +41,12 @@ deepbook-sandbox/
 │   │       │   └── deep-faucet.ts # Signs DEEP transfers from deployer
 │   │       └── routes/
 │   │           └── faucet.ts      # POST /faucet endpoint
-│   ├── docker/
-│   │   └── market-maker/  # Market maker Docker image
-│   │       ├── Dockerfile
-│   │       └── entrypoint.sh
 │   └── scripts/
 │       ├── deploy-all.ts      # Deploy DeepBook to localnet
 │       ├── seed-liquidity.ts  # One-shot initial liquidity seeding
 │       ├── down.ts            # Stop localnet containers
-│       ├── market-maker/      # Market maker service
+│       ├── market-maker/      # Market maker service (Dockerized)
+│       │   ├── Dockerfile
 │       │   ├── index.ts   # Entry point
 │       │   ├── config.ts  # Zod config schema
 │       │   ├── types.ts   # DeepBook constants
@@ -96,9 +93,8 @@ docker compose --profile remote up -d
 docker compose --profile remote down      # Stop services
 docker compose --profile remote down -v   # Fresh start (remove volumes)
 
-# Localnet (Sui node + market maker)
-docker compose --profile localnet up -d   # Start sui-localnet + market-maker
-pnpm deploy-all                           # Deploy contracts (market maker auto-starts when manifest appears)
+# Localnet (Sui node + oracle + market maker)
+pnpm deploy-all                           # Start localnet, deploy contracts, start services
 docker compose --profile localnet down
 
 # Stop all services (any profile)
@@ -109,7 +105,7 @@ docker compose logs -f
 docker compose logs -f market-maker       # Market maker logs only
 ```
 
-> **Localnet workflow:** The market maker container starts immediately but waits (polls) for a deployment manifest in `deployments/`. Run `pnpm deploy-all` on the host to deploy contracts -- the market maker detects the manifest and begins trading automatically.
+> **Localnet workflow:** Run `pnpm deploy-all` to start localnet, deploy contracts, and automatically launch the oracle service and market maker containers with the correct env vars.
 
 ## Development Commands
 
@@ -163,9 +159,6 @@ pnpm deploy-all
 
 # Seed initial liquidity into the latest deployed pool (standalone, runs once and exits)
 pnpm seed-liquidity
-
-# Run the market maker (requires deploy-all first)
-pnpm market-maker
 
 # Stop localnet containers
 pnpm down

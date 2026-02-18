@@ -18,14 +18,34 @@ A TypeScript market maker service for DeepBook V3 on Sui. The service maintains 
 
 ## Usage
 
+The market maker runs as a Docker container, started automatically by `pnpm deploy-all`. It receives its configuration through environment variables set in `.env`.
+
 ```bash
 cd sandbox
-pnpm market-maker
+pnpm deploy-all   # Deploys contracts and starts the market maker container
+```
+
+To view logs:
+
+```bash
+docker compose logs -f market-maker
 ```
 
 ## Configuration
 
-Configuration can be set via environment variables:
+### Required Environment Variables (set by deploy-all)
+
+| Variable                    | Description                               |
+| --------------------------- | ----------------------------------------- |
+| `DEEPBOOK_PACKAGE_ID`       | Deployed DeepBook package address         |
+| `POOL_ID`                   | DEEP/SUI pool object ID                   |
+| `BASE_COIN_TYPE`            | Base coin type (e.g. `0x...::deep::DEEP`) |
+| `DEPLOYER_ADDRESS`          | Deployer's Sui address                    |
+| `PYTH_PACKAGE_ID`           | Deployed Pyth package address             |
+| `DEEP_PRICE_INFO_OBJECT_ID` | DEEP PriceInfoObject ID                   |
+| `SUI_PRICE_INFO_OBJECT_ID`  | SUI PriceInfoObject ID                    |
+
+### Tunable Parameters
 
 | Variable                   | Description                                                        | Default                    |
 | -------------------------- | ------------------------------------------------------------------ | -------------------------- |
@@ -37,7 +57,6 @@ Configuration can be set via environment variables:
 | `MM_REBALANCE_INTERVAL_MS` | Rebalance interval in ms                                           | `10000` (10s)              |
 | `MM_HEALTH_CHECK_PORT`     | Health check server port                                           | `3000`                     |
 | `MM_METRICS_PORT`          | Prometheus metrics port                                            | `9090`                     |
-| `DEPLOYMENT_PATH`          | Path to deployment manifest                                        | Auto-detects latest        |
 
 ## Endpoints
 

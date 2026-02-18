@@ -6,6 +6,7 @@ import {
     startRemote,
     configureAndStartLocalnetServices,
     startOracleService,
+    startMarketMaker,
 } from "./utils/docker-compose";
 import { MoveDeployer } from "./utils/deployer";
 import { updateEnvFile } from "./utils/env";
@@ -163,6 +164,21 @@ async function main() {
         await fs.writeFile(deploymentPath, JSON.stringify(config, null, 2));
 
         log.success(`Deployment written to ${deploymentPath}`);
+
+        // Phase 7: Start market maker (localnet only)
+        if (network === "localnet") {
+            console.log("🤖 Phase 7: Starting market maker...");
+            updateEnvFile(sandboxRoot, {
+                DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
+                POOL_ID: pool.poolId,
+                BASE_COIN_TYPE: `${deployedPackages.get("token")!.packageId}::deep::DEEP`,
+                DEPLOYER_ADDRESS: signerAddress,
+            });
+            console.log("  ✅ Updated .env with market maker IDs");
+
+            await startMarketMaker(sandboxRoot);
+            console.log("  ✅ Market maker started\n");
+        }
 
         // Note: Seed liquidity is skipped by default.
         // The market maker will place its own grid when it starts.
