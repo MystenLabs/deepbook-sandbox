@@ -239,7 +239,9 @@ export async function configureAndStartLocalnetServices(
 
     if (result.status !== 0) {
         const stderr = result.stderr?.trim() || "";
-        throw new Error(`Failed to start localnet indexer (exit ${result.status})${stderr ? `\n${stderr}` : ""}`);
+        throw new Error(
+            `Failed to start localnet indexer (exit ${result.status})${stderr ? `\n${stderr}` : ""}`,
+        );
     }
 
     // Wait for indexer to be healthy (check metrics endpoint)
@@ -258,20 +260,14 @@ export async function startOracleService(
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
     const result = runDockerComposeVisible(
-        [
-            "--profile",
-            "localnet",
-            "up",
-            "-d",
-            "--build",
-            "--force-recreate",
-            "oracle-service",
-        ],
+        ["--profile", "localnet", "up", "-d", "--build", "--force-recreate", "oracle-service"],
         { cwd, env },
     );
     if (result.status !== 0) {
         const stderr = result.stderr?.trim() || "";
-        throw new Error(`Failed to start oracle service (exit ${result.status})${stderr ? `\n${stderr}` : ""}`);
+        throw new Error(
+            `Failed to start oracle service (exit ${result.status})${stderr ? `\n${stderr}` : ""}`,
+        );
     }
 }
 
@@ -287,20 +283,14 @@ export async function startMarketMaker(
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
     const result = runDockerComposeVisible(
-        [
-            "--profile",
-            "localnet",
-            "up",
-            "-d",
-            "--build",
-            "--force-recreate",
-            "market-maker",
-        ],
+        ["--profile", "localnet", "up", "-d", "--build", "--force-recreate", "market-maker"],
         { cwd, env },
     );
     if (result.status !== 0) {
         const stderr = result.stderr?.trim() || "";
-        throw new Error(`Failed to start market maker (exit ${result.status})${stderr ? `\n${stderr}` : ""}`);
+        throw new Error(
+            `Failed to start market maker (exit ${result.status})${stderr ? `\n${stderr}` : ""}`,
+        );
     }
 }
 
