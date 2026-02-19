@@ -173,6 +173,7 @@ The oracle service (`./sandbox/scripts/oracle-service/`) runs as a Docker contai
 - **Status endpoint**: `http://localhost:9010` — returns JSON with latest prices, update count, and errors
 - **Data Source**: Fetches historical price data from Pyth Network API (24h ago)
 - **Env vars** (set automatically by deploy-all):
+  - `ORACLE_PRIVATE_KEY`: Dedicated Ed25519 keypair (auto-generated, avoids gas coin conflicts with market maker)
   - `PYTH_PACKAGE_ID`: Deployed pyth package address
   - `DEEP_PRICE_INFO_OBJECT_ID`: DEEP PriceInfoObject ID
   - `SUI_PRICE_INFO_OBJECT_ID`: SUI PriceInfoObject ID

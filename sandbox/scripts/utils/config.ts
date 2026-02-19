@@ -14,7 +14,7 @@ const networkSchema = z.enum(["testnet", "localnet"]);
 
 const envSchema = z
     .object({
-        PRIVATE_KEY: z.string().min(1, "PRIVATE_KEY is required"),
+        PRIVATE_KEY: z.string().optional(),
         NETWORK: z.string().optional(),
         RPC_URL: z.string().optional(),
         SUI_TOOLS_IMAGE: z.string().optional(),
@@ -26,7 +26,7 @@ const envSchema = z
                 ? (networkSchema.parse(network) as Network)
                 : undefined;
         return {
-            privateKey: raw.PRIVATE_KEY.trim(),
+            privateKey: raw.PRIVATE_KEY?.trim(),
             network: validNetwork,
             rpcUrl: raw.RPC_URL?.trim() || undefined,
             suiToolsImage: raw.SUI_TOOLS_IMAGE?.trim(),
@@ -87,6 +87,9 @@ export function getClient(network?: Network): SuiClient {
 
 export function getSigner(): Keypair {
     const privateKey = loader.getConfig().privateKey;
+    if (!privateKey) {
+        throw new Error("PRIVATE_KEY is required but not set");
+    }
     const { schema, secretKey } = decodeSuiPrivateKey(privateKey);
     switch (schema) {
         case "ED25519":
