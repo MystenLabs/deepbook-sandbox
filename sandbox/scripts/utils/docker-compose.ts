@@ -2,6 +2,7 @@ import { spawnSync, execFileSync, type SpawnSyncReturns } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import log from "./logger";
 
 /**
  * Run a docker compose command, suppressing stdout/stderr.
@@ -67,6 +68,7 @@ export async function startLocalnet(sandboxRoot?: string): Promise<{
             `docker compose failed (exit ${result.status}). Ensure Docker is running and SUI_TOOLS_IMAGE is set in .env.`,
         );
     }
+    log.info("docker compose up -d returned successfully");
 
     // Verify container is running before polling RPC (catches immediate crashes)
     let containerNotRunning = false;
@@ -77,7 +79,9 @@ export async function startLocalnet(sandboxRoot?: string): Promise<{
             { encoding: "utf-8" },
         ).trim();
         containerNotRunning = running !== "true";
+        log.info(`Container check: sui-localnet Running=${running}`);
     } catch {
+        log.warn("docker inspect failed (container may not exist yet)");
         // docker inspect might fail if container doesn't exist yet — continue to waitForRpc
     }
     if (containerNotRunning) {
@@ -90,8 +94,11 @@ export async function startLocalnet(sandboxRoot?: string): Promise<{
         );
     }
 
+    log.info("Waiting for RPC to become ready...");
     await waitForRpc(`http://127.0.0.1:${LOCALNET_RPC_PORT}`);
+    log.info("RPC ready, waiting for faucet...");
     await waitForFaucet(`http://127.0.0.1:${LOCALNET_FAUCET_PORT}`);
+    log.info("Faucet ready");
     return { rpcPort: LOCALNET_RPC_PORT, faucetPort: LOCALNET_FAUCET_PORT };
 }
 
@@ -149,7 +156,7 @@ async function waitForRpc(url: string, maxAttempts = 60): Promise<void> {
             // connection refused, timeout, or similar
         }
         if (i === 0 || (i + 1) % 10 === 0) {
-            console.error(`  [waitForRpc] attempt ${i + 1}/${maxAttempts} — ${url} not ready yet`);
+            log.info(`waitForRpc attempt ${i + 1}/${maxAttempts} — ${url} not ready yet`);
         }
         await new Promise((r) => setTimeout(r, 2000));
     }

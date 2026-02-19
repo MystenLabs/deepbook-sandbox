@@ -24,7 +24,7 @@ env:
 jobs:
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -66,6 +66,12 @@ jobs:
 
       - name: Prepare bind-mount directories
         run: mkdir -p sandbox/deployments
+
+      - name: Pre-build Docker images
+        run: |
+          docker pull postgres:16-alpine
+          PRIVATE_KEY=dummy docker compose --profile localnet build
+        working-directory: sandbox
 
       - name: Run integration test (${{ matrix.test }})
         run: pnpm exec vitest run ${{ matrix.test }}
