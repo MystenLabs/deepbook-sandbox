@@ -1,0 +1,92 @@
+name: Integration Tests
+
+on:
+  pull_request:
+    paths:
+      - "sandbox/**"
+      - "external/deepbook/**"
+      - ".github/workflows/integration-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sandbox/**"
+      - "external/deepbook/**"
+      - ".github/workflows/integration-tests.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: integration-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  SUI_TOOLS_IMAGE: mysten/sui-tools:compat
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [deploy-pipeline, deploy-all-e2e]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: sandbox/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: sandbox
+
+      - name: Install sui CLI from Docker image
+        run: |
+          docker pull ${{ env.SUI_TOOLS_IMAGE }}
+          CONTAINER_ID=$(docker create ${{ env.SUI_TOOLS_IMAGE }} true)
+          sudo docker cp "$CONTAINER_ID:/usr/local/bin/sui" /usr/local/bin/sui
+          docker rm "$CONTAINER_ID"
+          sui --version
+
+      - name: Bootstrap sui CLI config
+        run: |
+          CFG="$HOME/.sui/sui_config"
+          mkdir -p "$CFG"
+          echo '[]' > "$CFG/sui.keystore"
+          printf -- '---\nkeystore:\n  File: %s/sui.keystore\nenvs: []\nactive_env: ~\nactive_address: ~\n' "$CFG" > "$CFG/client.yaml"
+
+      - name: Prepare bind-mount directories
+        run: mkdir -p sandbox/deployments
+
+      - name: Run integration test (${{ matrix.test }})
+        run: pnpm exec vitest run ${{ matrix.test }}
+        working-directory: sandbox
+
+      - name: Capture Docker logs
+        if: failure()
+        run: |
+          mkdir -p /tmp/docker-logs
+          docker compose --profile localnet logs --no-color > /tmp/docker-logs/compose.log 2>&1 || true
+        working-directory: sandbox
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-logs-${{ matrix.test }}
+          path: /tmp/docker-logs/
+          retention-days: 7
+
+      - name: Cleanup containers
+        if: always()
+        run: docker compose --profile localnet down -v --remove-orphans || true
+        working-directory: sandbox

@@ -85,6 +85,10 @@ export function getClient(network?: Network): SuiClient {
     return new SuiClient({ url: getRpcUrl(network) });
 }
 
+export function hasPrivateKey(): boolean {
+    return !!loader.getConfig().privateKey;
+}
+
 export function getSigner(): Keypair {
     const privateKey = loader.getConfig().privateKey;
     if (!privateKey) {

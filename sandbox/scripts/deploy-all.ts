@@ -1,4 +1,12 @@
-import { getClient, getFaucetUrl, getNetwork, getSigner } from "./utils/config";
+
+import {
+    getClient,
+    getFaucetUrl,
+    getNetwork,
+
+    getSigner,
+    hasPrivateKey,
+} from "./utils/config";
 import {
     getSandboxRoot,
     startLocalnet,
@@ -11,27 +19,58 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
 import { updateEnvFile } from "./utils/env";
 import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
+import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
 import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
+import { Keypair } from "@mysten/sui/cryptography";
 import log from "./utils/logger";
 
 async function main() {
     const network = getNetwork();
+    const sandboxRoot = getSandboxRoot();
+
     log.banner(` DeepBook sandbox [${network}] deployment`);
 
     try {
+        // On localnet, ensure .env has SUI_TOOLS_IMAGE before starting Docker
+        if (network === "localnet" && !process.env.SUI_TOOLS_IMAGE) {
+            const image = defaultSuiToolsImage();
+            updateEnvFile(sandboxRoot, { SUI_TOOLS_IMAGE: image });
+            process.env.SUI_TOOLS_IMAGE = image;
+        }
+
         // Start localnet network if localnet is selected
         if (network === "localnet") {
             log.phase("Starting localnet (docker compose)");
-            await startLocalnet(getSandboxRoot());
+            await startLocalnet(sandboxRoot);
             log.success("RPC: http://127.0.0.1:9000");
             log.success("Faucet: http://127.0.0.1:9123");
         }
 
         // Phase 1: Setup Sui client and keypair
         log.phase("Phase 1/6: Setting up Sui client");
-        const signer = getSigner();
-        const signerAddress = signer.getPublicKey().toSuiAddress();
+
+        let signer: Keypair;
+
+        if (network === "localnet") {
+            // On localnet, always read the container-generated key.
+            // Each FORCE_REGENESIS=true run starts a fresh chain, so only the
+            // container's key is in the node's keystore. Any PRIVATE_KEY in .env
+            // is just a placeholder to satisfy docker-compose variable validation.
+            console.log("  Reading key from sui-localnet container...");
+            const { keypair, privateKey } = readContainerKey(sandboxRoot);
+            signer = keypair;
+            process.env.PRIVATE_KEY = privateKey;
+            importKeyToHostCli(privateKey, keypair.getPublicKey().toSuiAddress());
+            updateEnvFile(sandboxRoot, { PRIVATE_KEY: privateKey });
+            console.log("  ✅ Container key imported");
+        } else if (hasPrivateKey()) {
+            signer = getSigner();
+        } else {
+            throw new Error("PRIVATE_KEY is required for testnet deployments. Set it in .env.");
+        }
+
+        let signerAddress = signer.getPublicKey().toSuiAddress();
         log.detail(`Signer: ${signerAddress}`);
         log.detail(`Network: ${network}`);
 
@@ -56,7 +95,6 @@ async function main() {
         const deployer = new MoveDeployer(client, signer, network);
         const deployedPackages = await deployer.deployAll();
 
-        const sandboxRoot = getSandboxRoot();
         let firstCheckpoint: string | undefined;
         if (network === "testnet") {
             const tokenResult = deployedPackages.get("token")!;

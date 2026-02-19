@@ -80,13 +80,20 @@ services:
     environment:
       FORCE_REGENESIS: ${FORCE_REGENESIS:-true}
     command: >
-      sh -c 'RUST_LOG="off,sui_node=info" sui start --data-ingestion-dir /checkpoints --with-faucet ${FORCE_REGENESIS:+--force-regenesis}'
+      sh -c '
+        sui client new-address ed25519 2>/dev/null;
+        cp /root/.sui/sui_config/sui.keystore /shared/.sui-keystore;
+        chmod 644 /shared/.sui-keystore;
+        export RUST_LOG="off,sui_node=info";
+        exec sui start --data-ingestion-dir /checkpoints --with-faucet ${FORCE_REGENESIS:+--force-regenesis}
+      '
     ports:
       - "9000:9000" # RPC
       - "9123:9123" # Faucet
     volumes:
       - sui_data:/root/.sui
       - checkpoint_data:/checkpoints
+      - ./deployments:/shared
     networks:
       - deepbook-net
     healthcheck:

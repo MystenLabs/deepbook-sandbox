@@ -144,3 +144,5 @@ sandbox/docker/sui_localnet_data/
 
 target/
 .vscode/
+.idea
+.venv/
