@@ -95,7 +95,7 @@ The deployment didn't include Pyth oracles. This only works on localnet. Make su
 Check that:
 
 - Localnet is still running
-- Your deployer address has sufficient SUI balance
+- The oracle service address has sufficient SUI balance (auto-funded by `deploy-all`)
 - The PriceInfoObject IDs in the deployment are correct
 
 ### Connection errors to Pyth API

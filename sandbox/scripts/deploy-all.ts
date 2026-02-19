@@ -8,6 +8,7 @@ import {
     startOracleService,
     startMarketMaker,
 } from "./utils/docker-compose";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
 import { updateEnvFile } from "./utils/env";
 import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
@@ -108,6 +109,20 @@ async function main() {
                 SUI_PRICE_INFO_OBJECT_ID: pythOracleIds.suiPriceInfoObjectId,
             });
             log.success("Updated .env with pyth oracle IDs");
+
+            // Generate a dedicated keypair for the oracle service so it
+            // doesn't share gas coins with the market maker / deployer.
+            log.spin("Generating oracle service keypair...");
+            const oracleKeypair = Ed25519Keypair.generate();
+            const oracleAddress = oracleKeypair.getPublicKey().toSuiAddress();
+            const oraclePrivateKey = oracleKeypair.getSecretKey(); // bech32 suiprivkey1...
+            log.detail(`Oracle signer: ${oracleAddress}`);
+
+            await ensureMinimumBalance(client, oracleAddress, getFaucetUrl(network));
+            updateEnvFile(sandboxRoot, {
+                ORACLE_PRIVATE_KEY: oraclePrivateKey,
+            });
+            log.success("Oracle service keypair funded and saved to .env");
 
             log.spin("Starting oracle service container...");
             await startOracleService(sandboxRoot);
