@@ -106,12 +106,27 @@ describe("deploy-all E2E (subprocess)", () => {
         const tsxBin = path.join(SANDBOX_ROOT, "node_modules", ".bin", "tsx");
         const scriptPath = path.join(SANDBOX_ROOT, "scripts", "deploy-all.ts");
 
+        // Verify tsx binary and script exist before spawning
+        const tsxExists = await fs.access(tsxBin).then(
+            () => true,
+            () => false,
+        );
+        expect(tsxExists, `tsx binary not found at ${tsxBin}`).toBe(true);
+        const scriptExists = await fs.access(scriptPath).then(
+            () => true,
+            () => false,
+        );
+        expect(scriptExists, `deploy-all.ts not found at ${scriptPath}`).toBe(true);
+
+        let stderr = "";
         const exitCode = await new Promise<number>((resolve, reject) => {
             const child = spawn(tsxBin, [scriptPath], {
                 cwd: SANDBOX_ROOT,
                 env: { ...process.env, FORCE_COLOR: "0" },
                 stdio: ["ignore", "pipe", "pipe"],
             });
+
+            console.log(`[e2e] spawned pid=${child.pid} — ${tsxBin} ${scriptPath}`);
 
             child.stdout.on("data", (chunk: Buffer) => {
                 const text = chunk.toString();
@@ -122,16 +137,32 @@ describe("deploy-all E2E (subprocess)", () => {
             child.stderr.on("data", (chunk: Buffer) => {
                 const text = chunk.toString();
                 stdout += text;
+                stderr += text;
                 process.stderr.write(text);
             });
 
             child.on("error", reject);
-            child.on("close", (code) => resolve(code ?? 1));
+            child.on("close", (code, signal) => {
+                console.log(
+                    `[e2e] process closed: code=${code} signal=${signal} stdout=${stdout.length}B stderr=${stderr.length}B`,
+                );
+                resolve(code ?? 1);
+            });
         });
 
-        const tail = stdout.slice(-1000);
-        expect(exitCode, `deploy-all.ts exited with code ${exitCode}.\nOutput tail:\n${tail}`).toBe(0);
-        expect(stdout, `stdout does not contain success marker.\nOutput tail:\n${tail}`).toContain("DeepBook Sandbox Ready!");
+        const tail = stdout.slice(-2000);
+        const stderrTail = stderr.slice(-1000);
+        const diagMsg = [
+            `deploy-all.ts exited with code ${exitCode}.`,
+            `stdout length: ${stdout.length}B, stderr length: ${stderr.length}B`,
+            `\n--- stdout tail (last 2000 chars) ---\n${tail}`,
+            stderrTail ? `\n--- stderr tail (last 1000 chars) ---\n${stderrTail}` : "",
+        ].join("\n");
+
+        expect(exitCode, diagMsg).toBe(0);
+        expect(stdout, `stdout does not contain success marker.\n${diagMsg}`).toContain(
+            "DeepBook Sandbox Ready!",
+        );
     }, 1_800_000);
 
     // ----------------------------------------------------------------
@@ -209,6 +240,7 @@ describe("deploy-all E2E (subprocess)", () => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ address: freshAddress, token: "SUI" }),
+            signal: AbortSignal.timeout(30_000),
         });
         expect(res.status).toBe(200);
 
@@ -227,7 +259,7 @@ describe("deploy-all E2E (subprocess)", () => {
         // Give the oracle time to perform at least one update cycle
         await new Promise((r) => setTimeout(r, 15_000));
 
-        const res = await fetch("http://127.0.0.1:9010/");
+        const res = await fetch("http://127.0.0.1:9010/", { signal: AbortSignal.timeout(30_000) });
         expect(res.status).toBe(200);
 
         const body = await res.json();
@@ -243,7 +275,9 @@ describe("deploy-all E2E (subprocess)", () => {
         let lastStatus = 0;
         while (Date.now() < deadline) {
             try {
-                const res = await fetch("http://127.0.0.1:3001/health");
+                const res = await fetch("http://127.0.0.1:3001/health", {
+                    signal: AbortSignal.timeout(10_000),
+                });
                 lastStatus = res.status;
                 if (res.status === 200) break;
             } catch {

@@ -1,4 +1,4 @@
-import { spawnSync, type SpawnSyncReturns } from "child_process";
+import { spawnSync, execFileSync, type SpawnSyncReturns } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -67,6 +67,29 @@ export async function startLocalnet(sandboxRoot?: string): Promise<{
             `docker compose failed (exit ${result.status}). Ensure Docker is running and SUI_TOOLS_IMAGE is set in .env.`,
         );
     }
+
+    // Verify container is running before polling RPC (catches immediate crashes)
+    let containerNotRunning = false;
+    try {
+        const running = execFileSync(
+            "docker",
+            ["inspect", "-f", "{{.State.Running}}", "sui-localnet"],
+            { encoding: "utf-8" },
+        ).trim();
+        containerNotRunning = running !== "true";
+    } catch {
+        // docker inspect might fail if container doesn't exist yet — continue to waitForRpc
+    }
+    if (containerNotRunning) {
+        const logs = spawnSync("docker", ["logs", "--tail", "50", "sui-localnet"], {
+            encoding: "utf-8",
+            stdio: ["ignore", "pipe", "pipe"],
+        });
+        throw new Error(
+            `sui-localnet container is not running.\nLogs:\n${logs.stdout || logs.stderr}`,
+        );
+    }
+
     await waitForRpc(`http://127.0.0.1:${LOCALNET_RPC_PORT}`);
     await waitForFaucet(`http://127.0.0.1:${LOCALNET_FAUCET_PORT}`);
     return { rpcPort: LOCALNET_RPC_PORT, faucetPort: LOCALNET_FAUCET_PORT };
@@ -107,10 +130,10 @@ async function waitForServer(baseUrl: string, maxAttempts = 90): Promise<void> {
     const url = `${baseUrl.replace(/\/$/, "")}/`;
     for (let i = 0; i < maxAttempts; i++) {
         try {
-            const res = await fetch(url);
+            const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
             if (res.status > 0) return;
         } catch {
-            // connection refused or similar
+            // connection refused, timeout, or similar
         }
         await new Promise((r) => setTimeout(r, 2000));
     }
@@ -120,10 +143,13 @@ async function waitForServer(baseUrl: string, maxAttempts = 90): Promise<void> {
 async function waitForRpc(url: string, maxAttempts = 60): Promise<void> {
     for (let i = 0; i < maxAttempts; i++) {
         try {
-            const res = await fetch(url);
+            const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
             if (res.status > 0) return; // any HTTP response means server is up
         } catch {
-            // connection refused or similar
+            // connection refused, timeout, or similar
+        }
+        if (i === 0 || (i + 1) % 10 === 0) {
+            console.error(`  [waitForRpc] attempt ${i + 1}/${maxAttempts} — ${url} not ready yet`);
         }
         await new Promise((r) => setTimeout(r, 2000));
     }
@@ -138,10 +164,11 @@ async function waitForFaucet(baseUrl: string, maxAttempts = 30): Promise<void> {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: "{}",
+                signal: AbortSignal.timeout(10_000),
             });
             if (res.status > 0) return; // any response (e.g. 400 for bad body) means faucet is up
         } catch {
-            // connection refused or ECONNRESET
+            // connection refused, timeout, or ECONNRESET
         }
         await new Promise((r) => setTimeout(r, 2000));
     }
@@ -285,10 +312,10 @@ export async function startMarketMaker(
 async function waitForIndexer(url: string, maxAttempts = 60): Promise<void> {
     for (let i = 0; i < maxAttempts; i++) {
         try {
-            const res = await fetch(url);
+            const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
             if (res.ok) return;
         } catch {
-            // connection refused
+            // connection refused, timeout, or similar
         }
         await new Promise((r) => setTimeout(r, 2000));
     }

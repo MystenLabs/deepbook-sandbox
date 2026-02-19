@@ -396,6 +396,7 @@ describe("deploy-all pipeline (localnet)", () => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ address: freshAddress, token: "SUI" }),
+            signal: AbortSignal.timeout(30_000),
         });
         expect(res.status).toBe(200);
 
@@ -413,7 +414,7 @@ describe("deploy-all pipeline (localnet)", () => {
         // Give the oracle time to perform at least one update cycle
         await new Promise((r) => setTimeout(r, 15_000));
 
-        const res = await fetch("http://127.0.0.1:9010/");
+        const res = await fetch("http://127.0.0.1:9010/", { signal: AbortSignal.timeout(30_000) });
         expect(res.status).toBe(200);
 
         const body = await res.json();

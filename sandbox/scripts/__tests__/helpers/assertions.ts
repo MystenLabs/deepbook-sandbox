@@ -21,10 +21,10 @@ export async function waitForUrl(
 
     while (Date.now() < deadline) {
         try {
-            const res = await fetch(url);
+            const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
             if (res.status > 0) return res;
         } catch {
-            // connection refused — keep polling
+            // connection refused, timeout, or similar — keep polling
         }
         await new Promise((r) => setTimeout(r, intervalMs));
     }
