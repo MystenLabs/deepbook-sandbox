@@ -5,10 +5,18 @@ import { fileURLToPath } from "url";
 import log from "./logger";
 
 /**
- * Run a docker compose command, suppressing stdout/stderr.
- * On failure, throws with the captured stderr for debugging.
+ * Run a docker compose command with visible output (logged via project logger).
+ *
+ * IMPORTANT: Uses `stdio: ["inherit", "pipe", "pipe"]` instead of `"inherit"`
+ * to avoid sharing pipe file descriptors with Docker compose child processes.
+ * When this module runs inside a subprocess with piped stdio (e.g. the e2e test
+ * spawns `tsx deploy-all.ts` with `stdio: ["ignore", "pipe", "pipe"]`), using
+ * `stdio: "inherit"` causes Docker compose to inherit the parent's pipe fds.
+ * When Docker exits it closes those fds, which corrupts Node.js's internal
+ * handle tracking and causes the event loop to drain — exiting the process
+ * with code 0 before async work (like waitForRpc) completes.
  */
-function runDockerCompose(
+function runDockerComposeVisible(
     args: string[],
     opts: { cwd: string; env?: NodeJS.ProcessEnv },
 ): SpawnSyncReturns<string> {
@@ -18,11 +26,17 @@ function runDockerCompose(
         stdio: ["inherit", "pipe", "pipe"],
         env: opts.env,
     });
-    if (result.status !== 0) {
-        const stderr = result.stderr?.trim() || "";
-        throw new Error(
-            `docker compose ${args.join(" ")} failed (exit ${result.status})${stderr ? `:\n${stderr}` : ""}`,
-        );
+    // Forward captured output through the logger
+    if (result.stdout?.trim()) {
+        for (const line of result.stdout.trim().split("\n")) {
+            log.info(line);
+        }
+    }
+    if (result.stderr?.trim()) {
+        // Docker compose writes progress to stderr even on success
+        for (const line of result.stderr.trim().split("\n")) {
+            log.info(line);
+        }
     }
     return result;
 }
@@ -54,18 +68,14 @@ export async function startLocalnet(sandboxRoot?: string): Promise<{
     faucetPort: number;
 }> {
     const cwd = sandboxRoot ?? getSandboxRoot();
-    const result = spawnSync(
-        "docker",
-        ["compose", "--profile", "localnet", "up", "-d", "sui-localnet", "postgres"],
-        {
-            cwd,
-            encoding: "utf-8",
-            stdio: "inherit",
-        },
+    const result = runDockerComposeVisible(
+        ["--profile", "localnet", "up", "-d", "sui-localnet", "postgres"],
+        { cwd },
     );
     if (result.status !== 0) {
+        const stderr = result.stderr?.trim() || "";
         throw new Error(
-            `docker compose failed (exit ${result.status}). Ensure Docker is running and SUI_TOOLS_IMAGE is set in .env.`,
+            `docker compose failed (exit ${result.status}). Ensure Docker is running and SUI_TOOLS_IMAGE is set in .env.${stderr ? `\n${stderr}` : ""}`,
         );
     }
     log.info("docker compose up -d returned successfully");
@@ -114,19 +124,14 @@ export async function startRemote(
 ): Promise<{ serverPort: number }> {
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
-    const result = spawnSync(
-        "docker",
-        ["compose", "--profile", "remote", "up", "-d", "--force-recreate"],
-        {
-            cwd,
-            encoding: "utf-8",
-            stdio: "inherit",
-            env,
-        },
+    const result = runDockerComposeVisible(
+        ["--profile", "remote", "up", "-d", "--force-recreate"],
+        { cwd, env },
     );
     if (result.status !== 0) {
+        const stderr = result.stderr?.trim() || "";
         throw new Error(
-            `docker compose --profile remote failed (exit ${result.status}). Ensure Docker is running.`,
+            `docker compose --profile remote failed (exit ${result.status}). Ensure Docker is running.${stderr ? `\n${stderr}` : ""}`,
         );
     }
     await waitForServer(`http://127.0.0.1:${DEEPBOOK_SERVER_PORT}`);
@@ -217,10 +222,8 @@ export async function configureAndStartLocalnetServices(
     // Start the indexer (explicit service name to avoid starting other localnet services)
     // --build --force-recreate ensures images are rebuilt and containers
     // pick up the latest source + env vars on re-deploys
-    const result = spawnSync(
-        "docker",
+    const result = runDockerComposeVisible(
         [
-            "compose",
             "--profile",
             "localnet",
             "up",
@@ -231,15 +234,12 @@ export async function configureAndStartLocalnetServices(
             "deepbook-server",
             "deepbook-faucet",
         ],
-        {
-            cwd,
-            encoding: "utf-8",
-            stdio: "inherit",
-        },
+        { cwd },
     );
 
     if (result.status !== 0) {
-        throw new Error(`Failed to start localnet indexer (exit ${result.status})`);
+        const stderr = result.stderr?.trim() || "";
+        throw new Error(`Failed to start localnet indexer (exit ${result.status})${stderr ? `\n${stderr}` : ""}`);
     }
 
     // Wait for indexer to be healthy (check metrics endpoint)
@@ -257,10 +257,8 @@ export async function startOracleService(
 ): Promise<void> {
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
-    const result = spawnSync(
-        "docker",
+    const result = runDockerComposeVisible(
         [
-            "compose",
             "--profile",
             "localnet",
             "up",
@@ -269,15 +267,11 @@ export async function startOracleService(
             "--force-recreate",
             "oracle-service",
         ],
-        {
-            cwd,
-            encoding: "utf-8",
-            stdio: "inherit",
-            env,
-        },
+        { cwd, env },
     );
     if (result.status !== 0) {
-        throw new Error(`Failed to start oracle service (exit ${result.status})`);
+        const stderr = result.stderr?.trim() || "";
+        throw new Error(`Failed to start oracle service (exit ${result.status})${stderr ? `\n${stderr}` : ""}`);
     }
 }
 
@@ -292,10 +286,8 @@ export async function startMarketMaker(
 ): Promise<void> {
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
-    const result = spawnSync(
-        "docker",
+    const result = runDockerComposeVisible(
         [
-            "compose",
             "--profile",
             "localnet",
             "up",
@@ -304,15 +296,11 @@ export async function startMarketMaker(
             "--force-recreate",
             "market-maker",
         ],
-        {
-            cwd,
-            encoding: "utf-8",
-            stdio: "inherit",
-            env,
-        },
+        { cwd, env },
     );
     if (result.status !== 0) {
-        throw new Error(`Failed to start market maker (exit ${result.status})`);
+        const stderr = result.stderr?.trim() || "";
+        throw new Error(`Failed to start market maker (exit ${result.status})${stderr ? `\n${stderr}` : ""}`);
     }
 }
 
