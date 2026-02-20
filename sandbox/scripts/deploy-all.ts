@@ -57,13 +57,13 @@ async function main() {
             // Each FORCE_REGENESIS=true run starts a fresh chain, so only the
             // container's key is in the node's keystore. Any PRIVATE_KEY in .env
             // is just a placeholder to satisfy docker-compose variable validation.
-            console.log("  Reading key from sui-localnet container...");
+            log.info("Reading key from sui-localnet container...");
             const { keypair, privateKey } = readContainerKey(sandboxRoot);
             signer = keypair;
             process.env.PRIVATE_KEY = privateKey;
             importKeyToHostCli(privateKey, keypair.getPublicKey().toSuiAddress());
             updateEnvFile(sandboxRoot, { PRIVATE_KEY: privateKey });
-            console.log("  ✅ Container key imported");
+            log.success("Container key imported");
         } else if (hasPrivateKey()) {
             signer = getSigner();
         } else {
