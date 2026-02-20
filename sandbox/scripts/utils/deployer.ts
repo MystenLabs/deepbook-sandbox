@@ -311,10 +311,16 @@ export class MoveDeployer {
             const pythDep = isLocalnet
                 ? 'pyth = { local = "../../../../sandbox/packages/pyth" }'
                 : PYTH_GIT_TESTNET;
-            patched = patched.replace(
-                /deepbook_margin\s*=\s*\{\s*local\s*=\s*"\.\.\/deepbook_margin"\s*\}/,
-                `deepbook_margin = { local = "../deepbook_margin" }\n${pythDep}\ntoken = { local = "../token" }`,
-            );
+            const extraDeps = [
+                ...(patched.includes("token") ? [] : ['token = { local = "../token" }']),
+                ...(patched.includes("pyth") ? [] : [pythDep]),
+            ];
+            if (extraDeps.length > 0) {
+                patched = patched.replace(
+                    /deepbook_margin\s*=\s*\{\s*local\s*=\s*"\.\.\/deepbook_margin"\s*\}/,
+                    `deepbook_margin = { local = "../deepbook_margin" }\n${pythDep}\ntoken = { local = "../token" }\n${extraDeps.join("\n")}`,
+                );
+            }
             if (isLocalnet) {
                 patched = patched.replace(
                     /\[addresses\]\s*\n\s*margin_liquidation\s*=\s*"0x0"\s*/,
