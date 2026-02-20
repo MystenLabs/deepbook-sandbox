@@ -18,6 +18,8 @@ const GENERATED_ENV_KEYS = [
     "POOL_ID",
     "BASE_COIN_TYPE",
     "DEPLOYER_ADDRESS",
+    "CORE_PACKAGES",
+    "MARGIN_PACKAGES",
 ];
 
 function main() {
