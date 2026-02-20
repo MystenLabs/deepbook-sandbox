@@ -160,6 +160,7 @@ services:
     profiles:
       - remote
       - localnet
+    image: sandbox-deepbook-indexer
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-sandbox/Dockerfile
@@ -204,6 +205,7 @@ services:
     profiles:
       - remote
       - localnet
+    image: sandbox-deepbook-server
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-server/Dockerfile
