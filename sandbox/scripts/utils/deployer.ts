@@ -18,6 +18,7 @@ const PACKAGES_NEED_MOVE_PATCH = [
     "token",
     "deepbook",
     "pyth",
+    "usdc",
     "deepbook_margin",
     "margin_liquidation",
 ] as const;
@@ -26,6 +27,7 @@ const PACKAGES_NEED_MOVE_LOCK = [
     "token",
     "deepbook",
     "pyth",
+    "usdc",
     "deepbook_margin",
     "margin_liquidation",
 ] as const;
@@ -169,11 +171,13 @@ export class MoveDeployer {
         const chainId = await this.client.getChainIdentifier();
         const sandboxRoot = getSandboxRoot();
         const pythPath = path.join(sandboxRoot, "packages", "pyth");
+        const usdcPath = path.join(sandboxRoot, "packages", "usdc");
 
         const allPackages: PackageInfo[] = [
             { name: "token", path: `${PACKAGES_BASE}/token`, deps: [] },
             { name: "deepbook", path: `${PACKAGES_BASE}/deepbook`, deps: ["token"] },
             { name: "pyth", path: pythPath, deps: [] },
+            { name: "usdc", path: usdcPath, deps: [] },
             {
                 name: "deepbook_margin",
                 path: `${PACKAGES_BASE}/deepbook_margin`,
@@ -246,7 +250,7 @@ export class MoveDeployer {
             if (needsPublishedToml(pkg.name)) {
                 this.restorePublishedToml(pkg, publishedTomlBackups);
             }
-            if (pkg.name === "pyth" || pkg.name === "token") {
+            if (pkg.name === "pyth" || pkg.name === "token" || pkg.name === "usdc") {
                 this.removePublishedToml(pkg);
             }
         }
@@ -323,7 +327,7 @@ export class MoveDeployer {
             }
         }
 
-        if (pkg.name === "pyth" && isLocalnet) {
+        if (pkg.name === "pyth" || (pkg.name === "usdc" && isLocalnet)) {
             patched = patched.replace(/localnet\s*=\s*"[^"]*"/, `localnet = "${chainId}"`);
         }
         writeFileSync(tomlPath, patched);

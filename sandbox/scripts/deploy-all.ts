@@ -106,6 +106,7 @@ async function main() {
                 PYTH_PACKAGE_ID: pythPkg.packageId,
                 DEEP_PRICE_INFO_OBJECT_ID: pythOracleIds.deepPriceInfoObjectId,
                 SUI_PRICE_INFO_OBJECT_ID: pythOracleIds.suiPriceInfoObjectId,
+                USDC_PRICE_INFO_OBJECT_ID: pythOracleIds.usdcPriceInfoObjectId,
             });
             log.success("Updated .env with pyth oracle IDs");
 
@@ -114,9 +115,10 @@ async function main() {
             log.success("Oracle service started");
         }
 
-        // Phase 5: Create DEEP/SUI pool
-        log.phase("Phase 5/6: Creating DEEP/SUI pool");
-        const pool = await poolCreator.createPool(deployedPackages);
+        // Phase 5: Create DEEP/SUI and SUI/USDC pools
+        log.phase("Phase 5/6: Creating DEEP/SUI and SUI/USDC pools");
+        const { pools } = await poolCreator.createDeepbookPools(deployedPackages);
+        const marginResult = await poolCreator.createMarginPools(deployedPackages, pools);
 
         // Phase 6: Write configuration file
         log.phase("Phase 6/6: Writing configuration");
@@ -145,12 +147,18 @@ async function main() {
                     suiPriceInfoObjectId: pythOracleIds.suiPriceInfoObjectId,
                 },
             }),
-            pool: {
-                poolId: pool.poolId,
-                baseCoin: `${deployedPackages.get("token")!.packageId}::deep::DEEP`,
-                quoteCoin: "0x2::sui::SUI",
-                transactionDigest: pool.transactionDigest,
-            },
+            pools: Object.fromEntries(
+                Object.entries(pools).map(([pair, entry]) => [
+                    pair,
+                    {
+                        poolId: entry.poolId,
+                        baseCoin: entry.baseCoinType,
+                        quoteCoin: entry.quoteCoinType,
+                    },
+                ]),
+            ),
+            marginPools: marginResult.marginPools,
+            marginRegistryId: marginResult.registryId,
             deploymentTime: new Date().toISOString(),
             deployerAddress: signerAddress,
         };
@@ -170,8 +178,8 @@ async function main() {
             console.log("🤖 Phase 7: Starting market maker...");
             updateEnvFile(sandboxRoot, {
                 DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
-                POOL_ID: pool.poolId,
-                BASE_COIN_TYPE: `${deployedPackages.get("token")!.packageId}::deep::DEEP`,
+                POOL_ID: pools.DEEP_SUI.poolId,
+                BASE_COIN_TYPE: pools.DEEP_SUI.baseCoinType,
                 DEPLOYER_ADDRESS: signerAddress,
             });
             console.log("  ✅ Updated .env with market maker IDs");
@@ -186,7 +194,14 @@ async function main() {
 
         // Build summary — only user-facing URLs and key identifiers
         const summaryEntries: Array<{ label: string; value: string }> = [
-            { label: "DEEP/SUI Pool", value: pool.poolId },
+            ...Object.entries(pools).map(([pair, entry]) => ({
+                label: `${pair} Pool`,
+                value: entry.poolId,
+            })),
+            ...Object.entries(marginResult.marginPools).map(([coin, poolId]) => ({
+                label: `Margin Pool (${coin})`,
+                value: poolId,
+            })),
             { label: "Deployment File", value: deploymentPath },
         ];
         if (network === "testnet") {
