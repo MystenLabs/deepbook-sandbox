@@ -2,17 +2,23 @@ import type { SuiClient } from "@mysten/sui/client";
 import type { Keypair } from "@mysten/sui/cryptography";
 import type { SuiObjectChangeCreated } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
-import { fromHex } from "@mysten/sui/utils";
+import { fromHex, toHex } from "@mysten/sui/utils";
 import type { DeploymentResult } from "./deployer";
-import { SUI_PRICE_FEED_ID, DEEP_PRICE_FEED_ID } from "../oracle-service/constants";
+import {
+    SUI_PRICE_FEED_ID,
+    DEEP_PRICE_FEED_ID,
+    USDC_PRICE_FEED_ID,
+} from "../oracle-service/constants";
 import log from "./logger";
 
 const SUI_PRICE_FEED_ID_BYTES = fromHex(SUI_PRICE_FEED_ID);
 const DEEP_PRICE_FEED_ID_BYTES = fromHex(DEEP_PRICE_FEED_ID);
+const USDC_PRICE_FEED_ID_BYTES = fromHex(USDC_PRICE_FEED_ID);
 
 export interface PythOracleIds {
     deepPriceInfoObjectId: string;
     suiPriceInfoObjectId: string;
+    usdcPriceInfoObjectId: string;
 }
 
 /** Add Move calls for one price feed (identifier → price → price_feed → price_info); returns the price_info result. */
@@ -79,13 +85,19 @@ export async function setupPythOracles(
         { idBytes: SUI_PRICE_FEED_ID_BYTES, priceMag: 100_000_000, expoMag: 8 },
         timestamp,
     );
+    const usdcPriceInfo = addPriceInfoToTx(
+        tx,
+        pythPkg.packageId,
+        { idBytes: USDC_PRICE_FEED_ID_BYTES, priceMag: 100_000_000, expoMag: 8 },
+        timestamp,
+    );
 
     tx.moveCall({
         target: `${pythPkg.packageId}::pyth::create_price_feeds`,
         arguments: [
             tx.makeMoveVec({
                 type: `${pythPkg.packageId}::price_info::PriceInfo`,
-                elements: [deepPriceInfo, suiPriceInfo],
+                elements: [deepPriceInfo, suiPriceInfo, usdcPriceInfo],
             }),
         ],
     });
@@ -112,36 +124,35 @@ export async function setupPythOracles(
             obj.objectType.includes("::price_info::PriceInfoObject"),
     );
 
-    if (created.length !== 2) {
-        throw new Error(`Expected 2 PriceInfoObject created, got ${created.length}`);
+    if (created.length !== 3) {
+        throw new Error(`Expected 3 PriceInfoObject created, got ${created.length}`);
     }
 
     await client.waitForTransaction({ digest: result.digest });
 
-    const priceObj = await client.getObject({
-        id: created[0].objectId,
+    const priceObjects = await client.multiGetObjects({
+        ids: created.map((obj) => obj.objectId),
         options: {
             showContent: true,
         },
     });
-    const magnitude = (priceObj.data?.content as any).fields.price_info.fields.price_feed.fields
-        .price.fields.price.fields.magnitude;
 
-    let ids: PythOracleIds;
-    if (magnitude == 2000000) {
-        ids = {
-            deepPriceInfoObjectId: created[0].objectId,
-            suiPriceInfoObjectId: created[1].objectId,
-        };
-    } else {
-        ids = {
-            deepPriceInfoObjectId: created[1].objectId,
-            suiPriceInfoObjectId: created[0].objectId,
-        };
+    const feedIdToObjectId = new Map<string, string>();
+    for (const obj of priceObjects) {
+        const bytes: number[] = (obj.data?.content as any).fields.price_info.fields.price_feed
+            .fields.price_identifier.fields.bytes;
+        feedIdToObjectId.set("0x" + toHex(new Uint8Array(bytes)), obj.data!.objectId);
     }
+
+    const ids: PythOracleIds = {
+        deepPriceInfoObjectId: feedIdToObjectId.get(DEEP_PRICE_FEED_ID)!,
+        suiPriceInfoObjectId: feedIdToObjectId.get(SUI_PRICE_FEED_ID)!,
+        usdcPriceInfoObjectId: feedIdToObjectId.get(USDC_PRICE_FEED_ID)!,
+    };
 
     log.success(`DEEP PriceInfoObject: ${ids.deepPriceInfoObjectId}`);
     log.success(`SUI PriceInfoObject: ${ids.suiPriceInfoObjectId}`);
+    console.log(`    ✅ USDC PriceInfoObject: ${ids.usdcPriceInfoObjectId}`);
 
     return ids;
 }
