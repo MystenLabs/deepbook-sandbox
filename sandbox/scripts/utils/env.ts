@@ -2,6 +2,30 @@ import { readFileSync, writeFileSync } from "fs";
 import path from "path";
 
 /**
+ * Remove specified keys from a .env file.
+ * Preserves comments, order, and all keys not listed in `keys`.
+ * No-op if the file doesn't exist.
+ */
+export function removeEnvKeys(sandboxRoot: string, keys: string[]): void {
+    const envPath = path.join(sandboxRoot, ".env");
+    let content: string;
+    try {
+        content = readFileSync(envPath, "utf-8");
+    } catch {
+        return; // nothing to remove
+    }
+
+    const remove = new Set(keys);
+    const lines = content.split(/\r?\n/);
+    const result = lines.filter((line) => {
+        const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+        return !(match && remove.has(match[1]));
+    });
+
+    writeFileSync(envPath, result.join("\n"), "utf-8");
+}
+
+/**
  * Update or set key=value pairs in a .env file.
  * Preserves existing keys not in updates, preserves order and comments.
  * Writes to sandboxRoot/.env (creates file if missing).

@@ -47,7 +47,7 @@ for DeepBook V3, including:
    - Create Pyth oracle price feeds for SUI and DEEP
    - Start the oracle service (updates prices every 10s)
    - Create a DEEP-SUI liquidity pool
-   - Generate a config file with all deployment artifacts
+   - Start the market maker
 
 3. **Access the environment:**
 
@@ -56,34 +56,9 @@ for DeepBook V3, including:
    - **Faucet**: `http://localhost:9123`
    - **Oracle status**: `http://localhost:9010`
      (latest SUI/DEEP prices)
-   - **Deployment config**:
-     `deployments/{DATE}_{TIME}_{NETWORK}.json`
 
-## Configuration
-
-The deployment script writes a JSON file to the `deployments/`
-folder with the format `{DATE}_{TIME}_{NETWORK}.json`, for example:
-
-```json
-{
-  "network": {
-    "type": "localnet",
-    "rpcUrl": "http://localhost:9000",
-    "faucetUrl": "http://localhost:9123"
-  },
-  "packages": {
-    "token": { "packageId": "0x...", "...": "..." },
-    "deepbook": { "packageId": "0x...", "...": "..." }
-  },
-  "pool": {
-    "poolId": "0x...",
-    "baseCoin": "0x...::deep::DEEP",
-    "quoteCoin": "0x2::sui::SUI"
-  }
-}
-```
-
-Use this config file to interact with your deployed contracts.
+   All deployment IDs (package IDs, pool ID, oracle IDs) are written
+   to `sandbox/.env` and consumed by the Docker services automatically.
 
 ## Usage
 
@@ -105,24 +80,6 @@ Get chain information:
 curl http://localhost:9000 -X POST \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"sui_getChainIdentifier","id":1}'
-```
-
-### Using the Deployed Packages
-
-The deployed package IDs and object IDs are in the latest file
-under `deployments/`. Use them with the Sui SDK:
-
-```typescript
-import { SuiClient } from "@mysten/sui/client";
-import config from "./deployments/latest_localnet.json";
-
-const client = new SuiClient({ url: config.network.rpcUrl });
-
-// Query the deployed pool
-const pool = await client.getObject({
-  id: config.pool.poolId,
-  options: { showContent: true },
-});
 ```
 
 ## Contributing
