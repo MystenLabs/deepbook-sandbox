@@ -207,8 +207,19 @@ async function main() {
     }
 }
 
-main().catch((error) => {
+// Top-level await keeps the module evaluation pending, which adds a ref'd
+// handle to the event loop. Without this, Node.js can exit prematurely when
+// fetch() (backed by undici) is the only async operation — its unref'd sockets
+// don't prevent the event loop from draining.
+// The keepalive interval is a safety net: it's a ref'd timer that guarantees
+// the event loop stays alive even if all other handles are momentarily unref'd.
+const keepalive = setInterval(() => {}, 30_000);
+try {
+    await main();
+} catch (error) {
     log.fail("Fatal error");
     log.loopError("", error);
     process.exit(1);
-});
+} finally {
+    clearInterval(keepalive);
+}
