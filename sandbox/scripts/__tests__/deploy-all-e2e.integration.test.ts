@@ -36,7 +36,8 @@ import { expectValidSuiId, waitForUrl } from "./helpers/assertions";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SANDBOX_ROOT = path.resolve(__dirname, "../..");
-const ENV_PATH = path.join(SANDBOX_ROOT, ".env");
+const ENV_FILE = ".env.test";
+const ENV_PATH = path.join(SANDBOX_ROOT, ENV_FILE);
 const DEPLOYMENTS_DIR = path.join(SANDBOX_ROOT, "deployments");
 
 const RPC_URL = "http://127.0.0.1:9000";
@@ -46,11 +47,14 @@ const RPC_URL = "http://127.0.0.1:9000";
 // ---------------------------------------------------------------------------
 
 function dockerDown(cwd: string): void {
-    spawnSync("docker", ["compose", "--profile", "localnet", "down", "-v", "--remove-orphans"], {
-        cwd,
-        encoding: "utf-8",
-        stdio: "inherit",
-    });
+    const envFileArgs = process.env.SANDBOX_ENV_FILE
+        ? ["--env-file", process.env.SANDBOX_ENV_FILE]
+        : [];
+    spawnSync(
+        "docker",
+        ["compose", ...envFileArgs, "--profile", "localnet", "down", "-v", "--remove-orphans"],
+        { cwd, encoding: "utf-8", stdio: "inherit" },
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +84,10 @@ describe("deploy-all E2E (subprocess)", () => {
     let exitHandler: (() => void) | undefined;
 
     beforeAll(async () => {
-        // ── Write minimal .env for Docker Compose ────────────────────
+        // ── Route all env file I/O to .env.test (keeps user's .env untouched) ──
+        process.env.SANDBOX_ENV_FILE = ENV_FILE;
+
+        // ── Write minimal .env.test for Docker Compose ───────────────
         const placeholderKey = Ed25519Keypair.generate().getSecretKey();
         const envContent =
             [
@@ -122,7 +129,12 @@ describe("deploy-all E2E (subprocess)", () => {
         const exitCode = await new Promise<number>((resolve, reject) => {
             const child = spawn(tsxBin, [scriptPath], {
                 cwd: SANDBOX_ROOT,
-                env: { ...process.env, FORCE_COLOR: "0" },
+                env: {
+                    ...process.env,
+                    FORCE_COLOR: "0",
+                    SANDBOX_ENV_FILE: ENV_FILE,
+                    DOTENV_CONFIG_PATH: ENV_PATH,
+                },
                 stdio: ["ignore", "pipe", "pipe"],
             });
 
@@ -315,13 +327,19 @@ describe("deploy-all E2E (subprocess)", () => {
         // Tear down containers
         dockerDown(SANDBOX_ROOT);
 
-        // Remove test .env and shared keystore
-        for (const f of [ENV_PATH, path.join(DEPLOYMENTS_DIR, ".sui-keystore")]) {
-            try {
-                await fs.unlink(f);
-            } catch {
-                // may not exist
-            }
+        // Remove .env.test and reset routing
+        try {
+            await fs.unlink(ENV_PATH);
+        } catch {
+            /* may not exist */
+        }
+        delete process.env.SANDBOX_ENV_FILE;
+
+        // Remove shared keystore
+        try {
+            await fs.unlink(path.join(DEPLOYMENTS_DIR, ".sui-keystore"));
+        } catch {
+            // may not exist
         }
 
         // Remove test deployment manifests

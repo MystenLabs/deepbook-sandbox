@@ -70,7 +70,8 @@ jobs:
       - name: Pre-build Docker images
         run: |
           docker pull postgres:16-alpine
-          PRIVATE_KEY=dummy docker compose --profile localnet build
+          printf 'PRIVATE_KEY=dummy\nSUI_TOOLS_IMAGE=%s\nFORCE_REGENESIS=true\n' "$SUI_TOOLS_IMAGE" > .env.test
+          docker compose --env-file .env.test --profile localnet build
         working-directory: sandbox
 
       - name: Run integration test (${{ matrix.test }})
@@ -90,14 +91,14 @@ jobs:
           echo "=== sui-localnet logs (last 200 lines) ===" >> /tmp/docker-logs/diagnostics.log
           docker logs sui-localnet --tail 200 >> /tmp/docker-logs/diagnostics.log 2>&1 || true
           echo "" >> /tmp/docker-logs/diagnostics.log
-          echo "=== .env contents (redacted) ===" >> /tmp/docker-logs/diagnostics.log
-          sed 's/PRIVATE_KEY=.*/PRIVATE_KEY=<redacted>/' sandbox/.env >> /tmp/docker-logs/diagnostics.log 2>/dev/null || echo "no .env" >> /tmp/docker-logs/diagnostics.log
+          echo "=== .env.test contents (redacted) ===" >> /tmp/docker-logs/diagnostics.log
+          sed 's/PRIVATE_KEY=.*/PRIVATE_KEY=<redacted>/' sandbox/.env.test >> /tmp/docker-logs/diagnostics.log 2>/dev/null || echo "no .env.test" >> /tmp/docker-logs/diagnostics.log
           echo "" >> /tmp/docker-logs/diagnostics.log
           echo "=== port 9000 listener ===" >> /tmp/docker-logs/diagnostics.log
           ss -tln | grep 9000 >> /tmp/docker-logs/diagnostics.log 2>&1 || echo "port 9000 not listening" >> /tmp/docker-logs/diagnostics.log
           echo "" >> /tmp/docker-logs/diagnostics.log
           echo "=== all compose logs ===" > /tmp/docker-logs/compose.log
-          cd sandbox && docker compose --profile localnet logs --no-color --tail 500 >> /tmp/docker-logs/compose.log 2>&1 || true
+          cd sandbox && docker compose --env-file .env.test --profile localnet logs --no-color --tail 500 >> /tmp/docker-logs/compose.log 2>&1 || true
 
       - name: Upload logs on failure
         if: failure()
@@ -109,5 +110,5 @@ jobs:
 
       - name: Cleanup containers
         if: always()
-        run: docker compose --profile localnet down -v --remove-orphans || true
+        run: docker compose --env-file .env.test --profile localnet down -v --remove-orphans || true
         working-directory: sandbox

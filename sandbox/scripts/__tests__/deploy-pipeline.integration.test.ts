@@ -49,7 +49,8 @@ import { expectValidSuiId, waitForUrl, expectContainerRunning } from "./helpers/
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SANDBOX_ROOT = path.resolve(__dirname, "../..");
-const ENV_PATH = path.join(SANDBOX_ROOT, ".env");
+const ENV_FILE = ".env.test";
+const ENV_PATH = path.join(SANDBOX_ROOT, ENV_FILE);
 const DEPLOYMENTS_DIR = path.join(SANDBOX_ROOT, "deployments");
 
 const RPC_URL = "http://127.0.0.1:9000";
@@ -60,11 +61,14 @@ const FAUCET_HOST = "http://127.0.0.1:9123";
 // ---------------------------------------------------------------------------
 
 function dockerDown(cwd: string): void {
-    spawnSync("docker", ["compose", "--profile", "localnet", "down", "-v", "--remove-orphans"], {
-        cwd,
-        encoding: "utf-8",
-        stdio: "inherit",
-    });
+    const envFileArgs = process.env.SANDBOX_ENV_FILE
+        ? ["--env-file", process.env.SANDBOX_ENV_FILE]
+        : [];
+    spawnSync(
+        "docker",
+        ["compose", ...envFileArgs, "--profile", "localnet", "down", "-v", "--remove-orphans"],
+        { cwd, encoding: "utf-8", stdio: "inherit" },
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +91,10 @@ describe("deploy-all pipeline (localnet)", () => {
     beforeAll(async () => {
         client = new SuiClient({ url: RPC_URL });
 
-        // ── Write minimal .env for Docker Compose ────────────────────
+        // ── Route all env file I/O to .env.test (keeps user's .env untouched) ──
+        process.env.SANDBOX_ENV_FILE = ENV_FILE;
+
+        // ── Write minimal .env.test for Docker Compose ───────────────
         // PRIVATE_KEY is a placeholder — docker-compose validates all
         // ${VAR:?...} refs even for services we don't start yet.
         // The real key is generated inside the container in the first test.
@@ -430,13 +437,19 @@ describe("deploy-all pipeline (localnet)", () => {
         // Tear down containers
         dockerDown(SANDBOX_ROOT);
 
-        // Remove test .env and shared keystore
-        for (const f of [ENV_PATH, path.join(DEPLOYMENTS_DIR, ".sui-keystore")]) {
-            try {
-                await fs.unlink(f);
-            } catch {
-                // may not exist
-            }
+        // Remove .env.test and reset routing
+        try {
+            await fs.unlink(ENV_PATH);
+        } catch {
+            /* may not exist */
+        }
+        delete process.env.SANDBOX_ENV_FILE;
+
+        // Remove shared keystore
+        try {
+            await fs.unlink(path.join(DEPLOYMENTS_DIR, ".sui-keystore"));
+        } catch {
+            // may not exist
         }
 
         // Remove test deployment manifests

@@ -5,6 +5,15 @@ import { fileURLToPath } from "url";
 import log from "./logger";
 
 /**
+ * Return the env filename to use for Docker Compose and env file I/O.
+ * Defaults to ".env"; tests set SANDBOX_ENV_FILE=".env.test" so the
+ * user's real .env is never touched.
+ */
+export function getEnvFileName(): string {
+    return process.env.SANDBOX_ENV_FILE || ".env";
+}
+
+/**
  * Run a docker compose command with visible output (logged via project logger).
  *
  * IMPORTANT: Uses `stdio: ["inherit", "pipe", "pipe"]` instead of `"inherit"`
@@ -20,7 +29,9 @@ function runDockerComposeVisible(
     args: string[],
     opts: { cwd: string; env?: NodeJS.ProcessEnv },
 ): SpawnSyncReturns<string> {
-    const result = spawnSync("docker", ["compose", ...args], {
+    const envFile = getEnvFileName();
+    const envFileArgs = envFile !== ".env" ? ["--env-file", envFile] : [];
+    const result = spawnSync("docker", ["compose", ...envFileArgs, ...args], {
         cwd: opts.cwd,
         encoding: "utf-8",
         stdio: ["inherit", "pipe", "pipe"],
@@ -196,14 +207,14 @@ export async function configureAndStartLocalnetServices(
     sandboxRoot?: string,
 ): Promise<void> {
     const cwd = sandboxRoot ?? getSandboxRoot();
-    const envPath = path.join(cwd, ".env");
+    const envPath = path.join(cwd, getEnvFileName());
 
-    // Read existing .env content (preserve other variables like SUI_TOOLS_IMAGE)
+    // Read existing env content (preserve other variables like SUI_TOOLS_IMAGE)
     let envContent = "";
     try {
         envContent = await fs.readFile(envPath, "utf-8");
     } catch {
-        // .env doesn't exist yet, that's fine
+        // env file doesn't exist yet, that's fine
     }
 
     // Update or add CORE_PACKAGES and MARGIN_PACKAGES
