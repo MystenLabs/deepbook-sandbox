@@ -61,7 +61,7 @@ services:
   # Dumps checkpoints to shared volume for the indexer
   # ============================================================
   sui-localnet:
-    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:compat-arm64 (ARM) or mysten/sui-tools:compat (x86)}
+    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:mainnet-v1.63.3-arm64 (ARM) or mysten/sui-tools:mainnet-v1.63.3 (x86)}
     container_name: sui-localnet
     profiles:
       - localnet
@@ -132,60 +132,33 @@ services:
 
   # ============================================================
   # DeepBook Indexer
-  # Indexes DeepBook events from Sui testnet/mainnet
-  # Note: Only supports testnet/mainnet (hardcoded checkpoint URLs)
+  # Indexes DeepBook events from Sui chain checkpoints
+  # Localnet: reads from shared checkpoint_data volume
+  # Remote: reads from network checkpoint URLs
   # ============================================================
   deepbook-indexer:
     profiles:
       - remote
+      - localnet
     build:
       context: ../external/deepbook
-      dockerfile: docker/deepbook-indexer/Dockerfile
+      dockerfile: docker/deepbook-sandbox/Dockerfile
       args:
         PROFILE: release
         GIT_REVISION: ${GIT_REVISION:-local}
     container_name: deepbook-indexer
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-      NETWORK: ${NETWORK:-testnet}
+      NETWORK: ${NETWORK:-localnet}
       RUST_LOG: ${RUST_LOG:-info}
       FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-}
-    ports:
-      - "9184:9184" # Prometheus metrics
-    networks:
-      - deepbook-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
-    restart: unless-stopped
-
-  deepbook-local-indexer:
-    profiles:
-      - localnet
-    build:
-      context: ./localnet
-      dockerfile: ./docker/deepbook-indexer/Dockerfile
-      args:
-        PROFILE: release
-        GIT_REVISION: ${GIT_REVISION:-local}
-    container_name: deepbook-local-indexer
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-      LOCAL_CHECKPOINTS_DIR: /checkpoints
-      CORE_PACKAGES: ${DEEPBOOK_PACKAGE_ID:-}
+      LOCAL_CHECKPOINTS_DIR: ${LOCAL_CHECKPOINTS_DIR:-/checkpoints}
       MARGIN_PACKAGES: ${MARGIN_PACKAGES:-}
-      RUST_LOG: ${RUST_LOG:-info}
-      FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-0}
-    volumes:
-      - checkpoint_data:/checkpoints:ro
+      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-}
     ports:
       - "9184:9184" # Prometheus metrics
+    volumes:
+      - checkpoint_data:/checkpoints
     networks:
       - deepbook-net
     depends_on:
@@ -193,6 +166,7 @@ services:
         condition: service_healthy
       sui-localnet:
         condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
       interval: 30s
@@ -219,9 +193,9 @@ services:
     container_name: deepbook-server
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-      RPC_URL: http://host.docker.internal:9000
-      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-0x22be4cade64bf2d02412c7e8d0e8beea2f78828b948118d46735315409371a3c}
-      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270}
+      RPC_URL: http://host.docker.internal:9000 # Overwrite this for testnet
+      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-}
+      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
       DEEP_TREASURY_ID: ${DEEP_TREASURY_ID:-}
       MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID:-}
       RUST_LOG: ${RUST_LOG:-info}
@@ -233,8 +207,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # deepbook-indexer:
-      #     condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9008/ || exit 1"]
       interval: 30s

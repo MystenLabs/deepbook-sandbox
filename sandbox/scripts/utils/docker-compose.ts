@@ -191,7 +191,7 @@ export async function configureAndStartLocalnetServices(
             "up",
             "-d",
             "--force-recreate",
-            "deepbook-local-indexer",
+            "deepbook-indexer",
             "deepbook-server",
             "deepbook-faucet",
         ],
