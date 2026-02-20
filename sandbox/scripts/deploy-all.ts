@@ -115,7 +115,7 @@ async function main() {
             log.success("Oracle service started");
         }
 
-        // Phase 5: Create DEEP/SUI and SUI/USDC pools
+        // Phase 5: Create DEEP/SUI, SUI/USDC deepbook pools and SUI, USDC margin pools
         log.phase("Phase 5/6: Creating DEEP/SUI and SUI/USDC pools");
         const { pools } = await poolCreator.createDeepbookPools(deployedPackages);
         const marginResult = await poolCreator.createMarginPools(deployedPackages, pools);
