@@ -101,6 +101,7 @@ services:
       NETWORK: localnet
       RPC_URL: http://sui-localnet:9000
       PRIVATE_KEY: ${PRIVATE_KEY:?Set PRIVATE_KEY in .env}
+      VERBOSE: "1"
       DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID}
       POOL_ID: ${POOL_ID}
       BASE_COIN_TYPE: ${BASE_COIN_TYPE}
@@ -262,7 +263,7 @@ services:
     container_name: oracle-service
     environment:
       NETWORK: localnet
-      PRIVATE_KEY: ${PRIVATE_KEY:-}
+      ORACLE_PRIVATE_KEY: ${ORACLE_PRIVATE_KEY:-}
       RPC_URL: http://sui-localnet:9000
       PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID:-}
       DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID:-}

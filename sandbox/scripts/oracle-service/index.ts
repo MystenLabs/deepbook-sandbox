@@ -1,5 +1,7 @@
 import http from "http";
-import { getClient, getNetwork, getSigner } from "../utils/config";
+import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import { getClient, getNetwork } from "../utils/config";
 import { PythClient } from "./pyth-client";
 import { OracleUpdater } from "./oracle-updater";
 import type { OracleConfig, ParsedPriceData } from "./types";
@@ -119,9 +121,12 @@ async function main() {
     log.detail(`DEEP Oracle: ${deepPriceInfoObjectId}`);
     log.detail(`Update Interval: ${DEFAULT_CONFIG.updateIntervalMs / 1000}s`);
 
-    // Initialize clients
+    // Initialize clients — oracle service uses its own dedicated keypair
+    // to avoid gas coin conflicts with the market maker / deployer.
     const client = getClient(network);
-    const signer = getSigner();
+    const oracleKey = requireEnv("ORACLE_PRIVATE_KEY");
+    const { secretKey } = decodeSuiPrivateKey(oracleKey);
+    const signer = Ed25519Keypair.fromSecretKey(secretKey);
     const pythClient = new PythClient(DEFAULT_CONFIG);
     const oracleUpdater = new OracleUpdater(client, signer, pythPackageId);
 
