@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "fs";
 import path from "path";
+import log from "./logger";
 
 /**
  * Remove specified keys from a .env file.
@@ -12,7 +13,8 @@ export function removeEnvKeys(sandboxRoot: string, keys: string[]): void {
     try {
         content = readFileSync(envPath, "utf-8");
     } catch {
-        return; // nothing to remove
+        log.warn("No .env file found, skipping key cleanup");
+        return;
     }
 
     const remove = new Set(keys);
