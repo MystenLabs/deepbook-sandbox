@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { ConnectButton } from "@mysten/dapp-kit";
 import { cn } from "@/lib/utils";
+import { RequireWallet } from "@/components/require-wallet";
 
 const navLinks = [
     { to: "/", label: "Health" },
@@ -58,7 +59,14 @@ export default function App() {
                     <Route path="/" element={<Placeholder title="Service Health" />} />
                     <Route path="/pools" element={<Placeholder title="Pools" />} />
                     <Route path="/pool/:poolName" element={<Placeholder title="Pool Detail" />} />
-                    <Route path="/faucet" element={<Placeholder title="Faucet" />} />
+                    <Route
+                        path="/faucet"
+                        element={
+                            <RequireWallet>
+                                <Placeholder title="Faucet" />
+                            </RequireWallet>
+                        }
+                    />
                 </Routes>
             </Layout>
         </BrowserRouter>
