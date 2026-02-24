@@ -1,5 +1,4 @@
-import path from "path";
-import { getClient, getFaucetUrl, getNetwork, getRpcUrl, getSigner } from "./utils/config";
+import { getClient, getFaucetUrl, getNetwork, getSigner } from "./utils/config";
 import {
     getSandboxRoot,
     startLocalnet,
@@ -13,7 +12,6 @@ import { MoveDeployer } from "./utils/deployer";
 import { updateEnvFile } from "./utils/env";
 import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
 import { PoolCreator } from "./utils/pool";
-import fs from "fs/promises";
 import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
 import log from "./utils/logger";
 
@@ -133,76 +131,24 @@ async function main() {
         log.phase("Phase 5/6: Creating DEEP/SUI pool");
         const pool = await poolCreator.createPool(deployedPackages);
 
-        // Phase 6: Write configuration file
-        log.phase("Phase 6/6: Writing configuration");
-        const config = {
-            network: {
-                type: network,
-                rpcUrl: getRpcUrl(network),
-                faucetUrl: getFaucetUrl(network),
-            },
-            packages: Object.fromEntries(
-                Array.from(deployedPackages.entries()).map(([name, data]) => [
-                    name,
-                    {
-                        packageId: data.packageId,
-                        objects: data.createdObjects.map((obj) => ({
-                            objectId: obj.objectId,
-                            objectType: obj.objectType,
-                        })),
-                        transactionDigest: data.transactionDigest,
-                    },
-                ]),
-            ),
-            ...(pythOracleIds && {
-                pythOracles: {
-                    deepPriceInfoObjectId: pythOracleIds.deepPriceInfoObjectId,
-                    suiPriceInfoObjectId: pythOracleIds.suiPriceInfoObjectId,
-                },
-            }),
-            pool: {
-                poolId: pool.poolId,
-                baseCoin: `${deployedPackages.get("token")!.packageId}::deep::DEEP`,
-                quoteCoin: "0x2::sui::SUI",
-                transactionDigest: pool.transactionDigest,
-            },
-            deploymentTime: new Date().toISOString(),
-            deployerAddress: signerAddress,
-        };
-
-        const now = new Date();
-        const date = now.toISOString().slice(0, 10);
-        const time = now.toISOString().slice(11, 19).replace(/:/g, "-");
-        const deploymentsDir = path.join(getSandboxRoot(), "deployments");
-        const deploymentPath = path.join(deploymentsDir, `${date}_${time}_${network}.json`);
-        await fs.mkdir(deploymentsDir, { recursive: true });
-        await fs.writeFile(deploymentPath, JSON.stringify(config, null, 2));
-
-        log.success(`Deployment written to ${deploymentPath}`);
-
-        // Phase 7: Start market maker (localnet only)
+        // Phase 6: Start market maker (localnet only)
         if (network === "localnet") {
-            console.log("🤖 Phase 7: Starting market maker...");
+            log.phase("Phase 6/6: Starting market maker");
             updateEnvFile(sandboxRoot, {
                 DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
                 POOL_ID: pool.poolId,
                 BASE_COIN_TYPE: `${deployedPackages.get("token")!.packageId}::deep::DEEP`,
                 DEPLOYER_ADDRESS: signerAddress,
             });
-            console.log("  ✅ Updated .env with market maker IDs");
+            log.success("Updated .env with market maker IDs");
 
             await startMarketMaker(sandboxRoot);
-            console.log("  ✅ Market maker started\n");
+            log.success("Market maker started");
         }
-
-        // Note: Seed liquidity is skipped by default.
-        // The market maker will place its own grid when it starts.
-        // Run `pnpm seed-liquidity` manually if you need orders before the MM starts.
 
         // Build summary — only user-facing URLs and key identifiers
         const summaryEntries: Array<{ label: string; value: string }> = [
             { label: "DEEP/SUI Pool", value: pool.poolId },
-            { label: "Deployment File", value: deploymentPath },
         ];
         if (network === "testnet") {
             summaryEntries.push({ label: "DeepBook Server", value: "http://127.0.0.1:9008" });

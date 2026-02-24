@@ -28,7 +28,6 @@ deepbook-sandbox/
 ├── README.md              # Project overview
 ├── sandbox/
 │   ├── docker-compose.yml # Docker orchestration
-│   ├── deployments/       # Deployment manifests (generated)
 │   ├── faucet/            # Faucet service (TypeScript/Hono)
 │   │   ├── Dockerfile
 │   │   ├── package.json
@@ -43,8 +42,7 @@ deepbook-sandbox/
 │   │           └── faucet.ts      # POST /faucet endpoint
 │   └── scripts/
 │       ├── deploy-all.ts      # Deploy DeepBook to localnet
-│       ├── seed-liquidity.ts  # One-shot initial liquidity seeding
-│       ├── down.ts            # Stop localnet containers
+│       ├── down.ts            # Full teardown (containers, volumes, .env)
 │       ├── market-maker/      # Market maker service (Dockerized)
 │       │   ├── Dockerfile
 │       │   ├── index.ts   # Entry point
@@ -95,7 +93,7 @@ docker compose --profile remote down -v   # Fresh start (remove volumes)
 
 # Localnet (Sui node + oracle + market maker)
 pnpm deploy-all                           # Start localnet, deploy contracts, start services
-docker compose --profile localnet down
+pnpm down                                 # Full teardown (volumes, .env keys)
 
 # Stop all services (any profile)
 docker compose --profile remote --profile localnet down
@@ -154,13 +152,10 @@ bunx prettier-move -c *.move --write        # Format Move files
 ```bash
 cd sandbox
 
-# Deploy DeepBook to localnet (starts containers, deploys Move packages, creates DEEP/SUI pool, seeds liquidity)
+# Deploy DeepBook to localnet (starts containers, deploys Move packages, creates DEEP/SUI pool, starts MM)
 pnpm deploy-all
 
-# Seed initial liquidity into the latest deployed pool (standalone, runs once and exits)
-pnpm seed-liquidity
-
-# Stop localnet containers
+# Full teardown (stops containers, removes volumes, cleans generated .env keys)
 pnpm down
 ```
 

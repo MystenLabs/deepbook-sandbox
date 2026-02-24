@@ -39,13 +39,12 @@ You should see output like:
 ```
 🔮 Starting Oracle Service...
 
-📄 Loaded deployment: 2026-02-11_09-16-24_localnet.json
 📋 Configuration:
   Network: localnet
   Pyth Package: 0xb0474b7af6d3f648487ee4f640c727fcaf159a97c0d8d51f341d9945c7baee2d
   SUI Oracle: 0x351afac57c5787d24f1d20faeae0715ecd0e7cb96f56ce1366d91c8fabf01910
   DEEP Oracle: 0xcc32bd60c1ae0b393b402ea0e18c0884f40f0279018fb72f0da3e7f77f4b4806
-  Update Interval: 3s
+  Update Interval: 10s
 
 ✅ Connected to chain: 4c78adac
 
@@ -81,14 +80,6 @@ Default configuration in `index.ts`:
 ```
 
 ## Troubleshooting
-
-### "No deployment files found"
-
-Run `pnpm deploy-all` first to deploy the contracts.
-
-### "No pythOracles found in deployment"
-
-The deployment didn't include Pyth oracles. This only works on localnet. Make sure you're using the latest deployment script.
 
 ### "Transaction failed"
 
