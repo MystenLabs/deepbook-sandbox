@@ -152,7 +152,7 @@ export async function setupPythOracles(
 
     log.success(`DEEP PriceInfoObject: ${ids.deepPriceInfoObjectId}`);
     log.success(`SUI PriceInfoObject: ${ids.suiPriceInfoObjectId}`);
-    console.log(`    ✅ USDC PriceInfoObject: ${ids.usdcPriceInfoObjectId}`);
+    log.success(`USDC PriceInfoObject: ${ids.usdcPriceInfoObjectId}`);
 
     return ids;
 }

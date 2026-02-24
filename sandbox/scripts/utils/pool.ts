@@ -33,7 +33,6 @@ interface MarginAssetConfig {
     excessSlope: number;
 }
 
-// Values from external/deepbook/scripts/transactions/marginPrep.ts
 const USDC_ASSET_DEFAULTS: Omit<MarginAssetConfig, "coinType"> = {
     label: "USDC",
     scalar: 1_000_000,
@@ -299,18 +298,15 @@ export class PoolCreator {
         const usdcType = `${usdcPkg.packageId}::usdc::USDC`;
         const suiType = "0x2::sui::SUI";
 
-        // --- Step 1: Finalize USDC registration to get Currency<USDC> ---
         log.detail("Finalizing USDC currency registration...");
         const usdcCurrencyId = await this.finalizeCurrencyRegistration(
             usdcType,
             usdcReceivedCurrency.objectId,
         );
 
-        // --- Step 2: Migrate Legacy Metadata for SUI ---
         log.detail("Migrating Legacy Metadata for SUI...");
         const suiCurrencyId = await this.migrateLegacyMetadata(suiType);
 
-        // --- Step 3: Build margin setup transaction ---
         const assetConfigs: MarginAssetConfig[] = [
             { ...USDC_ASSET_DEFAULTS, coinType: usdcType },
             { ...SUI_ASSET_DEFAULTS, coinType: suiType },
@@ -381,7 +377,6 @@ export class PoolCreator {
         // Transfer maintainer cap to signer
         tx.transferObjects([maintainerCap], this.signer.getPublicKey().toSuiAddress());
 
-        // Execute
         log.spin("Executing margin pool setup transaction...");
         const result = await this.client.signAndExecuteTransaction({
             transaction: tx,
