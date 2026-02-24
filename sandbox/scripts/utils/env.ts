@@ -3,11 +3,11 @@ import path from "path";
 import log from "./logger";
 
 /**
- * Remove specified keys from a .env file.
- * Preserves comments, order, and all keys not listed in `keys`.
+ * Remove all key=value lines from .env EXCEPT those whose key is in
+ * `preserveKeys`. Comments and blank lines are always kept.
  * No-op if the file doesn't exist.
  */
-export function removeEnvKeys(sandboxRoot: string, keys: string[]): void {
+export function cleanEnvFile(sandboxRoot: string, preserveKeys: Set<string>): void {
     const envPath = path.join(sandboxRoot, ".env");
     let content: string;
     try {
@@ -17,11 +17,11 @@ export function removeEnvKeys(sandboxRoot: string, keys: string[]): void {
         return;
     }
 
-    const remove = new Set(keys);
     const lines = content.split(/\r?\n/);
     const result = lines.filter((line) => {
         const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=/);
-        return !(match && remove.has(match[1]));
+        if (!match) return true; // keep comments and blank lines
+        return preserveKeys.has(match[1]);
     });
 
     writeFileSync(envPath, result.join("\n"), "utf-8");
