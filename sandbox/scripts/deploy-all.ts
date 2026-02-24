@@ -150,7 +150,10 @@ async function main() {
 
         // Build summary — only user-facing URLs and key identifiers
         const summaryEntries: Array<{ label: string; value: string }> = [
-            { label: "DEEP/SUI Pool", value: pool.poolId },
+            { label: "DEEP/SUI Pool", value: pools.DEEP_SUI.poolId },
+            { label: "SUI/USDC Pool", value: pools.SUI_USDC.poolId },
+            { label: "SUI Margin Pool", value: marginResult.marginPools.SUI },
+            { label: "USDC Margin Pool", value: marginResult.marginPools.USDC },
         ];
         if (network === "testnet") {
             summaryEntries.push({ label: "DeepBook Server", value: "http://127.0.0.1:9008" });

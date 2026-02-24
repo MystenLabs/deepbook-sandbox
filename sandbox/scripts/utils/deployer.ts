@@ -317,7 +317,7 @@ export class MoveDeployer {
                 : PYTH_GIT_TESTNET;
             patched = patched.replace(
                 /deepbook_margin\s*=\s*\{\s*local\s*=\s*"\.\.\/deepbook_margin"\s*\}/,
-                `deepbook_margin = { local = "../deepbook_margin" }\ndeepbook = { local = "../deepbook" }\n${pythDep}`,
+                `deepbook_margin = { local = "../deepbook_margin" }\n${pythDep}\ntoken = { local = "../token" }`,
             );
             if (isLocalnet) {
                 patched = patched.replace(
