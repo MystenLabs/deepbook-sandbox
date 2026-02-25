@@ -37,6 +37,7 @@ export interface OracleConfig {
     priceFeeds: {
         sui: string;
         deep: string;
+        usdc: string;
     };
     updateIntervalMs: number;
     historicalDataHours: number;

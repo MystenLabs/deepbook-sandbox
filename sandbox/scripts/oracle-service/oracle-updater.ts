@@ -2,7 +2,7 @@ import type { SuiClient } from "@mysten/sui/client";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
 import type { ParsedPriceData } from "./types";
-import { SUI_PRICE_FEED_ID, DEEP_PRICE_FEED_ID } from "./constants";
+import { SUI_PRICE_FEED_ID, DEEP_PRICE_FEED_ID, USDC_PRICE_FEED_ID } from "./constants";
 import { fromHex } from "@mysten/sui/utils";
 import log from "../utils/logger";
 
@@ -21,14 +21,15 @@ export class OracleUpdater {
      */
     async updatePriceFeeds(
         priceData: ParsedPriceData[],
-        priceInfoObjectIds: { sui: string; deep: string },
+        priceInfoObjectIds: { sui: string; deep: string; usdc: string },
     ): Promise<void> {
         log.loop("Updating on-chain price feeds");
         const suiData = priceData.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
         const deepData = priceData.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
-
-        if (!suiData || !deepData) {
-            throw new Error("Missing price data: SUI or DEEP not found in Pyth response");
+        const usdcData = priceData.find((p) => p.id === USDC_PRICE_FEED_ID.slice(2));
+        
+        if (!suiData || !deepData || !usdcData) {
+            throw new Error("Missing price data: SUI or DEEP or USDC not found in Pyth response");
         }
 
         const tx = new Transaction();
@@ -46,6 +47,13 @@ export class OracleUpdater {
         tx.moveCall({
             target: `${this.pythPackageId}::pyth::update_single_price_feed`,
             arguments: [deepPriceInfo, tx.object(priceInfoObjectIds.deep)],
+        });
+
+        // Update USDC price feed
+        const usdcPriceInfo = this.buildPriceInfo(tx, usdcData);
+        tx.moveCall({
+            target: `${this.pythPackageId}::pyth::update_single_price_feed`,
+            arguments: [usdcPriceInfo, tx.object(priceInfoObjectIds.usdc)],
         });
 
         try {
