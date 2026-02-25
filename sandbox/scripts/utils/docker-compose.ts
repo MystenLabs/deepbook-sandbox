@@ -181,7 +181,8 @@ export async function configureAndStartLocalnetServices(
     await fs.writeFile(envPath, envLines.filter(Boolean).join("\n") + "\n");
 
     // Start the indexer (explicit service name to avoid starting other localnet services)
-    // --force-recreate ensures containers pick up new env vars on re-deploys
+    // --build --force-recreate ensures images are rebuilt and containers
+    // pick up the latest source + env vars on re-deploys
     const result = spawnSync(
         "docker",
         [
@@ -190,6 +191,7 @@ export async function configureAndStartLocalnetServices(
             "localnet",
             "up",
             "-d",
+            "--build",
             "--force-recreate",
             "deepbook-indexer",
             "deepbook-server",
