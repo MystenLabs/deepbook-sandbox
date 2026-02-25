@@ -19,7 +19,7 @@ jobs:
       contents: read
       actions: write
     steps:
-      - name: Dispatch deepbook-market-maker to Dockerhub
+      - name: Dispatch deepbook-sandbox-market-maker to Dockerhub
         uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # pin@v3.0.0
         with:
           repository: MystenLabs/sui-operations
@@ -34,12 +34,12 @@ jobs:
       contents: read
       actions: write
     steps:
-      - name: Dispatch deepbook-faucet to Dockerhub
+      - name: Dispatch deepbook-sandbox-faucet to Dockerhub
         uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # pin@v3.0.0
         with:
           repository: MystenLabs/sui-operations
           token: ${{ secrets.SUI_OPS_DISPATCH_TOKEN }}
-          event-type: deepbook-faucet-to-dockerhub
+          event-type: deepbook-sandbox-faucet-to-dockerhub
           client-payload: '{"tag": "${{ inputs.tag || github.ref_name }}"}'
 
   oracle-service:
@@ -49,10 +49,10 @@ jobs:
       contents: read
       actions: write
     steps:
-      - name: Dispatch deepbook-oracle-service to Dockerhub
+      - name: Dispatch deepbook-sandbox-oracle-service to Dockerhub
         uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # pin@v3.0.0
         with:
           repository: MystenLabs/sui-operations
           token: ${{ secrets.SUI_OPS_DISPATCH_TOKEN }}
-          event-type: deepbook-oracle-service-to-dockerhub
+          event-type: deepbook-sandbox-oracle-service-to-dockerhub
           client-payload: '{"tag": "${{ inputs.tag || github.ref_name }}"}'
