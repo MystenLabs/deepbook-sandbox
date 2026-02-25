@@ -4,10 +4,11 @@ import { cn } from "@/lib/utils";
 import { RequireWallet } from "@/components/require-wallet";
 import { FaucetPage } from "@/components/faucet-page";
 import { HealthPage } from "@/components/health-page";
+import { MarketMakerPage } from "@/components/market-maker-page";
 
 const navLinks = [
     { to: "/", label: "Health" },
-    { to: "/pools", label: "Pools" },
+    { to: "/market-maker", label: "Market Maker" },
     { to: "/faucet", label: "Faucet" },
 ] as const;
 
@@ -64,23 +65,13 @@ function Layout({ children }: { children: React.ReactNode }) {
     );
 }
 
-function Placeholder({ title }: { title: string }) {
-    return (
-        <div className="rounded-lg border bg-card p-6 text-card-foreground">
-            <h1 className="text-lg font-semibold">{title}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">Coming soon.</p>
-        </div>
-    );
-}
-
 export default function App() {
     return (
         <BrowserRouter>
             <Layout>
                 <Routes>
                     <Route path="/" element={<HealthPage />} />
-                    <Route path="/pools" element={<Placeholder title="Pools" />} />
-                    <Route path="/pool/:poolName" element={<Placeholder title="Pool Detail" />} />
+                    <Route path="/market-maker" element={<MarketMakerPage />} />
                     <Route
                         path="/faucet"
                         element={
