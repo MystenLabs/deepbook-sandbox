@@ -3,6 +3,7 @@ import { ConnectButton } from "@mysten/dapp-kit";
 import { cn } from "@/lib/utils";
 import { RequireWallet } from "@/components/require-wallet";
 import { FaucetPage } from "@/components/faucet-page";
+import { HealthPage } from "@/components/health-page";
 
 const navLinks = [
     { to: "/", label: "Health" },
@@ -57,7 +58,7 @@ export default function App() {
         <BrowserRouter>
             <Layout>
                 <Routes>
-                    <Route path="/" element={<Placeholder title="Service Health" />} />
+                    <Route path="/" element={<HealthPage />} />
                     <Route path="/pools" element={<Placeholder title="Pools" />} />
                     <Route path="/pool/:poolName" element={<Placeholder title="Pool Detail" />} />
                     <Route
