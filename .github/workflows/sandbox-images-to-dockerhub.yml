@@ -1,0 +1,58 @@
+# Dispatch Docker image build events to sui-operations repository.
+name: Publish Docker Images
+run-name: Publish deepbook-sandbox docker images for ${{inputs.tag || github.ref_name}} release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to publish"
+        required: false
+
+jobs:
+  market-maker:
+    name: Publish Market Maker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Dispatch deepbook-market-maker to Dockerhub
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # pin@v3.0.0
+        with:
+          repository: MystenLabs/sui-operations
+          token: ${{ secrets.SUI_OPS_DISPATCH_TOKEN }}
+          event-type: deepbook-sandbox-market-maker-to-dockerhub
+          client-payload: '{"tag": "${{ inputs.tag || github.ref_name }}"}'
+
+  faucet:
+    name: Publish Faucet
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Dispatch deepbook-faucet to Dockerhub
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # pin@v3.0.0
+        with:
+          repository: MystenLabs/sui-operations
+          token: ${{ secrets.SUI_OPS_DISPATCH_TOKEN }}
+          event-type: deepbook-faucet-to-dockerhub
+          client-payload: '{"tag": "${{ inputs.tag || github.ref_name }}"}'
+
+  oracle-service:
+    name: Publish Oracle Service
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Dispatch deepbook-oracle-service to Dockerhub
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # pin@v3.0.0
+        with:
+          repository: MystenLabs/sui-operations
+          token: ${{ secrets.SUI_OPS_DISPATCH_TOKEN }}
+          event-type: deepbook-oracle-service-to-dockerhub
+          client-payload: '{"tag": "${{ inputs.tag || github.ref_name }}"}'
