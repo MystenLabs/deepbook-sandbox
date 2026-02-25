@@ -142,5 +142,8 @@ vite.config.ts.timestamp-*
 sandbox/docker/postgres_data/
 sandbox/docker/sui_localnet_data/
 
+# Generated deployment manifests
+sandbox/deployments/
+
 target/
 .vscode/
