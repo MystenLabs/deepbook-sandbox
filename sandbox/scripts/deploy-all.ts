@@ -105,6 +105,7 @@ async function main() {
                 PYTH_PACKAGE_ID: pythPkg.packageId,
                 DEEP_PRICE_INFO_OBJECT_ID: pythOracleIds.deepPriceInfoObjectId,
                 SUI_PRICE_INFO_OBJECT_ID: pythOracleIds.suiPriceInfoObjectId,
+                USDC_PRICE_INFO_OBJECT_ID: pythOracleIds.usdcPriceInfoObjectId,
             });
             log.success("Updated .env with pyth oracle IDs");
 
@@ -127,17 +128,18 @@ async function main() {
             log.success("Oracle service started");
         }
 
-        // Phase 5: Create DEEP/SUI pool
-        log.phase("Phase 5/6: Creating DEEP/SUI pool");
-        const pool = await poolCreator.createPool(deployedPackages);
+        // Phase 5: Create DEEP/SUI, SUI/USDC deepbook pools and SUI, USDC margin pools
+        log.phase("Phase 5/6: Creating DEEP/SUI and SUI/USDC pools");
+        const { pools } = await poolCreator.createDeepbookPools(deployedPackages);
+        const marginResult = await poolCreator.createMarginPools(deployedPackages, pools);
 
         // Phase 6: Start market maker (localnet only)
         if (network === "localnet") {
             log.phase("Phase 6/6: Starting market maker");
             updateEnvFile(sandboxRoot, {
                 DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
-                POOL_ID: pool.poolId,
-                BASE_COIN_TYPE: `${deployedPackages.get("token")!.packageId}::deep::DEEP`,
+                POOL_ID: pools.DEEP_SUI.poolId,
+                BASE_COIN_TYPE: pools.DEEP_SUI.baseCoinType,
                 DEPLOYER_ADDRESS: signerAddress,
             });
             log.success("Updated .env with market maker IDs");
@@ -148,7 +150,10 @@ async function main() {
 
         // Build summary — only user-facing URLs and key identifiers
         const summaryEntries: Array<{ label: string; value: string }> = [
-            { label: "DEEP/SUI Pool", value: pool.poolId },
+            { label: "DEEP/SUI Pool", value: pools.DEEP_SUI.poolId },
+            { label: "SUI/USDC Pool", value: pools.SUI_USDC.poolId },
+            { label: "SUI Margin Pool", value: marginResult.marginPools.SUI },
+            { label: "USDC Margin Pool", value: marginResult.marginPools.USDC },
         ];
         if (network === "testnet") {
             summaryEntries.push({ label: "DeepBook Server", value: "http://127.0.0.1:9008" });
