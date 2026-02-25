@@ -41,6 +41,8 @@ export async function requestDeep(
             };
         }
 
+        await client.waitForTransaction({ digest: result.digest });
+
         return { success: true, digest: result.digest };
     } finally {
         signing = false;
