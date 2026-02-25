@@ -14,10 +14,26 @@ const navLinks = [
 function Layout({ children }: { children: React.ReactNode }) {
     return (
         <div className="min-h-screen bg-background text-foreground">
-            <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
-                <div className="mx-auto flex h-12 max-w-7xl items-center gap-6 px-4">
-                    <span className="text-sm font-bold tracking-tight">DeepBook</span>
-                    <nav className="flex gap-4">
+            <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md ring-1 ring-border/50">
+                <div className="mx-auto flex h-16 max-w-7xl items-center px-6">
+                    {/* Logo */}
+                    <NavLink to="/" className="flex items-center gap-2.5">
+                        <img src="/deepbook.jpeg" alt="DeepBook" className="h-7 w-7 rounded-full" />
+                        <svg height="28" viewBox="0 0 24 24" width="28" className="text-border">
+                            <path
+                                d="M16 3.5L8 20.5"
+                                stroke="currentColor"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        </svg>
+                        <span className="text-base font-semibold tracking-tight">
+                            DeepBook Sandbox
+                        </span>
+                    </NavLink>
+
+                    {/* Nav */}
+                    <nav className="ml-8 flex items-center gap-1">
                         {navLinks.map((l) => (
                             <NavLink
                                 key={l.to}
@@ -25,8 +41,10 @@ function Layout({ children }: { children: React.ReactNode }) {
                                 end={l.to === "/"}
                                 className={({ isActive }) =>
                                     cn(
-                                        "text-sm transition-colors hover:text-foreground",
-                                        isActive ? "text-foreground" : "text-muted-foreground",
+                                        "rounded-md px-3.5 py-2 text-base transition-colors",
+                                        isActive
+                                            ? "bg-accent text-foreground"
+                                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                                     )
                                 }
                             >
@@ -34,12 +52,14 @@ function Layout({ children }: { children: React.ReactNode }) {
                             </NavLink>
                         ))}
                     </nav>
+
+                    {/* Right */}
                     <div className="ml-auto">
                         <ConnectButton />
                     </div>
                 </div>
             </header>
-            <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+            <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
         </div>
     );
 }
