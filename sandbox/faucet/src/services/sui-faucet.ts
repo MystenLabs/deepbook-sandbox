@@ -8,7 +8,7 @@ const MAX_RETRIES = 3;
 export async function requestSui(
     faucetUrl: string,
     recipient: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; digest?: string; error?: string }> {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         const response = await fetch(`${faucetUrl}/gas`, {
             method: "POST",
@@ -19,6 +19,13 @@ export async function requestSui(
         });
 
         if (response.ok) {
+            try {
+                const data = await response.json();
+                const digest = data?.coins_sent?.[0]?.transferTxDigest;
+                if (digest) return { success: true, digest };
+            } catch {
+                // Response wasn't JSON — fall through
+            }
             return { success: true };
         }
 
