@@ -6,13 +6,13 @@ A TypeScript market maker service for DeepBook V3 on Sui. The service maintains 
 
 1. Deploy DeepBook to localnet:
 
-   ```bash
-   cd sandbox
-   cp .env.example .env
-   # Edit .env: set PRIVATE_KEY and SUI_TOOLS_IMAGE
-   pnpm install
-   pnpm deploy-all
-   ```
+    ```bash
+    cd sandbox
+    cp .env.example .env
+    # Edit .env: set PRIVATE_KEY and SUI_TOOLS_IMAGE
+    pnpm install
+    pnpm deploy-all
+    ```
 
 2. Ensure you have SUI in your wallet (the faucet is called during deploy-all)
 
@@ -70,15 +70,15 @@ Response:
 
 ```json
 {
-  "status": "healthy",
-  "timestamp": "2025-01-15T10:30:00.000Z",
-  "uptime": 60000,
-  "details": {
-    "activeOrders": 10,
-    "totalOrdersPlaced": 50,
-    "totalRebalances": 5,
-    "errors": 0
-  }
+    "status": "healthy",
+    "timestamp": "2025-01-15T10:30:00.000Z",
+    "uptime": 60000,
+    "details": {
+        "activeOrders": 10,
+        "totalOrdersPlaced": 50,
+        "totalRebalances": 5,
+        "errors": 0
+    }
 }
 ```
 
@@ -92,12 +92,12 @@ Response:
 
 ```json
 {
-  "ready": true,
-  "timestamp": "2025-01-15T10:30:00.000Z",
-  "checks": {
-    "balanceManager": true,
-    "pool": true
-  }
+    "ready": true,
+    "timestamp": "2025-01-15T10:30:00.000Z",
+    "checks": {
+        "balanceManager": true,
+        "pool": true
+    }
 }
 ```
 

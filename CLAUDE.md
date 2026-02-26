@@ -168,19 +168,19 @@ The oracle service (`./sandbox/scripts/oracle-service/`) runs as a Docker contai
 - **Status endpoint**: `http://localhost:9010` — returns JSON with latest prices, update count, and errors
 - **Data Source**: Fetches historical price data from Pyth Network API (24h ago)
 - **Env vars** (set automatically by deploy-all):
-  - `ORACLE_PRIVATE_KEY`: Dedicated Ed25519 keypair (auto-generated, avoids gas coin conflicts with market maker)
-  - `PYTH_PACKAGE_ID`: Deployed pyth package address
-  - `DEEP_PRICE_INFO_OBJECT_ID`: DEEP PriceInfoObject ID
-  - `SUI_PRICE_INFO_OBJECT_ID`: SUI PriceInfoObject ID
+    - `ORACLE_PRIVATE_KEY`: Dedicated Ed25519 keypair (auto-generated, avoids gas coin conflicts with market maker)
+    - `PYTH_PACKAGE_ID`: Deployed pyth package address
+    - `DEEP_PRICE_INFO_OBJECT_ID`: DEEP PriceInfoObject ID
+    - `SUI_PRICE_INFO_OBJECT_ID`: SUI PriceInfoObject ID
 - **Price Feeds**:
-  - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
-  - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
+    - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
+    - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
 - **Files**:
-  - `index.ts`: Main service loop + status HTTP server
-  - `pyth-client.ts`: Pyth API client
-  - `oracle-updater.ts`: On-chain update logic
-  - `types.ts`: TypeScript types
-  - `Dockerfile`: Container image definition
+    - `index.ts`: Main service loop + status HTTP server
+    - `pyth-client.ts`: Pyth API client
+    - `oracle-updater.ts`: On-chain update logic
+    - `types.ts`: TypeScript types
+    - `Dockerfile`: Container image definition
 
 See [./sandbox/scripts/oracle-service/README.md](./sandbox/scripts/oracle-service/README.md) for detailed documentation.
 

@@ -12,17 +12,17 @@ This service continuously fetches historical price data from Pyth Network and up
 - 📊 **Historical Data**: Fetches prices from 24 hours ago using Pyth's timestamp API
 - 🎯 **SUI & DEEP**: Updates both price feeds simultaneously
 - 📡 **Real Pyth Data**: Uses actual Pyth Network price feeds:
-  - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
-  - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
+    - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
+    - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
 - 🔧 **Self-Configuring**: Automatically loads deployment configuration
 
 ## Prerequisites
 
 1. Deploy the DeepBook contracts and Pyth oracles:
 
-   ```bash
-   pnpm deploy-all
-   ```
+    ```bash
+    pnpm deploy-all
+    ```
 
 2. Make sure localnet is running (started by deploy-all)
 
