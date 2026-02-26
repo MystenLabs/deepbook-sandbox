@@ -5,11 +5,13 @@ import { RequireWallet } from "@/components/require-wallet";
 import { FaucetPage } from "@/components/faucet-page";
 import { HealthPage } from "@/components/health-page";
 import { MarketMakerPage } from "@/components/market-maker-page";
+import { DeploymentPage } from "@/components/deployment-page";
 
 const navLinks = [
     { to: "/", label: "Health" },
     { to: "/market-maker", label: "Market Maker" },
     { to: "/faucet", label: "Faucet" },
+    { to: "/deployment", label: "Deployment" },
 ] as const;
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -80,6 +82,7 @@ export default function App() {
                             </RequireWallet>
                         }
                     />
+                    <Route path="/deployment" element={<DeploymentPage />} />
                 </Routes>
             </Layout>
         </BrowserRouter>
