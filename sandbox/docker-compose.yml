@@ -18,8 +18,8 @@
 #
 # Architecture note (localnet only):
 #   Set SUI_TOOLS_IMAGE in .env based on your CPU:
-#   - ARM64 (Apple Silicon): SUI_TOOLS_IMAGE=mysten/sui-tools:compat-arm64
-#   - x86_64 (Intel/AMD):    SUI_TOOLS_IMAGE=mysten/sui-tools:compat
+#   - ARM64 (Apple Silicon): SUI_TOOLS_IMAGE=mysten/sui-tools:mainnet-v1.63.3-arm64
+#   - x86_64 (Intel/AMD):    SUI_TOOLS_IMAGE=mysten/sui-tools:mainnet-v1.63.3
 
 networks:
   deepbook-net:
