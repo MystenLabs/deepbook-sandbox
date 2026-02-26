@@ -5,7 +5,7 @@ import { getClient, getNetwork } from "../utils/config";
 import { PythClient } from "./pyth-client";
 import { OracleUpdater } from "./oracle-updater";
 import type { OracleConfig, ParsedPriceData } from "./types";
-import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID } from "./constants";
+import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID, USDC_PRICE_FEED_ID } from "./constants";
 import log from "../utils/logger";
 
 /**
@@ -27,6 +27,7 @@ const DEFAULT_CONFIG: OracleConfig = {
     priceFeeds: {
         sui: SUI_PRICE_FEED_ID,
         deep: DEEP_PRICE_FEED_ID,
+        usdc: USDC_PRICE_FEED_ID,
     },
     updateIntervalMs: 10000, // 10 seconds
     historicalDataHours: 24, // Fetch data from 24 hours ago
@@ -45,6 +46,7 @@ const status = {
     lastUpdateTime: null as string | null,
     lastSuiPrice: null as string | null,
     lastDeepPrice: null as string | null,
+    lastUsdcPrice: null as string | null,
 };
 
 function formatPrice(price: string, expo: number): string {
@@ -53,10 +55,11 @@ function formatPrice(price: string, expo: number): string {
     return formatted.toFixed(Math.abs(expo));
 }
 
-function updateStatus(suiData: ParsedPriceData, deepData: ParsedPriceData) {
+function updateStatus(suiData: ParsedPriceData, deepData: ParsedPriceData, usdcData: ParsedPriceData) {
     status.lastUpdateTime = new Date().toISOString();
     status.lastSuiPrice = formatPrice(suiData.price.price, suiData.price.expo);
     status.lastDeepPrice = formatPrice(deepData.price.price, deepData.price.expo);
+    status.lastUsdcPrice = formatPrice(usdcData.price.price, usdcData.price.expo);
 }
 
 function startStatusServer() {
@@ -89,6 +92,7 @@ function startStatusServer() {
                     prices: {
                         sui: status.lastSuiPrice ? `$${status.lastSuiPrice}` : null,
                         deep: status.lastDeepPrice ? `$${status.lastDeepPrice}` : null,
+                        usdc: status.lastUsdcPrice ? `$${status.lastUsdcPrice}` : null,
                     },
                 },
                 null,
@@ -114,11 +118,13 @@ async function main() {
     const pythPackageId = requireEnv("PYTH_PACKAGE_ID");
     const deepPriceInfoObjectId = requireEnv("DEEP_PRICE_INFO_OBJECT_ID");
     const suiPriceInfoObjectId = requireEnv("SUI_PRICE_INFO_OBJECT_ID");
+    const usdcPriceInfoObjectId = requireEnv("USDC_PRICE_INFO_OBJECT_ID");
 
     log.detail(`Network: ${network}`);
     log.detail(`Pyth Package: ${pythPackageId}`);
     log.detail(`SUI Oracle: ${suiPriceInfoObjectId}`);
     log.detail(`DEEP Oracle: ${deepPriceInfoObjectId}`);
+    log.detail(`USDC Oracle: ${usdcPriceInfoObjectId}`);
     log.detail(`Update Interval: ${DEFAULT_CONFIG.updateIntervalMs / 1000}s`);
 
     // Initialize clients — oracle service uses its own dedicated keypair
@@ -154,15 +160,17 @@ async function main() {
             // Find SUI and DEEP data for status tracking
             const suiData = priceUpdate.parsed.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
             const deepData = priceUpdate.parsed.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
+            const usdcData = priceUpdate.parsed.find((p) => p.id === USDC_PRICE_FEED_ID.slice(2));
 
             // Update on-chain oracles
             await oracleUpdater.updatePriceFeeds(priceUpdate.parsed, {
                 sui: suiPriceInfoObjectId,
                 deep: deepPriceInfoObjectId,
+                usdc: usdcPriceInfoObjectId,
             });
 
             status.updateCount++;
-            if (suiData && deepData) updateStatus(suiData, deepData);
+            if (suiData && deepData && usdcData) updateStatus(suiData, deepData, usdcData);
 
             const elapsed = Date.now() - startTime;
             log.loopSuccess(
