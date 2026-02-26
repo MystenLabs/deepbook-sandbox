@@ -15,7 +15,11 @@ export class PythClient {
      */
     async fetchPriceUpdates(): Promise<PythPriceUpdate> {
         const timestamp = this.getHistoricalTimestamp();
-        const priceIds = [this.config.priceFeeds.sui, this.config.priceFeeds.deep, this.config.priceFeeds.usdc];
+        const priceIds = [
+            this.config.priceFeeds.sui,
+            this.config.priceFeeds.deep,
+            this.config.priceFeeds.usdc,
+        ];
 
         // Build URL with proper query parameters
         const params = new URLSearchParams();

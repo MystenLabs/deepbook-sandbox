@@ -27,7 +27,7 @@ export class OracleUpdater {
         const suiData = priceData.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
         const deepData = priceData.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
         const usdcData = priceData.find((p) => p.id === USDC_PRICE_FEED_ID.slice(2));
-        
+
         if (!suiData || !deepData || !usdcData) {
             throw new Error("Missing price data: SUI or DEEP or USDC not found in Pyth response");
         }
