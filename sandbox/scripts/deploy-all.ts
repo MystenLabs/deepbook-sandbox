@@ -24,11 +24,23 @@ async function main() {
     log.banner(` DeepBook sandbox [${network}] deployment`);
 
     try {
-        // On localnet, ensure .env has SUI_TOOLS_IMAGE before starting Docker
-        if (network === "localnet" && !process.env.SUI_TOOLS_IMAGE) {
-            const image = defaultSuiToolsImage();
-            updateEnvFile(sandboxRoot, { SUI_TOOLS_IMAGE: image });
-            process.env.SUI_TOOLS_IMAGE = image;
+        // On localnet, ensure .env has the minimum variables docker compose
+        // needs to parse the file (even for services we don't start yet).
+        const hasUserKey = hasPrivateKey();
+        if (network === "localnet") {
+            const defaults: Record<string, string> = {};
+            if (!process.env.SUI_TOOLS_IMAGE) {
+                defaults.SUI_TOOLS_IMAGE = defaultSuiToolsImage();
+            }
+            if (!hasUserKey) {
+                // Placeholder so docker compose doesn't reject ${PRIVATE_KEY:?...}.
+                // Replaced in Phase 1 with the container-generated key.
+                defaults.PRIVATE_KEY = Ed25519Keypair.generate().getSecretKey();
+            }
+            if (Object.keys(defaults).length > 0) {
+                updateEnvFile(sandboxRoot, defaults);
+                Object.assign(process.env, defaults);
+            }
         }
 
         // Start localnet network if localnet is selected
@@ -44,11 +56,13 @@ async function main() {
 
         let signer: Keypair;
 
-        if (network === "localnet") {
-            // On localnet, always read the container-generated key.
-            // Each FORCE_REGENESIS=true run starts a fresh chain, so only the
-            // container's key is in the node's keystore. Any PRIVATE_KEY in .env
-            // is just a placeholder to satisfy docker-compose variable validation.
+        if (network === "localnet" && hasUserKey) {
+            // Use the existing key from .env
+            signer = getSigner();
+            importKeyToHostCli(process.env.PRIVATE_KEY!, signer.getPublicKey().toSuiAddress());
+            log.success("Using PRIVATE_KEY from .env");
+        } else if (network === "localnet") {
+            // No user key — read the container-generated key
             log.info("Reading key from sui-localnet container...");
             const { keypair, privateKey } = readContainerKey(sandboxRoot);
             signer = keypair;
