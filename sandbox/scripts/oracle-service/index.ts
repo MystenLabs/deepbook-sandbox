@@ -55,7 +55,11 @@ function formatPrice(price: string, expo: number): string {
     return formatted.toFixed(Math.abs(expo));
 }
 
-function updateStatus(suiData: ParsedPriceData, deepData: ParsedPriceData, usdcData: ParsedPriceData) {
+function updateStatus(
+    suiData: ParsedPriceData,
+    deepData: ParsedPriceData,
+    usdcData: ParsedPriceData,
+) {
     status.lastUpdateTime = new Date().toISOString();
     status.lastSuiPrice = formatPrice(suiData.price.price, suiData.price.expo);
     status.lastDeepPrice = formatPrice(deepData.price.price, deepData.price.expo);

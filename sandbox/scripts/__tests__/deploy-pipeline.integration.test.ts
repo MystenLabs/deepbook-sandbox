@@ -40,7 +40,7 @@ import { ensureMinimumBalance, getDeploymentEnv } from "../utils/helpers";
 import { updateEnvFile } from "../utils/env";
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "../utils/keygen";
 import { setupPythOracles, type PythOracleIds } from "../utils/oracle";
-import { PoolCreator, type PoolInfo } from "../utils/pool";
+import { PoolCreator, type PoolEntry, type MarginPoolsResult } from "../utils/pool";
 import { expectValidSuiId, waitForUrl, expectContainerRunning } from "./helpers/assertions";
 
 // ---------------------------------------------------------------------------
@@ -82,8 +82,8 @@ describe("deploy-all pipeline (localnet)", () => {
     let signerAddress: string;
     let deployedPackages: Map<string, DeploymentResult>;
     let pythOracleIds: PythOracleIds;
-    let pool: PoolInfo;
-    let manifestPath: string;
+    let pools: Record<string, PoolEntry>;
+    let marginResult: MarginPoolsResult;
 
     // Exit handler ref so we can deregister in afterAll
     let exitHandler: (() => void) | undefined;
@@ -163,14 +163,15 @@ describe("deploy-all pipeline (localnet)", () => {
         const deployer = new MoveDeployer(client, signer, "localnet");
         deployedPackages = await deployer.deployAll();
 
-        // Should deploy all 5 packages
-        expect(deployedPackages.size).toBe(5);
+        // Should deploy all 6 packages
+        expect(deployedPackages.size).toBe(6);
         expect([...deployedPackages.keys()].sort()).toEqual([
             "deepbook",
             "deepbook_margin",
             "margin_liquidation",
             "pyth",
             "token",
+            "usdc",
         ]);
 
         // All packageIds should be valid Sui IDs
@@ -207,6 +208,7 @@ describe("deploy-all pipeline (localnet)", () => {
         expect(envContent).toContain("DEEPBOOK_PACKAGE_ID=");
         expect(envContent).toContain("DEEP_TOKEN_PACKAGE_ID=");
         expect(envContent).toContain("DEEP_TREASURY_ID=");
+        expect(envContent).toContain("DEEPBOOK_MARGIN_PACKAGE_ID=");
         expect(envContent).toContain("FIRST_CHECKPOINT=0");
     }, 10_000);
 
@@ -251,57 +253,96 @@ describe("deploy-all pipeline (localnet)", () => {
 
         expectValidSuiId(pythOracleIds.deepPriceInfoObjectId);
         expectValidSuiId(pythOracleIds.suiPriceInfoObjectId);
+        expectValidSuiId(pythOracleIds.usdcPriceInfoObjectId);
 
-        // The two IDs should be distinct
-        expect(pythOracleIds.deepPriceInfoObjectId).not.toBe(pythOracleIds.suiPriceInfoObjectId);
+        // All three IDs should be distinct
+        const ids = [
+            pythOracleIds.deepPriceInfoObjectId,
+            pythOracleIds.suiPriceInfoObjectId,
+            pythOracleIds.usdcPriceInfoObjectId,
+        ];
+        expect(new Set(ids).size).toBe(3);
 
         // Objects should exist on-chain
-        const deepObj = await client.getObject({ id: pythOracleIds.deepPriceInfoObjectId });
-        expect(deepObj.data).toBeDefined();
-
-        const suiObj = await client.getObject({ id: pythOracleIds.suiPriceInfoObjectId });
-        expect(suiObj.data).toBeDefined();
+        for (const id of ids) {
+            const obj = await client.getObject({ id });
+            expect(obj.data, `PriceInfoObject ${id} not found`).toBeDefined();
+        }
     }, 60_000);
 
     // ----------------------------------------------------------------
-    // Phase 7: Create DEEP/SUI pool
+    // Phase 7: Create deepbook pools and margin pools
     // (Must run before the oracle service starts, because the oracle
     //  transacts with the same signer every 10 s — racing for gas coins
     //  causes equivocation errors.)
     // ----------------------------------------------------------------
-    test("creates DEEP/SUI pool", async () => {
+    test("creates DEEP/SUI and SUI/USDC pools", async () => {
         const poolCreator = new PoolCreator(client, signer, FAUCET_HOST);
-        pool = await poolCreator.createPool(deployedPackages);
+        const result = await poolCreator.createDeepbookPools(deployedPackages);
+        pools = result.pools;
 
-        expectValidSuiId(pool.poolId);
+        // DEEP/SUI pool
+        expect(pools.DEEP_SUI).toBeDefined();
+        expectValidSuiId(pools.DEEP_SUI.poolId);
+        expect(pools.DEEP_SUI.baseCoinType).toContain("::deep::DEEP");
 
-        // Wait for the transaction to be indexed before querying
-        await client.waitForTransaction({ digest: pool.transactionDigest });
-
-        // Pool object should exist on-chain with correct type
-        const poolObj = await client.getObject({
-            id: pool.poolId,
+        const deepSuiObj = await client.getObject({
+            id: pools.DEEP_SUI.poolId,
             options: { showType: true },
         });
-        expect(poolObj.data).toBeDefined();
-        expect(poolObj.data!.type).toContain("::pool::Pool<");
-    }, 60_000);
+        expect(deepSuiObj.data).toBeDefined();
+        expect(deepSuiObj.data!.type).toContain("::pool::Pool<");
+
+        // SUI/USDC pool
+        expect(pools.SUI_USDC).toBeDefined();
+        expectValidSuiId(pools.SUI_USDC.poolId);
+        expect(pools.SUI_USDC.quoteCoinType).toContain("::usdc::USDC");
+
+        const suiUsdcObj = await client.getObject({
+            id: pools.SUI_USDC.poolId,
+            options: { showType: true },
+        });
+        expect(suiUsdcObj.data).toBeDefined();
+        expect(suiUsdcObj.data!.type).toContain("::pool::Pool<");
+    }, 120_000);
+
+    // ----------------------------------------------------------------
+    // Phase 7b: Create margin pools (SUI + USDC)
+    // ----------------------------------------------------------------
+    test("creates margin pools", async () => {
+        const poolCreator = new PoolCreator(client, signer, FAUCET_HOST);
+        marginResult = await poolCreator.createMarginPools(deployedPackages, pools);
+
+        expect(marginResult.marginPools.SUI).toBeTruthy();
+        expect(marginResult.marginPools.USDC).toBeTruthy();
+        expectValidSuiId(marginResult.registryId);
+    }, 120_000);
 
     // ----------------------------------------------------------------
     // Phase 8: Write oracle env + start oracle service
     // ----------------------------------------------------------------
     test("starts oracle service", async () => {
         const pythPkg = deployedPackages.get("pyth")!;
+
+        // Generate a dedicated oracle keypair and fund it
+        const oracleKeypair = Ed25519Keypair.generate();
+        const oracleAddress = oracleKeypair.getPublicKey().toSuiAddress();
+        await ensureMinimumBalance(client, oracleAddress, FAUCET_HOST);
+
         updateEnvFile(SANDBOX_ROOT, {
             PYTH_PACKAGE_ID: pythPkg.packageId,
             DEEP_PRICE_INFO_OBJECT_ID: pythOracleIds.deepPriceInfoObjectId,
             SUI_PRICE_INFO_OBJECT_ID: pythOracleIds.suiPriceInfoObjectId,
+            USDC_PRICE_INFO_OBJECT_ID: pythOracleIds.usdcPriceInfoObjectId,
+            ORACLE_PRIVATE_KEY: oracleKeypair.getSecretKey(),
         });
 
         const envContent = await fs.readFile(ENV_PATH, "utf-8");
         expect(envContent).toContain("PYTH_PACKAGE_ID=");
         expect(envContent).toContain("DEEP_PRICE_INFO_OBJECT_ID=");
         expect(envContent).toContain("SUI_PRICE_INFO_OBJECT_ID=");
+        expect(envContent).toContain("USDC_PRICE_INFO_OBJECT_ID=");
+        expect(envContent).toContain("ORACLE_PRIVATE_KEY=");
 
         await startOracleService(SANDBOX_ROOT);
 
@@ -313,72 +354,13 @@ describe("deploy-all pipeline (localnet)", () => {
     }, 120_000);
 
     // ----------------------------------------------------------------
-    // Phase 9: Write deployment manifest
-    // ----------------------------------------------------------------
-    test("writes deployment manifest", async () => {
-        const config = {
-            network: {
-                type: "localnet",
-                rpcUrl: RPC_URL,
-                faucetUrl: FAUCET_HOST,
-            },
-            packages: Object.fromEntries(
-                Array.from(deployedPackages.entries()).map(([name, data]) => [
-                    name,
-                    {
-                        packageId: data.packageId,
-                        objects: data.createdObjects.map((obj) => ({
-                            objectId: obj.objectId,
-                            objectType: obj.objectType,
-                        })),
-                        transactionDigest: data.transactionDigest,
-                    },
-                ]),
-            ),
-            pythOracles: {
-                deepPriceInfoObjectId: pythOracleIds.deepPriceInfoObjectId,
-                suiPriceInfoObjectId: pythOracleIds.suiPriceInfoObjectId,
-            },
-            pool: {
-                poolId: pool.poolId,
-                baseCoin: `${deployedPackages.get("token")!.packageId}::deep::DEEP`,
-                quoteCoin: "0x2::sui::SUI",
-                transactionDigest: pool.transactionDigest,
-            },
-            deploymentTime: new Date().toISOString(),
-            deployerAddress: signerAddress,
-        };
-
-        await fs.mkdir(DEPLOYMENTS_DIR, { recursive: true });
-
-        const now = new Date();
-        const date = now.toISOString().slice(0, 10);
-        const time = now.toISOString().slice(11, 19).replace(/:/g, "-");
-        manifestPath = path.join(DEPLOYMENTS_DIR, `${date}_${time}_localnet.json`);
-        await fs.writeFile(manifestPath, JSON.stringify(config, null, 2));
-
-        // File should exist and be valid JSON
-        const raw = await fs.readFile(manifestPath, "utf-8");
-        const parsed = JSON.parse(raw);
-
-        expect(parsed.network.type).toBe("localnet");
-        expect(parsed.packages).toBeDefined();
-        expect(parsed.packages.token.packageId).toBeTruthy();
-        expect(parsed.packages.deepbook.packageId).toBeTruthy();
-        expect(parsed.pool.poolId).toBeTruthy();
-        expect(parsed.pythOracles.deepPriceInfoObjectId).toBeTruthy();
-        expect(parsed.pythOracles.suiPriceInfoObjectId).toBeTruthy();
-        expect(parsed.deployerAddress).toBe(signerAddress);
-    }, 10_000);
-
-    // ----------------------------------------------------------------
-    // Phase 10: Start market maker
+    // Phase 9: Start market maker
     // ----------------------------------------------------------------
     test("starts market maker", async () => {
         updateEnvFile(SANDBOX_ROOT, {
             DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
-            POOL_ID: pool.poolId,
-            BASE_COIN_TYPE: `${deployedPackages.get("token")!.packageId}::deep::DEEP`,
+            POOL_ID: pools.DEEP_SUI.poolId,
+            BASE_COIN_TYPE: pools.DEEP_SUI.baseCoinType,
             DEPLOYER_ADDRESS: signerAddress,
         });
 
@@ -431,6 +413,48 @@ describe("deploy-all pipeline (localnet)", () => {
     }, 60_000);
 
     // ----------------------------------------------------------------
+    // Completeness guard: every localnet-profile service must be running.
+    // If a new service is added to the localnet profile in
+    // docker-compose.yml, this test fails until it is started and
+    // health-checked by a test above.
+    // ----------------------------------------------------------------
+    test("all localnet services are running", () => {
+        const envFileArgs = process.env.SANDBOX_ENV_FILE
+            ? ["--env-file", process.env.SANDBOX_ENV_FILE]
+            : [];
+        const configResult = spawnSync(
+            "docker",
+            ["compose", ...envFileArgs, "--profile", "localnet", "config", "--services"],
+            { cwd: SANDBOX_ROOT, encoding: "utf-8" },
+        );
+        const services = configResult.stdout.trim().split("\n").filter(Boolean).sort();
+        expect(services.length, "docker compose returned no services").toBeGreaterThan(0);
+
+        for (const service of services) {
+            const ps = spawnSync(
+                "docker",
+                [
+                    "compose",
+                    ...envFileArgs,
+                    "--profile",
+                    "localnet",
+                    "ps",
+                    "--format",
+                    "{{.State}}",
+                    service,
+                ],
+                { cwd: SANDBOX_ROOT, encoding: "utf-8" },
+            );
+            const state = ps.stdout.trim();
+            expect(
+                state,
+                `Service '${service}' is not running (state: '${state}'). ` +
+                    `If this is a new service, add a health check test above.`,
+            ).toBe("running");
+        }
+    }, 30_000);
+
+    // ----------------------------------------------------------------
     // Cleanup
     // ----------------------------------------------------------------
     afterAll(async () => {
@@ -450,15 +474,6 @@ describe("deploy-all pipeline (localnet)", () => {
             await fs.unlink(path.join(DEPLOYMENTS_DIR, ".sui-keystore"));
         } catch {
             // may not exist
-        }
-
-        // Remove test deployment manifests
-        if (manifestPath) {
-            try {
-                await fs.unlink(manifestPath);
-            } catch {
-                // may not exist
-            }
         }
 
         // Deregister exit handler

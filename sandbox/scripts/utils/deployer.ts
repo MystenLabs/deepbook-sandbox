@@ -318,7 +318,7 @@ export class MoveDeployer {
             if (extraDeps.length > 0) {
                 patched = patched.replace(
                     /deepbook_margin\s*=\s*\{\s*local\s*=\s*"\.\.\/deepbook_margin"\s*\}/,
-                    `deepbook_margin = { local = "../deepbook_margin" }\n${pythDep}\ntoken = { local = "../token" }\n${extraDeps.join("\n")}`,
+                    `deepbook_margin = { local = "../deepbook_margin" }\n${extraDeps.join("\n")}`,
                 );
             }
             if (isLocalnet) {
@@ -331,7 +331,10 @@ export class MoveDeployer {
 
         // Update the chain ID in existing [environments] section (new Move.toml format)
         // or create it from [addresses] (old format, handled above).
-        if (pkg.name === "pyth" || (pkg.name === "usdc" && isLocalnet && patched.includes("[environments]"))) {
+        if (
+            pkg.name === "pyth" ||
+            (pkg.name === "usdc" && isLocalnet && patched.includes("[environments]"))
+        ) {
             patched = patched.replace(/localnet\s*=\s*"[^"]*"/, `localnet = "${chainId}"`);
         }
         writeFileSync(tomlPath, patched);

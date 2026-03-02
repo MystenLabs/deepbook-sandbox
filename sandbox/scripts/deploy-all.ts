@@ -1,12 +1,4 @@
-
-import {
-    getClient,
-    getFaucetUrl,
-    getNetwork,
-
-    getSigner,
-    hasPrivateKey,
-} from "./utils/config";
+import { getClient, getFaucetUrl, getNetwork, getSigner, hasPrivateKey } from "./utils/config";
 import {
     getSandboxRoot,
     startLocalnet,

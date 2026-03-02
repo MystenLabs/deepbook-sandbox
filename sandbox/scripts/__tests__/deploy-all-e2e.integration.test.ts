@@ -38,7 +38,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SANDBOX_ROOT = path.resolve(__dirname, "../..");
 const ENV_FILE = ".env.test";
 const ENV_PATH = path.join(SANDBOX_ROOT, ENV_FILE);
-const DEPLOYMENTS_DIR = path.join(SANDBOX_ROOT, "deployments");
 
 const RPC_URL = "http://127.0.0.1:9000";
 
@@ -61,18 +60,10 @@ function dockerDown(cwd: string): void {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Find the most recent *_localnet.json manifest in deployments/ */
-async function findManifest(): Promise<string | undefined> {
-    let entries: string[];
-    try {
-        entries = await fs.readdir(DEPLOYMENTS_DIR);
-    } catch {
-        return undefined;
-    }
-    const manifests = entries.filter((f) => f.endsWith("_localnet.json")).sort();
-    return manifests.length > 0
-        ? path.join(DEPLOYMENTS_DIR, manifests[manifests.length - 1])
-        : undefined;
+/** Parse a KEY=VALUE from .env content. Returns the value or undefined. */
+function parseEnvValue(envContent: string, key: string): string | undefined {
+    const match = envContent.match(new RegExp(`^${key}=(.+)$`, "m"));
+    return match?.[1];
 }
 
 // ---------------------------------------------------------------------------
@@ -178,47 +169,6 @@ describe("deploy-all E2E (subprocess)", () => {
     }, 1_800_000);
 
     // ----------------------------------------------------------------
-    // Validate: deployment manifest
-    // ----------------------------------------------------------------
-    test("deployment manifest is valid", async () => {
-        const manifestPath = await findManifest();
-        expect(manifestPath, "no *_localnet.json found in deployments/").toBeDefined();
-
-        const raw = await fs.readFile(manifestPath!, "utf-8");
-        const manifest = JSON.parse(raw);
-
-        // Network
-        expect(manifest.network.type).toBe("localnet");
-
-        // 5 packages
-        const pkgNames = Object.keys(manifest.packages).sort();
-        expect(pkgNames).toEqual([
-            "deepbook",
-            "deepbook_margin",
-            "margin_liquidation",
-            "pyth",
-            "token",
-        ]);
-
-        // All packageIds should be valid Sui IDs
-        for (const name of pkgNames) {
-            expectValidSuiId(manifest.packages[name].packageId);
-        }
-
-        // Pool
-        expect(manifest.pool.poolId).toBeTruthy();
-        expectValidSuiId(manifest.pool.poolId);
-
-        // Pyth oracles
-        expect(manifest.pythOracles).toBeDefined();
-        expectValidSuiId(manifest.pythOracles.deepPriceInfoObjectId);
-        expectValidSuiId(manifest.pythOracles.suiPriceInfoObjectId);
-
-        // Deployer address
-        expect(manifest.deployerAddress).toBeTruthy();
-    }, 10_000);
-
-    // ----------------------------------------------------------------
     // Validate: .env has expected variables
     // ----------------------------------------------------------------
     test(".env has expected variables", async () => {
@@ -229,15 +179,40 @@ describe("deploy-all E2E (subprocess)", () => {
             "DEEPBOOK_PACKAGE_ID",
             "DEEP_TOKEN_PACKAGE_ID",
             "DEEP_TREASURY_ID",
+            "DEEPBOOK_MARGIN_PACKAGE_ID",
             "PYTH_PACKAGE_ID",
             "DEEP_PRICE_INFO_OBJECT_ID",
             "SUI_PRICE_INFO_OBJECT_ID",
+            "USDC_PRICE_INFO_OBJECT_ID",
+            "ORACLE_PRIVATE_KEY",
             "FIRST_CHECKPOINT",
             "CORE_PACKAGES",
+            "MARGIN_PACKAGES",
+            "POOL_ID",
+            "BASE_COIN_TYPE",
+            "DEPLOYER_ADDRESS",
         ];
 
         for (const key of requiredKeys) {
             expect(envContent, `missing ${key} in .env`).toContain(`${key}=`);
+        }
+
+        // Critical IDs should be valid Sui addresses
+        const suiIdKeys = [
+            "DEEPBOOK_PACKAGE_ID",
+            "DEEP_TOKEN_PACKAGE_ID",
+            "DEEP_TREASURY_ID",
+            "DEEPBOOK_MARGIN_PACKAGE_ID",
+            "PYTH_PACKAGE_ID",
+            "DEEP_PRICE_INFO_OBJECT_ID",
+            "SUI_PRICE_INFO_OBJECT_ID",
+            "USDC_PRICE_INFO_OBJECT_ID",
+            "POOL_ID",
+        ];
+        for (const key of suiIdKeys) {
+            const value = parseEnvValue(envContent, key);
+            expect(value, `${key} is empty`).toBeTruthy();
+            expectValidSuiId(value!);
         }
     }, 10_000);
 
@@ -301,23 +276,85 @@ describe("deploy-all E2E (subprocess)", () => {
     }, 180_000);
 
     // ----------------------------------------------------------------
-    // E2E: Pool exists on-chain
+    // E2E: Indexer is healthy
     // ----------------------------------------------------------------
-    test("pool exists on-chain", async () => {
-        const manifestPath = await findManifest();
-        expect(manifestPath).toBeDefined();
+    test("indexer metrics endpoint responds", async () => {
+        const res = await waitForUrl("http://127.0.0.1:9184/metrics", {
+            timeoutMs: 120_000,
+            label: "deepbook-indexer",
+        });
+        expect(res.status).toBe(200);
+    }, 150_000);
 
-        const manifest = JSON.parse(await fs.readFile(manifestPath!, "utf-8"));
-        const poolId: string = manifest.pool.poolId;
+    // ----------------------------------------------------------------
+    // E2E: DeepBook server is healthy
+    // ----------------------------------------------------------------
+    test("deepbook server responds", async () => {
+        const res = await waitForUrl("http://127.0.0.1:9008/", {
+            timeoutMs: 60_000,
+            label: "deepbook-server",
+        });
+        expect(res.status).toBe(200);
+    }, 90_000);
+
+    // ----------------------------------------------------------------
+    // E2E: DEEP/SUI pool exists on-chain
+    // ----------------------------------------------------------------
+    test("DEEP/SUI pool exists on-chain", async () => {
+        const envContent = await fs.readFile(ENV_PATH, "utf-8");
+        const poolId = parseEnvValue(envContent, "POOL_ID");
+        expect(poolId, "POOL_ID not found in .env").toBeTruthy();
 
         const client = new SuiClient({ url: RPC_URL });
         const poolObj = await client.getObject({
-            id: poolId,
+            id: poolId!,
             options: { showType: true },
         });
 
         expect(poolObj.data).toBeDefined();
         expect(poolObj.data!.type).toContain("::pool::Pool<");
+    }, 30_000);
+
+    // ----------------------------------------------------------------
+    // Completeness guard: every localnet-profile service must be running.
+    // If a new service is added to the localnet profile in
+    // docker-compose.yml, this test fails until deploy-all.ts starts it
+    // and a health check test is added above.
+    // ----------------------------------------------------------------
+    test("all localnet services are running", () => {
+        const envFileArgs = process.env.SANDBOX_ENV_FILE
+            ? ["--env-file", process.env.SANDBOX_ENV_FILE]
+            : [];
+        const configResult = spawnSync(
+            "docker",
+            ["compose", ...envFileArgs, "--profile", "localnet", "config", "--services"],
+            { cwd: SANDBOX_ROOT, encoding: "utf-8" },
+        );
+        const services = configResult.stdout.trim().split("\n").filter(Boolean).sort();
+        expect(services.length, "docker compose returned no services").toBeGreaterThan(0);
+
+        for (const service of services) {
+            const ps = spawnSync(
+                "docker",
+                [
+                    "compose",
+                    ...envFileArgs,
+                    "--profile",
+                    "localnet",
+                    "ps",
+                    "--format",
+                    "{{.State}}",
+                    service,
+                ],
+                { cwd: SANDBOX_ROOT, encoding: "utf-8" },
+            );
+            const state = ps.stdout.trim();
+            expect(
+                state,
+                `Service '${service}' is not running (state: '${state}'). ` +
+                    `If this is a new service, add a health check test above.`,
+            ).toBe("running");
+        }
     }, 30_000);
 
     // ----------------------------------------------------------------
@@ -336,22 +373,11 @@ describe("deploy-all E2E (subprocess)", () => {
         delete process.env.SANDBOX_ENV_FILE;
 
         // Remove shared keystore
+        const deploymentsDir = path.join(SANDBOX_ROOT, "deployments");
         try {
-            await fs.unlink(path.join(DEPLOYMENTS_DIR, ".sui-keystore"));
+            await fs.unlink(path.join(deploymentsDir, ".sui-keystore"));
         } catch {
             // may not exist
-        }
-
-        // Remove test deployment manifests
-        try {
-            const entries = await fs.readdir(DEPLOYMENTS_DIR);
-            for (const entry of entries) {
-                if (entry.endsWith("_localnet.json")) {
-                    await fs.unlink(path.join(DEPLOYMENTS_DIR, entry));
-                }
-            }
-        } catch {
-            // deployments dir may not exist
         }
 
         // Deregister exit handler
