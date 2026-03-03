@@ -161,7 +161,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: sandbox-deepbook-indexer
+    image: mysten/deepbookv3-indexer:latest
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-sandbox/Dockerfile
@@ -206,7 +206,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: sandbox-deepbook-server
+    image: mysten/deepbookv3-server:latest
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-server/Dockerfile
