@@ -28,37 +28,37 @@ for DeepBook V3, including:
 
 1. **Install dependencies:**
 
-    ```bash
-    pnpm install
-    ```
+   ```bash
+   pnpm install
+   ```
 
 2. **Deploy the full stack:**
 
-    ```bash
-    pnpm deploy-all
-    ```
+   ```bash
+   pnpm deploy-all
+   ```
 
-    This single command will:
-    - Start a Sui localnet in Docker (with faucet)
-    - Start a PostgreSQL database
-    - Deploy all DeepBook Move packages
-      (token, deepbook, deepbook_margin, pyth, etc.)
-    - Start the DeepBook indexer
-    - Create Pyth oracle price feeds for SUI and DEEP
-    - Start the oracle service (updates prices every 10s)
-    - Create a DEEP-SUI liquidity pool
-    - Start the market maker
+   This single command will:
+   - Start a Sui localnet in Docker (with faucet)
+   - Start a PostgreSQL database
+   - Deploy all DeepBook Move packages
+     (token, deepbook, deepbook_margin, pyth, etc.)
+   - Start the DeepBook indexer
+   - Create Pyth oracle price feeds for SUI and DEEP
+   - Start the oracle service (updates prices every 10s)
+   - Create a DEEP-SUI liquidity pool
+   - Start the market maker
 
 3. **Access the environment:**
 
-    After deployment completes, you'll have:
-    - **RPC endpoint**: `http://localhost:9000`
-    - **Faucet**: `http://localhost:9123`
-    - **Oracle status**: `http://localhost:9010`
-      (latest SUI/DEEP prices)
+   After deployment completes, you'll have:
+   - **RPC endpoint**: `http://localhost:9000`
+   - **Faucet**: `http://localhost:9123`
+   - **Oracle status**: `http://localhost:9010`
+     (latest SUI/DEEP prices)
 
-    All deployment IDs (package IDs, pool ID, oracle IDs) are written
-    to `sandbox/.env` and consumed by the Docker services automatically.
+   All deployment IDs (package IDs, pool ID, oracle IDs) are written
+   to `sandbox/.env` and consumed by the Docker services automatically.
 
 ## Usage
 
