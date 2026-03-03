@@ -1,4 +1,4 @@
-import { getClient, getFaucetUrl, getNetwork, getSigner } from "./utils/config";
+import { getClient, getFaucetUrl, getNetwork, getSigner, hasPrivateKey } from "./utils/config";
 import {
     getSandboxRoot,
     startLocalnet,
@@ -11,27 +11,72 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
 import { updateEnvFile } from "./utils/env";
 import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
+import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
 import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
+import { Keypair } from "@mysten/sui/cryptography";
 import log from "./utils/logger";
 
 async function main() {
     const network = getNetwork();
+    const sandboxRoot = getSandboxRoot();
+
     log.banner(` DeepBook sandbox [${network}] deployment`);
 
     try {
+        // On localnet, ensure .env has the minimum variables docker compose
+        // needs to parse the file (even for services we don't start yet).
+        const hasUserKey = hasPrivateKey();
+        if (network === "localnet") {
+            const defaults: Record<string, string> = {};
+            if (!process.env.SUI_TOOLS_IMAGE) {
+                defaults.SUI_TOOLS_IMAGE = defaultSuiToolsImage();
+            }
+            if (!hasUserKey) {
+                // Placeholder so docker compose doesn't reject ${PRIVATE_KEY:?...}.
+                // Replaced in Phase 1 with the container-generated key.
+                defaults.PRIVATE_KEY = Ed25519Keypair.generate().getSecretKey();
+            }
+            if (Object.keys(defaults).length > 0) {
+                updateEnvFile(sandboxRoot, defaults);
+                Object.assign(process.env, defaults);
+            }
+        }
+
         // Start localnet network if localnet is selected
         if (network === "localnet") {
             log.phase("Starting localnet (docker compose)");
-            await startLocalnet(getSandboxRoot());
+            await startLocalnet(sandboxRoot);
             log.success("RPC: http://127.0.0.1:9000");
             log.success("Faucet: http://127.0.0.1:9123");
         }
 
         // Phase 1: Setup Sui client and keypair
         log.phase("Phase 1/6: Setting up Sui client");
-        const signer = getSigner();
-        const signerAddress = signer.getPublicKey().toSuiAddress();
+
+        let signer: Keypair;
+
+        if (network === "localnet" && hasUserKey) {
+            // Use the existing key from .env
+            signer = getSigner();
+            importKeyToHostCli(process.env.PRIVATE_KEY!, signer.getPublicKey().toSuiAddress());
+            log.success("Using PRIVATE_KEY from .env");
+        } else if (network === "localnet") {
+            // No user key — read the container-generated key
+            log.info("Reading key from sui-localnet container...");
+            const { keypair, privateKey } = readContainerKey(sandboxRoot);
+            signer = keypair;
+            process.env.PRIVATE_KEY = privateKey;
+            importKeyToHostCli(privateKey, keypair.getPublicKey().toSuiAddress());
+            updateEnvFile(sandboxRoot, { PRIVATE_KEY: privateKey });
+            log.success("Container key imported");
+        } else if (hasPrivateKey()) {
+            signer = getSigner();
+        } else {
+            throw new Error("PRIVATE_KEY is required for testnet deployments. Set it in .env.");
+        }
+
+        let signerAddress = signer.getPublicKey().toSuiAddress();
         log.detail(`Signer: ${signerAddress}`);
         log.detail(`Network: ${network}`);
 
@@ -56,7 +101,6 @@ async function main() {
         const deployer = new MoveDeployer(client, signer, network);
         const deployedPackages = await deployer.deployAll();
 
-        const sandboxRoot = getSandboxRoot();
         let firstCheckpoint: string | undefined;
         if (network === "testnet") {
             const tokenResult = deployedPackages.get("token")!;
@@ -169,8 +213,19 @@ async function main() {
     }
 }
 
-main().catch((error) => {
+// Top-level await keeps the module evaluation pending, which adds a ref'd
+// handle to the event loop. Without this, Node.js can exit prematurely when
+// fetch() (backed by undici) is the only async operation — its unref'd sockets
+// don't prevent the event loop from draining.
+// The keepalive interval is a safety net: it's a ref'd timer that guarantees
+// the event loop stays alive even if all other handles are momentarily unref'd.
+const keepalive = setInterval(() => {}, 30_000);
+try {
+    await main();
+} catch (error) {
     log.fail("Fatal error");
     log.loopError("", error);
     process.exit(1);
-});
+} finally {
+    clearInterval(keepalive);
+}

@@ -8,7 +8,8 @@
         "deploy-all": "tsx scripts/deploy-all.ts",
         "down": "tsx scripts/down.ts",
         "oracle-service": "tsx scripts/oracle-service/index.ts",
-        "market-maker": "tsx scripts/market-maker/index.ts"
+        "market-maker": "tsx scripts/market-maker/index.ts",
+        "test:integration": "vitest run"
     },
     "dependencies": {
         "@mysten/sui": "^1.45.2",
@@ -20,6 +21,7 @@
     "devDependencies": {
         "@types/node": "^20.19.32",
         "tsx": "^4.21.0",
-        "typescript": "^5.9.3"
+        "typescript": "^5.9.3",
+        "vitest": "^3.0.0"
     }
 }
