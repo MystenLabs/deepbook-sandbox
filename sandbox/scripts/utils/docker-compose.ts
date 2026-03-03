@@ -231,15 +231,15 @@ export async function configureAndStartLocalnetServices(
     await fs.writeFile(envPath, envLines.filter(Boolean).join("\n") + "\n");
 
     // Start the indexer (explicit service name to avoid starting other localnet services)
-    // --build --force-recreate ensures images are rebuilt and containers
-    // pick up the latest source + env vars on re-deploys
+    // --force-recreate ensures containers pick up new env vars on re-deploys.
+    // We intentionally omit --build: docker compose builds automatically when
+    // no image exists, and in CI the images are pre-built by the workflow.
     const result = runDockerComposeVisible(
         [
             "--profile",
             "localnet",
             "up",
             "-d",
-            "--build",
             "--force-recreate",
             "deepbook-indexer",
             "deepbook-server",
@@ -271,7 +271,7 @@ export async function startOracleService(
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
     const result = runDockerComposeVisible(
-        ["--profile", "localnet", "up", "-d", "--build", "--force-recreate", "oracle-service"],
+        ["--profile", "localnet", "up", "-d", "--force-recreate", "oracle-service"],
         { cwd, env },
     );
     if (result.status !== 0) {
@@ -294,7 +294,7 @@ export async function startMarketMaker(
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
     const result = runDockerComposeVisible(
-        ["--profile", "localnet", "up", "-d", "--build", "--force-recreate", "market-maker"],
+        ["--profile", "localnet", "up", "-d", "--force-recreate", "market-maker"],
         { cwd, env },
     );
     if (result.status !== 0) {

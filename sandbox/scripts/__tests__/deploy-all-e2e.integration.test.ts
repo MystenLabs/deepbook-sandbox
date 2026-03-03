@@ -79,10 +79,12 @@ describe("deploy-all E2E (subprocess)", () => {
         process.env.SANDBOX_ENV_FILE = ENV_FILE;
 
         // ── Write minimal .env.test for Docker Compose ───────────────
-        const placeholderKey = Ed25519Keypair.generate().getSecretKey();
+        // NOTE: No PRIVATE_KEY here — deploy-all.ts generates a placeholder
+        // for docker compose validation, then reads the container-generated
+        // key in Phase 1 (localnet always uses the container key when no
+        // user-supplied key exists).
         const envContent =
             [
-                `PRIVATE_KEY=${placeholderKey}`,
                 `NETWORK=localnet`,
                 `SUI_TOOLS_IMAGE=${process.env.SUI_TOOLS_IMAGE ?? defaultSuiToolsImage()}`,
                 `FORCE_REGENESIS=true`,
