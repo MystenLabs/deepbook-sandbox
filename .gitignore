@@ -147,3 +147,5 @@ sandbox/deployments/
 
 target/
 .vscode/
+.idea
+.venv/

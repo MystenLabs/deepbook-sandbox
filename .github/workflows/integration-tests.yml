@@ -1,0 +1,138 @@
+name: Integration Tests
+
+on:
+  pull_request:
+    paths:
+      - "sandbox/**"
+      - "external/deepbook/**"
+      - ".github/workflows/integration-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sandbox/**"
+      - "external/deepbook/**"
+      - ".github/workflows/integration-tests.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: integration-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  SUI_TOOLS_IMAGE: mysten/sui-tools:compat
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [deploy-pipeline, deploy-all-e2e]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: sandbox/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: sandbox
+
+      - name: Install sui CLI from Docker image
+        run: |
+          docker pull ${{ env.SUI_TOOLS_IMAGE }}
+          CONTAINER_ID=$(docker create ${{ env.SUI_TOOLS_IMAGE }} true)
+          sudo docker cp "$CONTAINER_ID:/usr/local/bin/sui" /usr/local/bin/sui
+          docker rm "$CONTAINER_ID"
+          sui --version
+
+      - name: Bootstrap sui CLI config
+        run: |
+          CFG="$HOME/.sui/sui_config"
+          mkdir -p "$CFG"
+          echo '[]' > "$CFG/sui.keystore"
+          printf -- '---\nkeystore:\n  File: %s/sui.keystore\nenvs: []\nactive_env: ~\nactive_address: ~\n' "$CFG" > "$CFG/client.yaml"
+
+      - name: Prepare bind-mount directories
+        run: mkdir -p sandbox/deployments
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pre-build Docker images
+        run: |
+          docker pull postgres:16-alpine
+          printf 'PRIVATE_KEY=dummy\nSUI_TOOLS_IMAGE=%s\nFORCE_REGENESIS=true\n' "$SUI_TOOLS_IMAGE" > .env.test
+
+          # Build Rust services with BuildKit layer caching (these are slow without cache)
+          docker buildx build \
+            --file ../external/deepbook/docker/deepbook-sandbox/Dockerfile \
+            --build-arg PROFILE=release \
+            --cache-from type=gha,scope=deepbook-indexer \
+            --cache-to type=gha,mode=max,scope=deepbook-indexer \
+            --tag sandbox-deepbook-indexer:latest \
+            --load \
+            ../external/deepbook
+
+          docker buildx build \
+            --file ../external/deepbook/docker/deepbook-server/Dockerfile \
+            --build-arg PROFILE=release \
+            --cache-from type=gha,scope=deepbook-server \
+            --cache-to type=gha,mode=max,scope=deepbook-server \
+            --tag sandbox-deepbook-server:latest \
+            --load \
+            ../external/deepbook
+
+          # Build Node.js services normally (fast, no caching needed)
+          docker compose --env-file .env.test --profile localnet build market-maker oracle-service deepbook-faucet
+        working-directory: sandbox
+
+      - name: Run integration test (${{ matrix.test }})
+        run: pnpm exec vitest run ${{ matrix.test }}
+        working-directory: sandbox
+
+      - name: Capture Docker diagnostics
+        if: failure()
+        run: |
+          mkdir -p /tmp/docker-logs
+          echo "=== docker ps -a ===" > /tmp/docker-logs/diagnostics.log
+          docker ps -a >> /tmp/docker-logs/diagnostics.log 2>&1 || true
+          echo "" >> /tmp/docker-logs/diagnostics.log
+          echo "=== docker inspect sui-localnet ===" >> /tmp/docker-logs/diagnostics.log
+          docker inspect sui-localnet >> /tmp/docker-logs/diagnostics.log 2>&1 || true
+          echo "" >> /tmp/docker-logs/diagnostics.log
+          echo "=== sui-localnet logs (last 200 lines) ===" >> /tmp/docker-logs/diagnostics.log
+          docker logs sui-localnet --tail 200 >> /tmp/docker-logs/diagnostics.log 2>&1 || true
+          echo "" >> /tmp/docker-logs/diagnostics.log
+          echo "=== .env.test contents (redacted) ===" >> /tmp/docker-logs/diagnostics.log
+          sed 's/PRIVATE_KEY=.*/PRIVATE_KEY=<redacted>/' sandbox/.env.test >> /tmp/docker-logs/diagnostics.log 2>/dev/null || echo "no .env.test" >> /tmp/docker-logs/diagnostics.log
+          echo "" >> /tmp/docker-logs/diagnostics.log
+          echo "=== port 9000 listener ===" >> /tmp/docker-logs/diagnostics.log
+          ss -tln | grep 9000 >> /tmp/docker-logs/diagnostics.log 2>&1 || echo "port 9000 not listening" >> /tmp/docker-logs/diagnostics.log
+          echo "" >> /tmp/docker-logs/diagnostics.log
+          echo "=== all compose logs ===" > /tmp/docker-logs/compose.log
+          cd sandbox && docker compose --env-file .env.test --profile localnet logs --no-color --tail 500 >> /tmp/docker-logs/compose.log 2>&1 || true
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-logs-${{ matrix.test }}
+          path: /tmp/docker-logs/
+          retention-days: 7
+
+      - name: Cleanup containers
+        if: always()
+        run: docker compose --env-file .env.test --profile localnet down -v --remove-orphans || true
+        working-directory: sandbox

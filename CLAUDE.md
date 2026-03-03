@@ -159,6 +159,25 @@ pnpm deploy-all
 pnpm down
 ```
 
+## Integration Tests
+
+```bash
+cd sandbox
+
+# Run all integration tests
+pnpm test:integration
+
+# Run a specific test by filename pattern
+pnpm test:integration deploy-all-e2e
+pnpm test:integration deploy-pipeline
+```
+
+Test files live in `sandbox/scripts/__tests__/**/*.integration.test.ts`. Vitest runs with `singleFork: true` to prevent concurrent localnet instances.
+
+**Key pattern — localnet key handling:** On localnet, `deploy-all.ts` always reads the container-generated key (from `deployments/.sui-keystore`) and calls `importKeyToHostCli()` to configure the host `sui` CLI. The `.env` `PRIVATE_KEY` is only a placeholder for `docker-compose.yml` variable validation (`${PRIVATE_KEY:?...}`). Tests that write a seed `.env` should include a placeholder `PRIVATE_KEY` but must not expect `deploy-all.ts` to use it — the container key always takes precedence on localnet.
+
+**CI workflow:** `.github/workflows/integration-tests.yml` runs both test suites in a matrix (parallel runners). Triggers on PRs/pushes that touch `sandbox/` or `external/deepbook/`, plus `workflow_dispatch`. The `sui` CLI is extracted from the `mysten/sui-tools:compat` Docker image to match the localnet container version. On failure, Docker logs are uploaded as artifacts.
+
 ## Oracle Service
 
 The oracle service (`./sandbox/scripts/oracle-service/`) runs as a Docker container and provides automated price feed updates for localnet testing:

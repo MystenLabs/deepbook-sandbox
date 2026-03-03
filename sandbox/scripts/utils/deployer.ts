@@ -5,9 +5,13 @@ const execFileAsync = promisify(execFile);
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import type { SuiClient } from "@mysten/sui/client";
+import type {
+    SuiClient,
+    SuiObjectChangeCreated,
+    SuiObjectChangePublished,
+    SuiTransactionBlockResponse,
+} from "@mysten/sui/client";
 import type { Keypair } from "@mysten/sui/cryptography";
-import type { SuiObjectChangeCreated, SuiTransactionBlockResponse } from "@mysten/sui/client";
 import type { Network } from "./config";
 import log from "./logger";
 
@@ -69,45 +73,21 @@ export interface PackageInfo {
     deps: string[];
 }
 
-/** Parse packageId, transactionDigest, and created objects from `sui client publish` output. */
-function parsePublishOutput(output: string): {
-    packageId: string;
-    transactionDigest: string;
-    createdObjects: SuiObjectChangeCreated[];
-} {
-    const packageIdMatch = output.match(/PackageID:\s*(0x[a-fA-F0-9]+)/);
-    const packageId = packageIdMatch?.[1];
-    if (!packageId) {
-        throw new Error("Could not parse PackageID from sui client publish output");
+/** Extract the transaction digest from `sui client publish` JSON output. */
+function parseDigestFromOutput(output: string): string {
+    const json = JSON.parse(output);
+
+    // effects are wrapped in a version envelope (V1, V2, …)
+    const effects = json.effects;
+    if (effects) {
+        const inner = effects.V2 ?? effects.V1 ?? effects;
+        if (inner.transaction_digest) return inner.transaction_digest;
+        if (inner.transactionDigest) return inner.transactionDigest;
     }
 
-    const effectsDigestMatch = output.match(/Transaction Effects[\s\S]*?Digest:\s*([A-Za-z0-9]+)/);
-    const transactionDigest = effectsDigestMatch?.[1];
-    if (!transactionDigest) {
-        throw new Error("Could not parse transaction Digest from sui client publish output");
-    }
+    if (json.digest) return json.digest;
 
-    const createdObjects: SuiObjectChangeCreated[] = [];
-    const objectChangesSection =
-        output.match(
-            /Object Changes[\s\S]*?Created Objects:([\s\S]*?)(?=Mutated Objects:|Published Objects:|$)/,
-        )?.[1] ?? "";
-    const objectIds = [...objectChangesSection.matchAll(/ObjectID:\s*(0x[a-fA-F0-9]+)/g)].map(
-        (m) => m[1],
-    );
-    const objectTypes = [...objectChangesSection.matchAll(/ObjectType:\s*(.+)$/gm)].map((m) =>
-        m[1].replace(/\s*│\s*$/g, "").trim(),
-    );
-    for (let i = 0; i < objectIds.length && i < objectTypes.length; i++) {
-        createdObjects.push({
-            type: "created",
-            objectId: objectIds[i],
-            objectType: objectTypes[i],
-            owner: { Shared: { initial_shared_version: "" } },
-        } as SuiObjectChangeCreated);
-    }
-
-    return { packageId, transactionDigest, createdObjects };
+    throw new Error("Could not find transaction digest in publish output");
 }
 
 export class MoveDeployer {
@@ -125,15 +105,23 @@ export class MoveDeployer {
         log.spin(`Publishing ${packageName} (sui client publish)`);
 
         const resolvedPath = path.resolve(process.cwd(), packagePath);
+
+        // Ensure Published.toml is removed right before publish (defensive)
+        const pubToml = path.join(resolvedPath, "Published.toml");
+        if (existsSync(pubToml)) {
+            console.log(`    [warn] Removing leftover Published.toml: ${pubToml}`);
+            unlinkSync(pubToml);
+        }
+
         const args =
             this.network === "localnet"
-                ? ["client", "publish", "--environment", "localnet", resolvedPath]
-                : ["client", "publish", resolvedPath];
+                ? ["client", "publish", "--json", "--build-env", "localnet", resolvedPath]
+                : ["client", "publish", "--json", resolvedPath];
         let output: string;
         try {
             const { stdout } = await execFileAsync(this.suiBinary, args, {
                 encoding: "utf-8",
-                maxBuffer: 10 * 1024 * 1024,
+                maxBuffer: 50 * 1024 * 1024, // 50 MB — publish output includes compiled bytecode
             });
             output = stdout;
         } catch (err: unknown) {
@@ -149,22 +137,30 @@ export class MoveDeployer {
             throw new Error(`Failed to publish ${packageName}.\n${detail.slice(-800)}`);
         }
 
-        const { packageId, transactionDigest, createdObjects } = parsePublishOutput(output);
+        const transactionDigest = parseDigestFromOutput(output);
+
+        // Fetch the full transaction via SDK for reliable structured data
+        await this.client.waitForTransaction({ digest: transactionDigest });
+        const result = await this.client.getTransactionBlock({
+            digest: transactionDigest,
+            options: { showObjectChanges: true },
+        });
+
+        const published = result.objectChanges?.find(
+            (c): c is SuiObjectChangePublished => c.type === "published",
+        );
+        if (!published) {
+            throw new Error(`Published package not found in transaction ${transactionDigest}`);
+        }
+        const packageId = published.packageId;
+
+        const createdObjects = (result.objectChanges ?? []).filter(
+            (c): c is SuiObjectChangeCreated => c.type === "created",
+        );
 
         log.success(`${packageName} deployed: ${packageId}`);
 
-        const result: SuiTransactionBlockResponse = {
-            digest: transactionDigest,
-            effects: { status: { status: "success" } },
-            objectChanges: createdObjects,
-        } as SuiTransactionBlockResponse;
-
-        return {
-            packageId,
-            createdObjects,
-            transactionDigest,
-            result,
-        };
+        return { packageId, createdObjects, transactionDigest, result };
     }
 
     async deployAll(): Promise<Map<string, DeploymentResult>> {
@@ -315,10 +311,16 @@ export class MoveDeployer {
             const pythDep = isLocalnet
                 ? 'pyth = { local = "../../../../sandbox/packages/pyth" }'
                 : PYTH_GIT_TESTNET;
-            patched = patched.replace(
-                /deepbook_margin\s*=\s*\{\s*local\s*=\s*"\.\.\/deepbook_margin"\s*\}/,
-                `deepbook_margin = { local = "../deepbook_margin" }\n${pythDep}\ntoken = { local = "../token" }`,
-            );
+            const extraDeps = [
+                ...(patched.includes("token") ? [] : ['token = { local = "../token" }']),
+                ...(patched.includes("pyth") ? [] : [pythDep]),
+            ];
+            if (extraDeps.length > 0) {
+                patched = patched.replace(
+                    /deepbook_margin\s*=\s*\{\s*local\s*=\s*"\.\.\/deepbook_margin"\s*\}/,
+                    `deepbook_margin = { local = "../deepbook_margin" }\n${extraDeps.join("\n")}`,
+                );
+            }
             if (isLocalnet) {
                 patched = patched.replace(
                     /\[addresses\]\s*\n\s*margin_liquidation\s*=\s*"0x0"\s*/,
@@ -327,7 +329,12 @@ export class MoveDeployer {
             }
         }
 
-        if (pkg.name === "pyth" || (pkg.name === "usdc" && isLocalnet)) {
+        // Update the chain ID in existing [environments] section (new Move.toml format)
+        // or create it from [addresses] (old format, handled above).
+        if (
+            pkg.name === "pyth" ||
+            (pkg.name === "usdc" && isLocalnet && patched.includes("[environments]"))
+        ) {
             patched = patched.replace(/localnet\s*=\s*"[^"]*"/, `localnet = "${chainId}"`);
         }
         writeFileSync(tomlPath, patched);

@@ -20,7 +20,7 @@ for DeepBook V3, including:
 - [Docker](https://docs.docker.com/get-docker/) installed and running
 - [Node.js](https://nodejs.org/) 18+ and [pnpm](https://pnpm.io/installation)
 - [Sui CLI](https://docs.sui.io/build/install) installed
-  (`sui` command available in PATH)
+  (`sui` command available in PATH, version 1.63.2-1.64.1 recommended)
 - (OPTIONAL) [pre-commit](https://pre-commit.com/#install) for git
   hook management (`brew install pre-commit`)
 

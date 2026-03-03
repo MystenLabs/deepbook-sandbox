@@ -1,4 +1,6 @@
 import { spawnSync } from "child_process";
+import { unlinkSync } from "fs";
+import path from "path";
 import { getNetwork } from "./utils/config";
 import { getSandboxRoot } from "./utils/docker-compose";
 import { cleanEnvFile } from "./utils/env";
@@ -45,7 +47,14 @@ function main() {
     }
     log.success("Containers stopped, volumes removed");
 
-    // 2. Remove auto-generated .env keys (keep user-configured ones)
+    // 2. Remove shared keystore (created by sui-localnet container)
+    try {
+        unlinkSync(path.join(cwd, "deployments", ".sui-keystore"));
+    } catch {
+        // may not exist
+    }
+
+    // 3. Remove auto-generated .env keys (keep user-configured ones)
     log.phase("Cleaning generated .env keys");
     cleanEnvFile(cwd, USER_ENV_KEYS);
     log.success("Generated .env keys removed");

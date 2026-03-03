@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { getEnvFileName } from "./docker-compose";
 import log from "./logger";
 
 /**
@@ -28,12 +29,12 @@ export function cleanEnvFile(sandboxRoot: string, preserveKeys: Set<string>): vo
 }
 
 /**
- * Update or set key=value pairs in a .env file.
+ * Update or set key=value pairs in the env file.
  * Preserves existing keys not in updates, preserves order and comments.
- * Writes to sandboxRoot/.env (creates file if missing).
+ * Uses SANDBOX_ENV_FILE when set (tests use ".env.test"), otherwise ".env".
  */
 export function updateEnvFile(sandboxRoot: string, updates: Record<string, string>): void {
-    const envPath = path.join(sandboxRoot, ".env");
+    const envPath = path.join(sandboxRoot, getEnvFileName());
     let content = "";
     try {
         content = readFileSync(envPath, "utf-8");
