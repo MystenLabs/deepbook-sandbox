@@ -60,6 +60,16 @@ for DeepBook V3, including:
    All deployment IDs (package IDs, pool ID, oracle IDs) are written
    to `sandbox/.env` and consumed by the Docker services automatically.
 
+4. **Launch the dashboard:**
+
+   ```bash
+   cd sandbox/dashboard
+   pnpm install && pnpm dev
+   ```
+
+   Open `http://localhost:5173` to monitor service health, view the
+   order book, request faucet tokens, and browse deployment addresses.
+
 ## Usage
 
 ### Testing with the Faucet
