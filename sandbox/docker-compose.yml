@@ -161,7 +161,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: mysten/deepbookv3-sandbox-indexer:latest
+    image: mysten/deepbookv3-sandbox-indexer:0c5ca6bd2da2f0ea6759dc658e46ada3da236bbc
     container_name: deepbook-indexer
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
@@ -200,7 +200,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: mysten/deepbookv3-server:latest
+    image: mysten/deepbookv3-server:0c5ca6bd2da2f0ea6759dc658e46ada3da236bbc
     container_name: deepbook-server
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook

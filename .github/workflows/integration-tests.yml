@@ -73,8 +73,8 @@ jobs:
 
           # Pull pre-built images from Docker Hub
           docker pull postgres:16-alpine
-          docker pull mysten/deepbookv3-sandbox-indexer:latest
-          docker pull mysten/deepbookv3-server:latest
+          docker pull mysten/deepbookv3-sandbox-indexer:0c5ca6bd2da2f0ea6759dc658e46ada3da236bbc
+          docker pull mysten/deepbookv3-server:0c5ca6bd2da2f0ea6759dc658e46ada3da236bbc
 
           # Build Node.js services locally (fast, no caching needed)
           docker compose --env-file .env.test --profile localnet build market-maker oracle-service deepbook-faucet
