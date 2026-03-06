@@ -161,7 +161,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: mysten/deepbookv3-indexer:latest
+    image: mysten/deepbookv3-sandbox-indexer:latest
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-sandbox/Dockerfile
@@ -180,7 +180,7 @@ services:
     ports:
       - "9184:9184" # Prometheus metrics
     volumes:
-      - checkpoint_data:/checkpoints
+      - /home/alex/walrufs:/checkpoints
     networks:
       - deepbook-net
     depends_on:
