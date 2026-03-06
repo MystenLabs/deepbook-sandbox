@@ -180,7 +180,7 @@ services:
     ports:
       - "9184:9184" # Prometheus metrics
     volumes:
-      - /home/alex/walrufs:/checkpoints
+      - checkpoint_data:/checkpoints
     networks:
       - deepbook-net
     depends_on:
