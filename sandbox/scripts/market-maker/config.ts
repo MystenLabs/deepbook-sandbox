@@ -6,9 +6,12 @@ const marketMakerConfigSchema = z.object({
     fallbackMidPrice: z.bigint().positive().default(100_000_000n),
 
     // Grid parameters
-    spreadBps: z.number().int().positive().default(10), // 0.1% spread
+    // Note: spacing must be large enough for price differences to survive tick-size
+    // rounding. With tickSize=1_000_000 and mid ~28_000_000, each level offset must
+    // be >= 1_000_000, requiring levelSpacingBps >= ~360. Using 500 for safety.
+    spreadBps: z.number().int().positive().default(500), // 5% spread
     levelsPerSide: z.number().int().positive().max(50).default(5), // 5 orders each side
-    levelSpacingBps: z.number().int().positive().default(5), // 0.05% between levels
+    levelSpacingBps: z.number().int().positive().default(500), // 5% between levels
     orderSizeBase: z.bigint().positive().default(10_000_000n), // 10 DEEP per order (6 decimals)
 
     // Timing
@@ -30,9 +33,9 @@ export function loadConfig(overrides?: Partial<MarketMakerConfig>): MarketMakerC
     // Convert number defaults to bigint where needed
     const defaults = {
         fallbackMidPrice: 100_000_000n,
-        spreadBps: 10,
+        spreadBps: 500,
         levelsPerSide: 5,
-        levelSpacingBps: 5,
+        levelSpacingBps: 500,
         orderSizeBase: 10_000_000n,
         rebalanceIntervalMs: 10_000,
         tickSize: 1_000_000n,
