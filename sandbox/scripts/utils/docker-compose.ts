@@ -232,8 +232,8 @@ export async function configureAndStartLocalnetServices(
 
     // Start the indexer (explicit service name to avoid starting other localnet services)
     // --force-recreate ensures containers pick up new env vars on re-deploys.
-    // We intentionally omit --build: docker compose builds automatically when
-    // no image exists, and in CI the images are pre-built by the workflow.
+    // We intentionally omit --build: Rust services (indexer, server) are
+    // pull-only from Docker Hub; Node.js services auto-build when needed.
     const result = runDockerComposeVisible(
         [
             "--profile",
