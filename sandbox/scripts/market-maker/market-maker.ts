@@ -7,7 +7,12 @@ import { OrderManager } from "./order-manager";
 import { calculateGridLevels } from "./grid-strategy";
 import { fetchOracleMidPrice } from "./price-feed";
 import { explorerObjectUrl, formatPrice, formatDeep } from "./types";
-import { HealthServer, type HealthStatus, type ReadinessStatus } from "./health";
+import {
+    HealthServer,
+    type HealthStatus,
+    type ReadinessStatus,
+    type OrdersResponse,
+} from "./health";
 import { MetricsServer, updateMetrics, getMetrics } from "./metrics";
 import log from "../utils/logger";
 
@@ -103,6 +108,7 @@ export class MarketMaker {
         this.healthServer = new HealthServer(
             () => this.getHealthStatus(),
             () => this.getReadinessStatus(),
+            () => this.getOrdersData(),
         );
         await this.healthServer.start(this.config.healthCheckPort);
 
@@ -284,6 +290,30 @@ export class MarketMaker {
             checks: {
                 balanceManager: this.balanceManagerId !== null,
                 pool: this.orderManager !== null,
+            },
+        };
+    }
+
+    /**
+     * Get current orders and config for the dashboard.
+     */
+    private getOrdersData(): OrdersResponse {
+        const activeOrders = this.orderManager?.getActiveOrders() ?? [];
+        const orders = activeOrders.map((o) => ({
+            orderId: o.orderId,
+            price: Number(o.price) / 1e9,
+            quantity: Number(o.quantity) / 1e6,
+            isBid: o.isBid,
+        }));
+
+        return {
+            midPrice: this.lastMidPrice ? Number(this.lastMidPrice) / 1e9 : null,
+            orders,
+            config: {
+                spreadBps: this.config.spreadBps,
+                levelsPerSide: this.config.levelsPerSide,
+                levelSpacingBps: this.config.levelSpacingBps,
+                orderSizeBase: Number(this.config.orderSizeBase) / 1e6,
             },
         };
     }

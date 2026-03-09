@@ -247,6 +247,8 @@ services:
       MAX_DEEP_PER_REQUEST: 10000
     ports:
       - "9009:9009"
+    volumes:
+      - ./deployments:/app/deployments:ro
     networks:
       - deepbook-net
     depends_on:

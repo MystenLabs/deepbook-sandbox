@@ -1,4 +1,13 @@
-import { getClient, getFaucetUrl, getNetwork, getSigner, hasPrivateKey } from "./utils/config";
+import path from "path";
+import fs from "fs/promises";
+import {
+    getClient,
+    getFaucetUrl,
+    getNetwork,
+    getRpcUrl,
+    getSigner,
+    hasPrivateKey,
+} from "./utils/config";
 import {
     getSandboxRoot,
     startLocalnet,
@@ -177,6 +186,47 @@ async function main() {
         const { pools } = await poolCreator.createDeepbookPools(deployedPackages);
         const marginResult = await poolCreator.createMarginPools(deployedPackages, pools);
 
+        // Write deployment manifest (reference-only, not read by services)
+        const manifest = {
+            network: {
+                type: network,
+                rpcUrl: getRpcUrl(network),
+                faucetUrl: getFaucetUrl(network),
+            },
+            packages: Object.fromEntries(
+                Array.from(deployedPackages.entries()).map(([name, data]) => [
+                    name,
+                    {
+                        packageId: data.packageId,
+                        objects: data.createdObjects.map((obj) => ({
+                            objectId: obj.objectId,
+                            objectType: obj.objectType,
+                        })),
+                        transactionDigest: data.transactionDigest,
+                    },
+                ]),
+            ),
+            ...(pythOracleIds && {
+                pythOracles: {
+                    deepPriceInfoObjectId: pythOracleIds.deepPriceInfoObjectId,
+                    suiPriceInfoObjectId: pythOracleIds.suiPriceInfoObjectId,
+                },
+            }),
+            pools: {
+                DEEP_SUI: pools.DEEP_SUI,
+                SUI_USDC: pools.SUI_USDC,
+            },
+            marginPools: marginResult.marginPools,
+            deploymentTime: new Date().toISOString(),
+            deployerAddress: signerAddress,
+        };
+
+        const deploymentsDir = path.join(getSandboxRoot(), "deployments");
+        const deploymentPath = path.join(deploymentsDir, `${network}.json`);
+        await fs.mkdir(deploymentsDir, { recursive: true });
+        await fs.writeFile(deploymentPath, JSON.stringify(manifest, null, 2));
+        log.success(`Deployment manifest: ${deploymentPath}`);
+
         // Phase 6: Start market maker (localnet only)
         if (network === "localnet") {
             log.phase("Phase 6/6: Starting market maker");
@@ -198,6 +248,7 @@ async function main() {
             { label: "SUI/USDC Pool", value: pools.SUI_USDC.poolId },
             { label: "SUI Margin Pool", value: marginResult.marginPools.SUI },
             { label: "USDC Margin Pool", value: marginResult.marginPools.USDC },
+            { label: "Deployment File", value: deploymentPath },
         ];
         if (network === "testnet") {
             summaryEntries.push({ label: "DeepBook Server", value: "http://127.0.0.1:9008" });

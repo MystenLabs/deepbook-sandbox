@@ -240,6 +240,7 @@ export async function configureAndStartLocalnetServices(
             "localnet",
             "up",
             "-d",
+            "--build",
             "--force-recreate",
             "deepbook-indexer",
             "deepbook-server",
