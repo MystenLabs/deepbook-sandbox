@@ -231,8 +231,9 @@ export async function configureAndStartLocalnetServices(
     await fs.writeFile(envPath, envLines.filter(Boolean).join("\n") + "\n");
 
     // Start the indexer (explicit service name to avoid starting other localnet services)
-    // --build --force-recreate ensures images are rebuilt and containers
-    // pick up the latest source + env vars on re-deploys
+    // --force-recreate ensures containers pick up new env vars on re-deploys.
+    // We intentionally omit --build: Rust services (indexer, server) are
+    // pull-only from Docker Hub; Node.js services auto-build when needed.
     const result = runDockerComposeVisible(
         [
             "--profile",
