@@ -1,10 +1,10 @@
-import http from "http";
 import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { getClient, getNetwork } from "../utils/config";
 import { PythClient } from "./pyth-client";
 import { OracleUpdater } from "./oracle-updater";
-import type { OracleConfig, ParsedPriceData } from "./types";
+import { createStatusServer, createInitialStatus, updateStatus } from "./status-server";
+import type { OracleConfig } from "./types";
 import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID, USDC_PRICE_FEED_ID } from "./constants";
 import log from "../utils/logger";
 
@@ -40,74 +40,7 @@ function requireEnv(name: string): string {
 }
 
 /** Shared state for the status endpoint */
-const status = {
-    updateCount: 0,
-    errorCount: 0,
-    lastUpdateTime: null as string | null,
-    lastSuiPrice: null as string | null,
-    lastDeepPrice: null as string | null,
-    lastUsdcPrice: null as string | null,
-};
-
-function formatPrice(price: string, expo: number): string {
-    const priceNum = Number.parseInt(price);
-    const formatted = priceNum * Math.pow(10, expo);
-    return formatted.toFixed(Math.abs(expo));
-}
-
-function updateStatus(
-    suiData: ParsedPriceData,
-    deepData: ParsedPriceData,
-    usdcData: ParsedPriceData,
-) {
-    status.lastUpdateTime = new Date().toISOString();
-    status.lastSuiPrice = formatPrice(suiData.price.price, suiData.price.expo);
-    status.lastDeepPrice = formatPrice(deepData.price.price, deepData.price.expo);
-    status.lastUsdcPrice = formatPrice(usdcData.price.price, usdcData.price.expo);
-}
-
-function startStatusServer() {
-    const server = http.createServer((req, res) => {
-        const path = req.url?.split("?")[0] ?? "";
-        const isStatusPath = path === "/" || path === "/status";
-
-        if (!isStatusPath) {
-            res.writeHead(404, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "Not Found" }, null, 2));
-            return;
-        }
-        if (req.method !== "GET") {
-            res.writeHead(405, {
-                "Content-Type": "application/json",
-                Allow: "GET",
-            });
-            res.end(JSON.stringify({ error: "Method Not Allowed" }, null, 2));
-            return;
-        }
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-            JSON.stringify(
-                {
-                    status: "ok",
-                    updates: status.updateCount,
-                    errors: status.errorCount,
-                    lastUpdate: status.lastUpdateTime,
-                    prices: {
-                        sui: status.lastSuiPrice ? `$${status.lastSuiPrice}` : null,
-                        deep: status.lastDeepPrice ? `$${status.lastDeepPrice}` : null,
-                        usdc: status.lastUsdcPrice ? `$${status.lastUsdcPrice}` : null,
-                    },
-                },
-                null,
-                2,
-            ),
-        );
-    });
-    server.listen(STATUS_PORT, () => {
-        log.success(`Status endpoint: http://localhost:${STATUS_PORT}`);
-    });
-}
+const status = createInitialStatus();
 
 async function main() {
     log.banner("Oracle Service");
@@ -149,7 +82,10 @@ async function main() {
     }
 
     // Start status/health endpoint
-    startStatusServer();
+    const server = createStatusServer(status);
+    server.listen(STATUS_PORT, () => {
+        log.success(`Status endpoint: http://localhost:${STATUS_PORT}`);
+    });
 
     log.phase("Starting price feed updates");
 
@@ -174,7 +110,7 @@ async function main() {
             });
 
             status.updateCount++;
-            if (suiData && deepData && usdcData) updateStatus(suiData, deepData, usdcData);
+            if (suiData && deepData && usdcData) updateStatus(status, suiData, deepData, usdcData);
 
             const elapsed = Date.now() - startTime;
             log.loopSuccess(

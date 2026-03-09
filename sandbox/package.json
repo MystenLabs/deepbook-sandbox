@@ -9,7 +9,9 @@
         "down": "tsx scripts/down.ts",
         "oracle-service": "tsx scripts/oracle-service/index.ts",
         "market-maker": "tsx scripts/market-maker/index.ts",
-        "test:integration": "vitest run"
+        "test:integration": "vitest run",
+        "test:unit": "vitest run --config vitest.unit.config.ts",
+        "test:oracle": "vitest run --config vitest.unit.config.ts --reporter verbose"
     },
     "dependencies": {
         "@mysten/sui": "^1.45.2",
