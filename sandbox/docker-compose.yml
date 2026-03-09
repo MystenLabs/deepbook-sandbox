@@ -106,7 +106,7 @@ services:
 
   # ============================================================
   # Market Maker
-  # Automated market maker for localnet DEEP/SUI pool
+  # Automated market maker for localnet pools (DEEP/SUI + SUI/USDC)
   # Started by deploy-all after pool creation (env vars set via .env)
   # ============================================================
   market-maker:
@@ -123,15 +123,17 @@ services:
       PRIVATE_KEY: ${PRIVATE_KEY:?Set PRIVATE_KEY in .env}
       VERBOSE: "1"
       DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID}
-      POOL_ID: ${POOL_ID}
-      BASE_COIN_TYPE: ${BASE_COIN_TYPE}
       DEPLOYER_ADDRESS: ${DEPLOYER_ADDRESS}
       PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID}
-      DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID}
-      SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID}
+      MM_POOLS: ${MM_POOLS:-}
+      # Legacy single-pool fallback (used when MM_POOLS is not set)
+      POOL_ID: ${POOL_ID:-}
+      BASE_COIN_TYPE: ${BASE_COIN_TYPE:-}
+      DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID:-}
+      SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID:-}
       MM_SPREAD_BPS: ${MM_SPREAD_BPS:-10}
       MM_LEVELS_PER_SIDE: ${MM_LEVELS_PER_SIDE:-5}
-      MM_ORDER_SIZE_BASE: ${MM_ORDER_SIZE_BASE:-}
+      MM_LEVEL_SPACING_BPS: ${MM_LEVEL_SPACING_BPS:-}
       MM_REBALANCE_INTERVAL_MS: ${MM_REBALANCE_INTERVAL_MS:-10000}
       MM_HEALTH_CHECK_PORT: ${MM_HEALTH_CHECK_PORT:-3000}
       MM_METRICS_PORT: ${MM_METRICS_PORT:-9090}

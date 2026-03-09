@@ -73,7 +73,7 @@ Services in the stack:
 | -------------------- | -------------------- | ----------------------------------------------- | ----------------------------- |
 | **PostgreSQL**       | (always)             | Database for the indexer                        | 5432                          |
 | **Sui Localnet**     | `localnet`           | Local Sui blockchain for testing                | 9000 (RPC), 9123 (faucet)     |
-| **Market Maker**     | `localnet`           | Automated market maker for DEEP/SUI pool        | 3001 (health), 9091 (metrics) |
+| **Market Maker**     | `localnet`           | Automated market maker for DEEP/SUI + SUI/USDC  | 3001 (health), 9091 (metrics) |
 | **DeepBook Indexer** | `remote`             | Indexes DeepBook events (testnet/mainnet only)  | 9184 (metrics)                |
 | **DeepBook Server**  | `remote`             | REST API for querying indexed data              | 9008                          |
 | **DeepBook Faucet**  | `localnet`, `remote` | Distributes SUI (proxied) and DEEP tokens       | 9009                          |
@@ -152,7 +152,7 @@ bunx prettier-move -c *.move --write        # Format Move files
 ```bash
 cd sandbox
 
-# Deploy DeepBook to localnet (starts containers, deploys Move packages, creates DEEP/SUI pool, starts MM)
+# Deploy DeepBook to localnet (starts containers, deploys packages, creates pools, starts MM)
 pnpm deploy-all
 
 # Full teardown (stops containers, removes volumes, cleans generated .env keys)
@@ -205,14 +205,21 @@ See [./sandbox/scripts/oracle-service/README.md](./sandbox/scripts/oracle-servic
 
 ### Market Maker Configuration
 
-Environment variables for `pnpm market-maker`:
+The market maker supports multiple pools via the `MM_POOLS` JSON env var. Each pool has its own tick/lot/min sizes, oracle references, deposit amounts, and fallback price. Shared grid parameters apply to all pools.
+
+**Multi-pool config** (set by `deploy-all`):
+
+- `MM_POOLS` - JSON array of pool configs (per-pool: poolId, coinTypes, tickSize, lotSize, minSize, orderSizeBase, fallbackMidPrice, deposit amounts, oracle IDs, decimals)
+
+**Shared grid parameters:**
 
 - `MM_SPREAD_BPS` - Spread in basis points (default: 10 = 0.1%)
 - `MM_LEVELS_PER_SIDE` - Orders per side (default: 5)
-- `MM_ORDER_SIZE_BASE` - Order size in base asset units (default: 10_000_000 = 10 DEEP)
 - `MM_REBALANCE_INTERVAL_MS` - Rebalance interval (default: 10000)
 - `MM_HEALTH_CHECK_PORT` - Health server port (default: 3000)
 - `MM_METRICS_PORT` - Prometheus metrics port (default: 9090)
+
+**Backward compat:** If `MM_POOLS` is not set, falls back to legacy single-pool env vars (`POOL_ID`, `BASE_COIN_TYPE`, etc.).
 
 See `sandbox/scripts/market-maker/README.md` for full documentation.
 

@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { getClient, getNetwork, getSigner } from "../utils/config";
 import { loadConfig, parseEnvConfig } from "./config";
-import type { DeploymentManifest } from "./types";
-import { explorerObjectUrl } from "./types";
+import type { DeploymentManifest, PoolConfig } from "./types";
+import { explorerObjectUrl, parsePoolConfigs, pairLabel } from "./types";
 import { MarketMaker } from "./market-maker";
 import log from "../utils/logger";
 
@@ -16,17 +16,48 @@ function requireEnv(name: string): string {
     return value;
 }
 
+/**
+ * Build pool configs from the MM_POOLS JSON env var,
+ * or fall back to legacy single-pool env vars for backward compatibility.
+ */
+function loadPoolConfigs(): PoolConfig[] {
+    const mmPoolsJson = process.env.MM_POOLS;
+    if (mmPoolsJson) {
+        return parsePoolConfigs(mmPoolsJson);
+    }
+
+    // Legacy single-pool fallback
+    const poolId = requireEnv("POOL_ID");
+    const baseCoinType = requireEnv("BASE_COIN_TYPE");
+
+    return [
+        {
+            poolId,
+            baseCoinType,
+            quoteCoinType: "0x2::sui::SUI",
+            basePriceInfoObjectId: process.env.DEEP_PRICE_INFO_OBJECT_ID,
+            quotePriceInfoObjectId: process.env.SUI_PRICE_INFO_OBJECT_ID,
+            tickSize: 1_000_000n,
+            lotSize: 1_000_000n,
+            minSize: 10_000_000n,
+            orderSizeBase: 10_000_000n,
+            fallbackMidPrice: 100_000_000n,
+            baseDepositAmount: 1_000_000_000n,
+            quoteDepositAmount: 10_000_000_000n,
+            baseDecimals: 6,
+            quoteDecimals: 9,
+        },
+    ];
+}
+
 function loadManifestFromEnv(): DeploymentManifest {
     const network = getNetwork() as "localnet" | "testnet";
     const deepbookPackageId = requireEnv("DEEPBOOK_PACKAGE_ID");
-    const poolId = requireEnv("POOL_ID");
-    const baseCoinType = requireEnv("BASE_COIN_TYPE");
     const deployerAddress = requireEnv("DEPLOYER_ADDRESS");
 
-    // Oracle env vars are optional (only set on localnet)
     const pythPackageId = process.env.PYTH_PACKAGE_ID;
-    const deepPriceInfoObjectId = process.env.DEEP_PRICE_INFO_OBJECT_ID;
-    const suiPriceInfoObjectId = process.env.SUI_PRICE_INFO_OBJECT_ID;
+
+    const pools = loadPoolConfigs();
 
     return {
         network: {
@@ -48,19 +79,7 @@ function loadManifestFromEnv(): DeploymentManifest {
                 },
             }),
         },
-        ...(deepPriceInfoObjectId &&
-            suiPriceInfoObjectId && {
-                pythOracles: {
-                    deepPriceInfoObjectId,
-                    suiPriceInfoObjectId,
-                },
-            }),
-        pool: {
-            poolId,
-            baseCoin: baseCoinType,
-            quoteCoin: "0x2::sui::SUI",
-            transactionDigest: "",
-        },
+        pools,
         deploymentTime: "",
         deployerAddress,
     };
@@ -74,17 +93,19 @@ async function main() {
 
     const network = manifest.network.type;
     log.detail(`Network: ${network}`);
-    log.detail(`Pool: ${manifest.pool.poolId}`);
-    log.detail(explorerObjectUrl(manifest.pool.poolId, network));
     log.detail(`Package: ${manifest.packages.deepbook.packageId}`);
+    log.detail(`Pools: ${manifest.pools.length}`);
+    for (const pool of manifest.pools) {
+        const label = pairLabel(pool.baseCoinType, pool.quoteCoinType);
+        log.detail(`  ${label}: ${pool.poolId}`);
+        log.detail(`  ${explorerObjectUrl(pool.poolId, network)}`);
+    }
 
     // Load configuration
     const envConfig = parseEnvConfig();
     const config = loadConfig(envConfig);
 
-    log.detail(
-        `Spread: ${config.spreadBps} bps | Levels: ${config.levelsPerSide}/side | Order: ${Number(config.orderSizeBase) / 1e6} DEEP`,
-    );
+    log.detail(`Spread: ${config.spreadBps} bps | Levels: ${config.levelsPerSide}/side`);
     log.detail(`Rebalance: ${config.rebalanceIntervalMs}ms`);
 
     // Create Sui client and signer
