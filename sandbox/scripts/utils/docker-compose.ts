@@ -205,6 +205,7 @@ async function waitForFaucet(baseUrl: string, maxAttempts = 30): Promise<void> {
 export async function configureAndStartLocalnetServices(
     packages: { corePackageId: string; marginPackageId?: string },
     sandboxRoot?: string,
+    options?: { quick?: boolean },
 ): Promise<void> {
     const cwd = sandboxRoot ?? getSandboxRoot();
     const envPath = path.join(cwd, getEnvFileName());
@@ -231,22 +232,15 @@ export async function configureAndStartLocalnetServices(
     await fs.writeFile(envPath, envLines.filter(Boolean).join("\n") + "\n");
 
     // Start the indexer (explicit service name to avoid starting other localnet services)
-    // --force-recreate ensures containers pick up new env vars on re-deploys.
-    // We intentionally omit --build: Rust services (indexer, server) are
-    // pull-only from Docker Hub; Node.js services auto-build when needed.
-    const result = runDockerComposeVisible(
-        [
-            "--profile",
-            "localnet",
-            "up",
-            "-d",
-            "--force-recreate",
-            "deepbook-indexer",
-            "deepbook-server",
-            "deepbook-faucet",
-        ],
-        { cwd },
-    );
+    // --force-recreate ensures containers are recreated with the new env.
+    // --build rebuilds indexer and server images; skip with quick mode when pre-built
+    // images are already available (e.g. pulled from Docker Hub in CI).
+    const upArgs = ["--profile", "localnet", "up", "-d", "--force-recreate"];
+    if (!options?.quick) {
+        upArgs.push("--build");
+    }
+    upArgs.push("deepbook-indexer", "deepbook-server", "deepbook-faucet");
+    const result = runDockerComposeVisible(upArgs, { cwd });
 
     if (result.status !== 0) {
         const stderr = result.stderr?.trim() || "";
