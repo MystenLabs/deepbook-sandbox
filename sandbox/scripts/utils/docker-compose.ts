@@ -272,7 +272,7 @@ export async function startOracleService(
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
     const result = runDockerComposeVisible(
-        ["--profile", "localnet", "up", "-d", "--build", "--force-recreate", "oracle-service"],
+        ["--profile", "localnet", "up", "-d", "--force-recreate", "oracle-service"],
         { cwd, env },
     );
     if (result.status !== 0) {
@@ -295,7 +295,7 @@ export async function startMarketMaker(
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
     const result = runDockerComposeVisible(
-        ["--profile", "localnet", "up", "-d", "--build", "--force-recreate", "market-maker"],
+        ["--profile", "localnet", "up", "-d", "--force-recreate", "market-maker"],
         { cwd, env },
     );
     if (result.status !== 0) {
