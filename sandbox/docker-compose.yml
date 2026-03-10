@@ -164,6 +164,12 @@ services:
       - remote
       - localnet
     image: mysten/deepbookv3-sandbox-indexer:0c5ca6bd2da2f0ea6759dc658e46ada3da236bbc
+    build:
+      context: ../external/deepbook
+      dockerfile: docker/deepbook-sandbox/Dockerfile
+      args:
+        PROFILE: release
+        GIT_REVISION: ${GIT_REVISION:-local}
     container_name: deepbook-indexer
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
@@ -203,6 +209,12 @@ services:
       - remote
       - localnet
     image: mysten/deepbookv3-server:0c5ca6bd2da2f0ea6759dc658e46ada3da236bbc
+    build:
+      context: ../external/deepbook
+      dockerfile: docker/deepbook-server/Dockerfile
+      args:
+        PROFILE: release
+        GIT_REVISION: ${GIT_REVISION:-local}
     container_name: deepbook-server
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
