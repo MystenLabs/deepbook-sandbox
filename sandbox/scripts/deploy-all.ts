@@ -27,10 +27,13 @@ import { Keypair } from "@mysten/sui/cryptography";
 import log from "./utils/logger";
 
 async function main() {
+    const quick = process.argv.includes("--quick");
     const network = getNetwork();
     const sandboxRoot = getSandboxRoot();
 
     log.banner(` DeepBook sandbox [${network}] deployment`);
+    if (quick)
+        log.info("Quick mode: skipping indexer and server image builds (using pre-built images)");
 
     try {
         // On localnet, ensure .env has the minimum variables docker compose
@@ -143,6 +146,7 @@ async function main() {
                     ...(marginPkg && { marginPackageId: marginPkg.packageId }),
                 },
                 sandboxRoot,
+                { quick },
             );
         }
 
