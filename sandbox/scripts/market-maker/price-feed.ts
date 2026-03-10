@@ -1,6 +1,6 @@
 import type { SuiClient } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
-import type { DeploymentManifest } from "./types";
+import type { PoolConfig } from "./types";
 import log from "../utils/logger";
 
 /**
@@ -74,52 +74,37 @@ async function readOnChainPrice(
 }
 
 /**
- * Fetch the DEEP/SUI mid price from on-chain Pyth PriceInfoObjects.
+ * Fetch the base/quote mid price from on-chain Pyth PriceInfoObjects.
  *
- * Reads DEEP/USD and SUI/USD prices via devInspectTransactionBlock,
- * then computes: DEEP/SUI = (DEEP_USD / SUI_USD) scaled to 9 decimals.
+ * Reads base/USD and quote/USD prices via devInspectTransactionBlock,
+ * then computes: base/quote = (base_USD / quote_USD) scaled to quoteDecimals.
  *
- * @returns mid price as bigint in SUI's 9-decimal format, or null if read fails
+ * @returns mid price as bigint in quote asset's decimal format, or null if read fails
  */
 export async function fetchOracleMidPrice(
     client: SuiClient,
-    manifest: DeploymentManifest,
+    pool: PoolConfig,
+    pythPackageId: string,
+    sender: string,
 ): Promise<bigint | null> {
-    if (!manifest.pythOracles) {
-        return null;
-    }
-
-    const pythPackageId = manifest.packages.pyth?.packageId;
-    if (!pythPackageId) {
+    if (!pool.basePriceInfoObjectId || !pool.quotePriceInfoObjectId) {
         return null;
     }
 
     try {
-        const sender = manifest.deployerAddress;
-
-        const [deepPrice, suiPrice] = await Promise.all([
-            readOnChainPrice(
-                client,
-                pythPackageId,
-                manifest.pythOracles.deepPriceInfoObjectId,
-                sender,
-            ),
-            readOnChainPrice(
-                client,
-                pythPackageId,
-                manifest.pythOracles.suiPriceInfoObjectId,
-                sender,
-            ),
+        const [basePrice, quotePrice] = await Promise.all([
+            readOnChainPrice(client, pythPackageId, pool.basePriceInfoObjectId, sender),
+            readOnChainPrice(client, pythPackageId, pool.quotePriceInfoObjectId, sender),
         ]);
 
-        if (deepPrice.magnitude === 0n || suiPrice.magnitude === 0n) {
+        if (basePrice.magnitude === 0n || quotePrice.magnitude === 0n) {
             log.loopError("Oracle returned zero price");
             return null;
         }
 
-        const midPrice = calculateDeepSuiPrice(deepPrice, suiPrice);
+        const midPrice = calculateBaseQuotePrice(basePrice, quotePrice, pool.quoteDecimals);
         if (midPrice <= 0n) {
-            log.loopError("Oracle returned non-positive DEEP/SUI price");
+            log.loopError("Oracle returned non-positive price");
             return null;
         }
 
@@ -131,22 +116,23 @@ export async function fetchOracleMidPrice(
 }
 
 /**
- * Calculate DEEP/SUI price from oracle USD prices.
+ * Calculate base/quote price from oracle USD prices.
  *
  * Each price is: actual_price = magnitude * 10^exponent
- * DEEP/SUI = DEEP_USD / SUI_USD, scaled to 9 decimals (SUI native units).
+ * base/quote = base_USD / quote_USD, scaled to quoteDecimals.
  *
- * result = deepMag * 10^(9 + deepExpo - suiExpo) / suiMag
+ * result = baseMag * 10^(quoteDecimals + baseExpo - quoteExpo) / quoteMag
  */
-function calculateDeepSuiPrice(
-    deep: { magnitude: bigint; exponent: bigint },
-    sui: { magnitude: bigint; exponent: bigint },
+function calculateBaseQuotePrice(
+    base: { magnitude: bigint; exponent: bigint },
+    quote: { magnitude: bigint; exponent: bigint },
+    quoteDecimals: number,
 ): bigint {
-    const scaledExpo = 9n + deep.exponent - sui.exponent;
+    const scaledExpo = BigInt(quoteDecimals) + base.exponent - quote.exponent;
 
     if (scaledExpo >= 0n) {
-        return (deep.magnitude * 10n ** scaledExpo) / sui.magnitude;
+        return (base.magnitude * 10n ** scaledExpo) / quote.magnitude;
     } else {
-        return deep.magnitude / (sui.magnitude * 10n ** -scaledExpo);
+        return base.magnitude / (quote.magnitude * 10n ** -scaledExpo);
     }
 }

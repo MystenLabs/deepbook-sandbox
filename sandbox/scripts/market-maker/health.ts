@@ -13,11 +13,13 @@ export interface ReadinessStatus {
     timestamp: string;
     checks: {
         balanceManager: boolean;
-        pool: boolean;
+        pools: number;
     };
 }
 
-export interface OrdersResponse {
+export interface PoolOrdersResponse {
+    pair: string;
+    poolId: string;
     midPrice: number | null;
     orders: {
         orderId: string;
@@ -25,11 +27,14 @@ export interface OrdersResponse {
         quantity: number;
         isBid: boolean;
     }[];
+}
+
+export interface OrdersResponse {
+    pools: PoolOrdersResponse[];
     config: {
         spreadBps: number;
         levelsPerSide: number;
         levelSpacingBps: number;
-        orderSizeBase: number;
     };
 }
 

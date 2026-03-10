@@ -18,9 +18,31 @@ export const SELF_MATCHING = {
 export const DECIMALS = {
     DEEP: 6,
     SUI: 9,
+    USDC: 6,
 } as const;
 
 export const SUI_CLOCK_OBJECT_ID = "0x6";
+
+/**
+ * Per-pool configuration for the market maker.
+ * Each pool has its own tick/lot/min sizes, oracle references, deposit amounts, etc.
+ */
+export interface PoolConfig {
+    poolId: string;
+    baseCoinType: string;
+    quoteCoinType: string;
+    basePriceInfoObjectId?: string;
+    quotePriceInfoObjectId?: string;
+    tickSize: bigint;
+    lotSize: bigint;
+    minSize: bigint;
+    orderSizeBase: bigint;
+    fallbackMidPrice: bigint;
+    baseDepositAmount: bigint;
+    quoteDepositAmount: bigint;
+    baseDecimals: number;
+    quoteDecimals: number;
+}
 
 export interface DeploymentManifest {
     network: {
@@ -38,16 +60,7 @@ export interface DeploymentManifest {
             transactionDigest: string;
         };
     };
-    pythOracles?: {
-        deepPriceInfoObjectId: string;
-        suiPriceInfoObjectId: string;
-    };
-    pool: {
-        poolId: string;
-        baseCoin: string;
-        quoteCoin: string;
-        transactionDigest: string;
-    };
+    pools: PoolConfig[];
     deploymentTime: string;
     deployerAddress: string;
 }
@@ -81,10 +94,58 @@ export function explorerTxUrl(digest: string, network: string): string {
     return `${EXPLORER_BASE}/txblock/${digest}?network=${explorerNetwork(network)}`;
 }
 
-export function formatPrice(price: bigint): string {
-    return (Number(price) / 1e9).toFixed(6);
+export function formatAmount(value: bigint, decimals: number): string {
+    return (Number(value) / 10 ** decimals).toFixed(Math.min(decimals, 6));
 }
 
-export function formatDeep(quantity: bigint): string {
-    return (Number(quantity) / 1e6).toString();
+/**
+ * Derive a short pair label from coin type strings.
+ * e.g. "0x...::deep::DEEP" / "0x2::sui::SUI" → "DEEP/SUI"
+ */
+export function pairLabel(baseCoinType: string, quoteCoinType: string): string {
+    const base = baseCoinType.split("::").pop()?.toUpperCase() ?? "BASE";
+    const quote = quoteCoinType.split("::").pop()?.toUpperCase() ?? "QUOTE";
+    return `${base}/${quote}`;
+}
+
+/**
+ * Parse a JSON-serialized PoolConfig array from the MM_POOLS env var.
+ * BigInt fields are stored as strings in JSON and converted here.
+ */
+export function parsePoolConfigs(json: string): PoolConfig[] {
+    const raw = JSON.parse(json) as Array<Record<string, unknown>>;
+    return raw.map((p) => ({
+        poolId: p.poolId as string,
+        baseCoinType: p.baseCoinType as string,
+        quoteCoinType: p.quoteCoinType as string,
+        basePriceInfoObjectId: p.basePriceInfoObjectId as string | undefined,
+        quotePriceInfoObjectId: p.quotePriceInfoObjectId as string | undefined,
+        tickSize: BigInt(p.tickSize as string),
+        lotSize: BigInt(p.lotSize as string),
+        minSize: BigInt(p.minSize as string),
+        orderSizeBase: BigInt(p.orderSizeBase as string),
+        fallbackMidPrice: BigInt(p.fallbackMidPrice as string),
+        baseDepositAmount: BigInt(p.baseDepositAmount as string),
+        quoteDepositAmount: BigInt(p.quoteDepositAmount as string),
+        baseDecimals: p.baseDecimals as number,
+        quoteDecimals: p.quoteDecimals as number,
+    }));
+}
+
+/**
+ * Serialize PoolConfig array to JSON (converts bigints to strings).
+ */
+export function serializePoolConfigs(pools: PoolConfig[]): string {
+    return JSON.stringify(
+        pools.map((p) => ({
+            ...p,
+            tickSize: p.tickSize.toString(),
+            lotSize: p.lotSize.toString(),
+            minSize: p.minSize.toString(),
+            orderSizeBase: p.orderSizeBase.toString(),
+            fallbackMidPrice: p.fallbackMidPrice.toString(),
+            baseDepositAmount: p.baseDepositAmount.toString(),
+            quoteDepositAmount: p.quoteDepositAmount.toString(),
+        })),
+    );
 }

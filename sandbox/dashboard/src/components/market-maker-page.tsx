@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ArrowLeftRight, RefreshCw } from "lucide-react";
@@ -16,19 +16,24 @@ interface Order {
     isBid: boolean;
 }
 
-interface OrdersResponse {
+interface PoolOrders {
+    pair: string;
+    poolId: string;
     midPrice: number | null;
     orders: Order[];
+}
+
+interface OrdersResponse {
+    pools: PoolOrders[];
     config: {
         spreadBps: number;
         levelsPerSide: number;
         levelSpacingBps: number;
-        orderSizeBase: number;
     };
 }
 
 interface OracleResponse {
-    prices: { sui: string | null; deep: string | null };
+    prices: { sui: string | null; deep: string | null; usdc: string | null };
 }
 
 interface ChartRow {
@@ -44,11 +49,41 @@ interface ChartRow {
 
 const REFETCH_INTERVAL = 10_000;
 
+const COIN_ICONS: Record<string, { src: string; className: string }> = {
+    DEEP: { src: "/deepbook.jpeg", className: "h-4 w-4 rounded-full" },
+    SUI: { src: "/svg/sui.svg", className: "h-4 w-4" },
+    USDC: { src: "/svg/usdc.svg", className: "h-4 w-4 rounded-full" },
+};
+
+function PairIcons({ pair }: { pair: string }) {
+    const [base, quote] = pair.split("/");
+    const baseIcon = COIN_ICONS[base];
+    const quoteIcon = COIN_ICONS[quote];
+    return (
+        <>
+            <span>{base}</span>
+            {baseIcon && <img src={baseIcon.src} alt={base} className={baseIcon.className} />}
+            <svg height="16" viewBox="0 0 24 24" width="16" className="text-zinc-600">
+                <path
+                    d="M16 3.5L8 20.5"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+            </svg>
+            <span>{quote}</span>
+            {quoteIcon && <img src={quoteIcon.src} alt={quote} className={quoteIcon.className} />}
+        </>
+    );
+}
+
 /* ------------------------------------------------------------------ */
 /*  MarketMakerPage                                                    */
 /* ------------------------------------------------------------------ */
 
 export function MarketMakerPage() {
+    const [selectedPool, setSelectedPool] = useState(0);
+
     const orders = useQuery<OrdersResponse>({
         queryKey: ["mm-orders"],
         queryFn: async () => {
@@ -71,8 +106,10 @@ export function MarketMakerPage() {
         retry: false,
     });
 
-    const chartData = buildChartData(orders.data);
-    const midPrice = orders.data?.midPrice;
+    const pools = orders.data?.pools ?? [];
+    const pool = pools[selectedPool] ?? pools[0];
+    const chartData = buildChartData(pool);
+    const midPrice = pool?.midPrice;
 
     return (
         <div className="space-y-4">
@@ -81,20 +118,28 @@ export function MarketMakerPage() {
                 <p className="text-xs text-muted-foreground pb-2">
                     Order book grid — auto-refreshes every {REFETCH_INTERVAL / 1000}s
                 </p>
-                <div className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs font-medium text-zinc-300 w-fit">
-                    <span>DEEP</span>
-                    <img src="/deepbook.jpeg" alt="DEEP" className="h-4 w-4 rounded-full" />
-                    <svg height="16" viewBox="0 0 24 24" width="16" className="text-zinc-600">
-                        <path
-                            d="M16 3.5L8 20.5"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                        />
-                    </svg>
-                    <span>SUI</span>
-                    <img src="/svg/sui.svg" alt="SUI" className="h-4 w-4" />
-                </div>
+                {pools.length > 1 && (
+                    <div className="flex gap-2 pb-1">
+                        {pools.map((p, i) => (
+                            <button
+                                key={p.poolId}
+                                onClick={() => setSelectedPool(i)}
+                                className={`flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium transition-colors ${
+                                    i === selectedPool
+                                        ? "border-zinc-600 bg-zinc-800 text-zinc-100"
+                                        : "border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200"
+                                }`}
+                            >
+                                <PairIcons pair={p.pair} />
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {pools.length <= 1 && pool && (
+                    <div className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs font-medium text-zinc-300 w-fit">
+                        <PairIcons pair={pool.pair} />
+                    </div>
+                )}
             </div>
 
             {/* Chart Card */}
@@ -149,7 +194,7 @@ export function MarketMakerPage() {
                                     }}
                                     labelStyle={{ color: "#a1a1aa" }}
                                     formatter={(value: unknown, name?: string) => [
-                                        `${value} DEEP`,
+                                        String(value),
                                         name === "bid" ? "Bid" : name === "ask" ? "Ask" : "Mid",
                                     ]}
                                 />
@@ -165,10 +210,10 @@ export function MarketMakerPage() {
             {/* Config & Stats */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <StatCard label="Mid Price" isLoading={orders.isLoading}>
-                    {midPrice != null ? `${midPrice.toFixed(6)} SUI` : "—"}
+                    {midPrice != null ? midPrice.toFixed(6) : "—"}
                 </StatCard>
                 <StatCard label="Active Orders" isLoading={orders.isLoading}>
-                    {orders.data?.orders.length ?? "—"}
+                    {pool?.orders.length ?? "—"}
                 </StatCard>
                 <StatCard label="Spread" isLoading={orders.isLoading}>
                     {orders.data ? `${orders.data.config.spreadBps} bps` : "—"}
@@ -179,14 +224,17 @@ export function MarketMakerPage() {
                 <StatCard label="Level Spacing" isLoading={orders.isLoading}>
                     {orders.data ? `${orders.data.config.levelSpacingBps} bps` : "—"}
                 </StatCard>
-                <StatCard label="Order Size" isLoading={orders.isLoading}>
-                    {orders.data ? `${orders.data.config.orderSizeBase} DEEP` : "—"}
+                <StatCard label="Pools" isLoading={orders.isLoading}>
+                    {pools.length || "—"}
                 </StatCard>
                 <StatCard label="Oracle SUI" isLoading={oracle.isLoading}>
                     {oracle.data?.prices.sui ?? "—"}
                 </StatCard>
                 <StatCard label="Oracle DEEP" isLoading={oracle.isLoading}>
                     {oracle.data?.prices.deep ?? "—"}
+                </StatCard>
+                <StatCard label="Oracle USDC" isLoading={oracle.isLoading}>
+                    {oracle.data?.prices.usdc ?? "—"}
                 </StatCard>
             </div>
         </div>
@@ -197,11 +245,11 @@ export function MarketMakerPage() {
 /*  Chart data builder                                                 */
 /* ------------------------------------------------------------------ */
 
-function buildChartData(data: OrdersResponse | undefined): ChartRow[] {
-    if (!data) return [];
+function buildChartData(pool: PoolOrders | undefined): ChartRow[] {
+    if (!pool) return [];
 
-    const bids = data.orders.filter((o) => o.isBid).sort((a, b) => a.price - b.price);
-    const asks = data.orders.filter((o) => !o.isBid).sort((a, b) => a.price - b.price);
+    const bids = pool.orders.filter((o) => o.isBid).sort((a, b) => a.price - b.price);
+    const asks = pool.orders.filter((o) => !o.isBid).sort((a, b) => a.price - b.price);
 
     const rows: ChartRow[] = [];
 
@@ -214,10 +262,10 @@ function buildChartData(data: OrdersResponse | undefined): ChartRow[] {
         });
     }
 
-    if (data.midPrice != null) {
-        const maxQty = Math.max(...data.orders.map((o) => o.quantity), 1);
+    if (pool.midPrice != null) {
+        const maxQty = Math.max(...pool.orders.map((o) => o.quantity), 1);
         rows.push({
-            label: data.midPrice.toFixed(6),
+            label: pool.midPrice.toFixed(6),
             bid: null,
             ask: null,
             mid: maxQty * 0.15, // proportional marker
