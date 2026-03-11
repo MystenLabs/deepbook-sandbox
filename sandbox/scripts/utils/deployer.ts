@@ -110,13 +110,13 @@ export class MoveDeployer {
         const args =
             this.network === "localnet"
                 ? [
-                      "client",
-                      "test-publish",
-                      "--json",
-                      "--build-env",
-                      "localnet",
-                      resolvedPath,
-                  ]
+                    "client",
+                    "test-publish",
+                    "--json",
+                    "--build-env",
+                    "localnet",
+                    resolvedPath,
+                ]
                 : ["client", "publish", "--json", resolvedPath];
         let output: string;
         try {
