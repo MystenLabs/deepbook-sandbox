@@ -17,31 +17,37 @@ manifest_digest = "CC15CB146CA1113370B03476BFF694B88F43F77D8DEE7C23CC0C78AB06344
 deps = { MoveStdlib = "MoveStdlib" }
 
 [pinned.localnet.deepbook]
-source = { local = "../../../external/deepbook/packages/deepbook" }
+source = { local = "../../.external-packages/deepbook" }
 use_environment = "localnet"
 manifest_digest = "4BAB9E96E97FC6BD8F34897BCE58805CAF522315BE25AF0915E407D7CDDFE2B8"
 deps = { std = "MoveStdlib", sui = "Sui", token = "token" }
 
 [pinned.localnet.deepbook_margin]
-source = { local = "../../../external/deepbook/packages/deepbook_margin" }
+source = { local = "../../.external-packages/deepbook_margin" }
 use_environment = "localnet"
-manifest_digest = "1545F1BBBF5B485444EBD0DFF6D8530943035C6F14E516E89FCDE76D89B8CFFB"
+manifest_digest = "54C6C6912484854CF9F96E0C27D6B05B50EB160EA9C68F9CC6E413D8ACDA89AF"
 deps = { deepbook = "deepbook", pyth = "pyth", std = "MoveStdlib", sui = "Sui", token = "token" }
 
 [pinned.localnet.example_contract]
 source = { root = true }
 use_environment = "localnet"
-manifest_digest = "E921AF4FF7907CCE14AF4B97A338A8C2C77D752A04814E1F76E736C7E64CD763"
-deps = { deepbook = "deepbook", deepbook_margin = "deepbook_margin", pyth = "pyth", std = "MoveStdlib", sui = "Sui", token = "token", usdc = "usdc" }
+manifest_digest = "D04BC98D0B7EF4E5DDF420DAA94718109E8D51B185082EA75B02C02E013C7F5C"
+deps = { deepbook = "deepbook", deepbook_margin = "deepbook_margin", pyth = "pyth_1", std = "MoveStdlib", sui = "Sui", token = "token", usdc = "usdc" }
 
 [pinned.localnet.pyth]
-source = { local = "/Users/andreas/Desktop/deepbook-sandbox/sandbox/packages/pyth" }
+source = { local = "../../packages/pyth" }
+use_environment = "localnet"
+manifest_digest = "EAE83E4C2C7D5B4EF605145EE3703A5AF265593E686986BA5E58EE3F5D5E884F"
+deps = { std = "MoveStdlib", sui = "Sui" }
+
+[pinned.localnet.pyth_1]
+source = { local = "../pyth" }
 use_environment = "localnet"
 manifest_digest = "EAE83E4C2C7D5B4EF605145EE3703A5AF265593E686986BA5E58EE3F5D5E884F"
 deps = { std = "MoveStdlib", sui = "Sui" }
 
 [pinned.localnet.token]
-source = { local = "../../../external/deepbook/packages/token" }
+source = { local = "../../.external-packages/token" }
 use_environment = "localnet"
 manifest_digest = "EAE83E4C2C7D5B4EF605145EE3703A5AF265593E686986BA5E58EE3F5D5E884F"
 deps = { std = "MoveStdlib", sui = "Sui" }

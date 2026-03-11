@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, cpSync, rmSync, mkdirSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import type {
@@ -15,7 +15,10 @@ import type { Keypair } from "@mysten/sui/cryptography";
 import type { Network } from "./config";
 import log from "./logger";
 
-const PACKAGES_BASE = "../external/deepbook/packages";
+const EXTERNAL_SOURCE = "../external/deepbook/packages";
+
+/** Packages copied from the external submodule into the sandbox staging directory. */
+const EXTERNAL_PACKAGES = ["token", "deepbook", "deepbook_margin", "margin_liquidation"] as const;
 
 /** Packages that need Move.toml patching (environments / local deps) before publish. */
 const PACKAGES_NEED_MOVE_PATCH = [
@@ -32,6 +35,26 @@ const PYTH_GIT_TESTNET =
 
 function getSandboxRoot(): string {
     return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+}
+
+/**
+ * Copy external deepbook packages into sandbox/.external-packages/ so we
+ * never mutate the git submodule. Returns the staging directory path.
+ */
+function stageExternalPackages(): string {
+    const sandboxRoot = getSandboxRoot();
+    const stagingDir = path.join(sandboxRoot, ".external-packages");
+    const sourceDir = path.resolve(sandboxRoot, EXTERNAL_SOURCE);
+
+    // Wipe previous staging to ensure a clean copy
+    rmSync(stagingDir, { recursive: true, force: true });
+    mkdirSync(stagingDir, { recursive: true });
+
+    for (const pkg of EXTERNAL_PACKAGES) {
+        cpSync(path.join(sourceDir, pkg), path.join(stagingDir, pkg), { recursive: true });
+    }
+
+    return stagingDir;
 }
 
 function needsMovePatch(name: string): boolean {
@@ -92,8 +115,6 @@ export class MoveDeployer {
                       "--json",
                       "--build-env",
                       "localnet",
-                      "--pubfile-path",
-                      "./Pub.localnet.toml",
                       resolvedPath,
                   ]
                 : ["client", "publish", "--json", resolvedPath];
@@ -146,22 +167,25 @@ export class MoveDeployer {
     async deployAll(): Promise<Map<string, DeploymentResult>> {
         const chainId = await this.client.getChainIdentifier();
         const sandboxRoot = getSandboxRoot();
+        const stagingDir = stageExternalPackages();
+        log.success(`Staged external packages in ${path.relative(sandboxRoot, stagingDir)}/`);
+
         const pythPath = path.join(sandboxRoot, "packages", "pyth");
         const usdcPath = path.join(sandboxRoot, "packages", "usdc");
 
         const allPackages: PackageInfo[] = [
-            { name: "token", path: `${PACKAGES_BASE}/token`, deps: [] },
-            { name: "deepbook", path: `${PACKAGES_BASE}/deepbook`, deps: ["token"] },
+            { name: "token", path: path.join(stagingDir, "token"), deps: [] },
+            { name: "deepbook", path: path.join(stagingDir, "deepbook"), deps: ["token"] },
             { name: "pyth", path: pythPath, deps: [] },
             { name: "usdc", path: usdcPath, deps: [] },
             {
                 name: "deepbook_margin",
-                path: `${PACKAGES_BASE}/deepbook_margin`,
+                path: path.join(stagingDir, "deepbook_margin"),
                 deps: ["token", "deepbook", "pyth"],
             },
             {
                 name: "margin_liquidation",
-                path: `${PACKAGES_BASE}/margin_liquidation`,
+                path: path.join(stagingDir, "margin_liquidation"),
                 deps: ["deepbook_margin"],
             },
         ];
@@ -233,7 +257,7 @@ export class MoveDeployer {
             if (isLocalnet) {
                 patched = patched.replace(
                     /Pyth\s*=\s*\{[^}]*git[^}]*\}/g,
-                    'pyth = { local = "../../../../sandbox/packages/pyth" }',
+                    'pyth = { local = "../../packages/pyth" }',
                 );
             } else {
                 patched = patched.replace(/Pyth\s*=\s*\{[^}]*\}/g, PYTH_GIT_TESTNET);
@@ -248,7 +272,7 @@ export class MoveDeployer {
 
         if (pkg.name === "margin_liquidation") {
             const pythDep = isLocalnet
-                ? 'pyth = { local = "../../../../sandbox/packages/pyth" }'
+                ? 'pyth = { local = "../../packages/pyth" }'
                 : PYTH_GIT_TESTNET;
             const extraDeps = [
                 ...(patched.includes("token") ? [] : ['token = { local = "../token" }']),
