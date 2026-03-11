@@ -142,6 +142,9 @@ vite.config.ts.timestamp-*
 sandbox/docker/postgres_data/
 sandbox/docker/sui_localnet_data/
 
+# Ephemeral Publication Files
+Pub.*.toml
+
 # Generated deployment manifests
 sandbox/deployments/
 
