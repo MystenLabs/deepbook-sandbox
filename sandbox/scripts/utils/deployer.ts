@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, cpSync, rmSync, mkdirSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import type {
@@ -15,7 +15,10 @@ import type { Keypair } from "@mysten/sui/cryptography";
 import type { Network } from "./config";
 import log from "./logger";
 
-const PACKAGES_BASE = "../external/deepbook/packages";
+const EXTERNAL_SOURCE = "../external/deepbook/packages";
+
+/** Packages copied from the external submodule into the sandbox staging directory. */
+const EXTERNAL_PACKAGES = ["token", "deepbook", "deepbook_margin", "margin_liquidation"] as const;
 
 /** Packages that need Move.toml patching (environments / local deps) before publish. */
 const PACKAGES_NEED_MOVE_PATCH = [
@@ -23,22 +26,6 @@ const PACKAGES_NEED_MOVE_PATCH = [
     "deepbook",
     "pyth",
     "usdc",
-    "deepbook_margin",
-    "margin_liquidation",
-] as const;
-/** Packages that need Move.lock removed before publish and restored after. */
-const PACKAGES_NEED_MOVE_LOCK = [
-    "token",
-    "deepbook",
-    "pyth",
-    "usdc",
-    "deepbook_margin",
-    "margin_liquidation",
-] as const;
-/** Packages that need Published.toml removed before publish and restored after. */
-const PACKAGES_NEED_PUBLISHED_TOML = [
-    "token",
-    "deepbook",
     "deepbook_margin",
     "margin_liquidation",
 ] as const;
@@ -50,14 +37,28 @@ function getSandboxRoot(): string {
     return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 }
 
+/**
+ * Copy external deepbook packages into sandbox/.external-packages/ so we
+ * never mutate the git submodule. Returns the staging directory path.
+ */
+function stageExternalPackages(): string {
+    const sandboxRoot = getSandboxRoot();
+    const stagingDir = path.join(sandboxRoot, ".external-packages");
+    const sourceDir = path.resolve(sandboxRoot, EXTERNAL_SOURCE);
+
+    // Wipe previous staging to ensure a clean copy
+    rmSync(stagingDir, { recursive: true, force: true });
+    mkdirSync(stagingDir, { recursive: true });
+
+    for (const pkg of EXTERNAL_PACKAGES) {
+        cpSync(path.join(sourceDir, pkg), path.join(stagingDir, pkg), { recursive: true });
+    }
+
+    return stagingDir;
+}
+
 function needsMovePatch(name: string): boolean {
     return (PACKAGES_NEED_MOVE_PATCH as readonly string[]).includes(name);
-}
-function needsMoveLock(name: string): boolean {
-    return (PACKAGES_NEED_MOVE_LOCK as readonly string[]).includes(name);
-}
-function needsPublishedToml(name: string): boolean {
-    return (PACKAGES_NEED_PUBLISHED_TOML as readonly string[]).includes(name);
 }
 
 export interface DeploymentResult {
@@ -106,16 +107,9 @@ export class MoveDeployer {
 
         const resolvedPath = path.resolve(process.cwd(), packagePath);
 
-        // Ensure Published.toml is removed right before publish (defensive)
-        const pubToml = path.join(resolvedPath, "Published.toml");
-        if (existsSync(pubToml)) {
-            console.log(`    [warn] Removing leftover Published.toml: ${pubToml}`);
-            unlinkSync(pubToml);
-        }
-
         const args =
             this.network === "localnet"
-                ? ["client", "publish", "--json", "--build-env", "localnet", resolvedPath]
+                ? ["client", "test-publish", "--json", "--build-env", "localnet", resolvedPath]
                 : ["client", "publish", "--json", resolvedPath];
         let output: string;
         try {
@@ -166,22 +160,25 @@ export class MoveDeployer {
     async deployAll(): Promise<Map<string, DeploymentResult>> {
         const chainId = await this.client.getChainIdentifier();
         const sandboxRoot = getSandboxRoot();
+        const stagingDir = stageExternalPackages();
+        log.success(`Staged external packages in ${path.relative(sandboxRoot, stagingDir)}/`);
+
         const pythPath = path.join(sandboxRoot, "packages", "pyth");
         const usdcPath = path.join(sandboxRoot, "packages", "usdc");
 
         const allPackages: PackageInfo[] = [
-            { name: "token", path: `${PACKAGES_BASE}/token`, deps: [] },
-            { name: "deepbook", path: `${PACKAGES_BASE}/deepbook`, deps: ["token"] },
+            { name: "token", path: path.join(stagingDir, "token"), deps: [] },
+            { name: "deepbook", path: path.join(stagingDir, "deepbook"), deps: ["token"] },
             { name: "pyth", path: pythPath, deps: [] },
             { name: "usdc", path: usdcPath, deps: [] },
             {
                 name: "deepbook_margin",
-                path: `${PACKAGES_BASE}/deepbook_margin`,
+                path: path.join(stagingDir, "deepbook_margin"),
                 deps: ["token", "deepbook", "pyth"],
             },
             {
                 name: "margin_liquidation",
-                path: `${PACKAGES_BASE}/margin_liquidation`,
+                path: path.join(stagingDir, "margin_liquidation"),
                 deps: ["deepbook_margin"],
             },
         ];
@@ -190,65 +187,27 @@ export class MoveDeployer {
             this.network === "testnet" ? allPackages.filter((p) => p.name !== "pyth") : allPackages;
 
         const deployed = new Map<string, DeploymentResult>();
-        const publishedTomlBackups = new Map<string, string>();
-        const moveLockBackups = new Map<string, string>();
 
         for (const pkg of packages) {
-            this.preDeployment(pkg, deployed, chainId, moveLockBackups, publishedTomlBackups);
+            this.preDeployment(pkg, deployed, chainId);
             const result = await this.deployPackage(pkg.path, pkg.name);
             deployed.set(pkg.name, result);
             await new Promise((r) => setTimeout(r, 2000));
         }
 
-        this.afterDeployment(packages, moveLockBackups, publishedTomlBackups);
-
         return deployed;
     }
 
     /**
-     * Before publishing a package: patch Move.toml, backup+remove Move.lock and Published.toml as needed.
+     * Before publishing a package: patch Move.toml as needed.
      */
     private preDeployment(
         pkg: PackageInfo,
         deployed: Map<string, DeploymentResult>,
         chainId: string,
-        moveLockBackups: Map<string, string>,
-        publishedTomlBackups: Map<string, string>,
     ): void {
         if (needsMovePatch(pkg.name)) {
             this.patchMoveTOML(pkg, deployed, chainId, this.network);
-        }
-        if (needsMoveLock(pkg.name)) {
-            this.backupMoveLock(pkg, moveLockBackups);
-            this.removeMoveLock(pkg);
-        }
-        if (needsPublishedToml(pkg.name)) {
-            this.backupPublishedToml(pkg, publishedTomlBackups);
-            this.removePublishedToml(pkg);
-        }
-    }
-
-    /**
-     * After all deployments: restore Move.toml, Move.lock, and Published.toml; remove pyth/token Published.toml.
-     */
-    private afterDeployment(
-        packages: PackageInfo[],
-        moveLockBackups: Map<string, string>,
-        publishedTomlBackups: Map<string, string>,
-    ): void {
-        for (const pkg of packages) {
-            if (needsMovePatch(pkg.name)) {
-                this.restoreMoveTOML(pkg);
-            }
-            if (needsMoveLock(pkg.name)) {
-                this.restoreMoveLock(pkg, moveLockBackups);
-            }
-            if (needsPublishedToml(pkg.name)) {
-                this.restorePublishedToml(pkg, publishedTomlBackups);
-            }
-            if (pkg.name === "pyth" || pkg.name === "token" || pkg.name === "usdc") {
-                this.removePublishedToml(pkg);
-            }
         }
     }
 
@@ -259,10 +218,7 @@ export class MoveDeployer {
         network: Network,
     ): void {
         const tomlPath = path.join(path.resolve(process.cwd(), pkg.path), "Move.toml");
-        const original = readFileSync(tomlPath, "utf-8");
-        writeFileSync(`${tomlPath}.backup`, original);
-
-        let patched = original;
+        let patched = readFileSync(tomlPath, "utf-8");
         const isLocalnet = network === "localnet";
         const envBlock = `[environments]\nlocalnet = "${chainId}"\n`;
 
@@ -294,7 +250,7 @@ export class MoveDeployer {
             if (isLocalnet) {
                 patched = patched.replace(
                     /Pyth\s*=\s*\{[^}]*git[^}]*\}/g,
-                    'pyth = { local = "../../../../sandbox/packages/pyth" }',
+                    'pyth = { local = "../../packages/pyth" }',
                 );
             } else {
                 patched = patched.replace(/Pyth\s*=\s*\{[^}]*\}/g, PYTH_GIT_TESTNET);
@@ -309,7 +265,7 @@ export class MoveDeployer {
 
         if (pkg.name === "margin_liquidation") {
             const pythDep = isLocalnet
-                ? 'pyth = { local = "../../../../sandbox/packages/pyth" }'
+                ? 'pyth = { local = "../../packages/pyth" }'
                 : PYTH_GIT_TESTNET;
             const extraDeps = [
                 ...(patched.includes("token") ? [] : ['token = { local = "../token" }']),
@@ -329,8 +285,7 @@ export class MoveDeployer {
             }
         }
 
-        // Update the chain ID in existing [environments] section (new Move.toml format)
-        // or create it from [addresses] (old format, handled above).
+        // Update the chain ID in existing [environments] section (pyth/usdc already use this format).
         if (
             pkg.name === "pyth" ||
             (pkg.name === "usdc" && isLocalnet && patched.includes("[environments]"))
@@ -338,65 +293,5 @@ export class MoveDeployer {
             patched = patched.replace(/localnet\s*=\s*"[^"]*"/, `localnet = "${chainId}"`);
         }
         writeFileSync(tomlPath, patched);
-    }
-
-    private restoreMoveTOML(pkg: PackageInfo): void {
-        const tomlPath = path.join(path.resolve(process.cwd(), pkg.path), "Move.toml");
-        const backupPath = `${tomlPath}.backup`;
-        try {
-            const backup = readFileSync(backupPath, "utf-8");
-            writeFileSync(tomlPath, backup);
-            unlinkSync(backupPath);
-        } catch (error) {
-            log.warn(`Could not restore Move.toml for ${pkg.name}`);
-        }
-    }
-
-    private getPackageDir(pkg: PackageInfo): string {
-        return path.resolve(process.cwd(), pkg.path);
-    }
-
-    private backupPublishedToml(pkg: PackageInfo, backups: Map<string, string>): void {
-        const publishedPath = path.join(this.getPackageDir(pkg), "Published.toml");
-        if (existsSync(publishedPath)) {
-            backups.set(pkg.name, readFileSync(publishedPath, "utf-8"));
-        }
-    }
-
-    private removePublishedToml(pkg: PackageInfo): void {
-        const publishedPath = path.join(this.getPackageDir(pkg), "Published.toml");
-        if (existsSync(publishedPath)) {
-            unlinkSync(publishedPath);
-        }
-    }
-
-    private backupMoveLock(pkg: PackageInfo, backups: Map<string, string>): void {
-        const lockPath = path.join(this.getPackageDir(pkg), "Move.lock");
-        if (existsSync(lockPath)) {
-            backups.set(pkg.name, readFileSync(lockPath, "utf-8"));
-        }
-    }
-
-    private removeMoveLock(pkg: PackageInfo): void {
-        const lockPath = path.join(this.getPackageDir(pkg), "Move.lock");
-        if (existsSync(lockPath)) {
-            unlinkSync(lockPath);
-        }
-    }
-
-    private restoreMoveLock(pkg: PackageInfo, backups: Map<string, string>): void {
-        const content = backups.get(pkg.name);
-        if (!content) return;
-        const lockPath = path.join(this.getPackageDir(pkg), "Move.lock");
-        writeFileSync(lockPath, content);
-        backups.delete(pkg.name);
-    }
-
-    private restorePublishedToml(pkg: PackageInfo, backups: Map<string, string>): void {
-        const content = backups.get(pkg.name);
-        if (!content) return;
-        const publishedPath = path.join(this.getPackageDir(pkg), "Published.toml");
-        writeFileSync(publishedPath, content);
-        backups.delete(pkg.name);
     }
 }
