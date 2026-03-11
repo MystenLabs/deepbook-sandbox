@@ -18,7 +18,7 @@ import {
 } from "./utils/docker-compose";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
-import { updateEnvFile } from "./utils/env";
+import { updateEnvFile, validateEnvFile } from "./utils/env";
 import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
@@ -35,6 +35,23 @@ async function main() {
     log.banner(` DeepBook sandbox [${network}] deployment`);
     if (quick)
         log.info("Quick mode: skipping indexer and server image builds (using pre-built images)");
+
+    // Validate .env before doing anything else.
+    // On localnet a missing .env is OK (fresh setup — keys get auto-generated),
+    // but if the file exists it must contain all required keys on every network.
+    const envCheck = validateEnvFile(sandboxRoot);
+    if (!envCheck.valid) {
+        if (!envCheck.fileExists && network === "localnet") {
+            log.info("No .env found — will create one during setup");
+        } else {
+            throw new Error(
+                `sandbox/.env is missing required keys: ${envCheck.missing.join(", ")}. ` +
+                    (envCheck.fileExists
+                        ? "Your .env file exists but is incomplete — fix it before deploying."
+                        : `Create a .env with the required keys before deploying to ${network}.`),
+            );
+        }
+    }
 
     try {
         // On localnet, ensure .env has the minimum variables docker compose
