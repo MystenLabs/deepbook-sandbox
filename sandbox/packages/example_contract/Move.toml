@@ -14,8 +14,5 @@ deepbook_margin = { local = "../../.external-packages/deepbook_margin" }
 pyth = { local = "../pyth" }
 usdc = { local = "../usdc" }
 
-[environments]
-localnet = "a62c4e17"
-
 # Read more about the package management system options:
 # https://docs.sui.io/guides/developer/sui-101/move-package-management

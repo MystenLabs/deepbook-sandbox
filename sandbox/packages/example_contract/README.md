@@ -59,28 +59,21 @@ Create your custom contract inside `sandbox/packages/` following the `example_co
 
 > **Note:** The `.external-packages/` directory is created automatically by `pnpm deploy-all`. Your contract won't build until you've run it at least once.
 
-Your `Move.toml` should include an `[environments]` section — this works together with the `--build-env localnet` flag at publish time to tell the compiler which network environment to target. The chain ID value is automatically set by `deploy-all` (you can find it in `Pub.localnet.toml`):
-
-```toml
-[environments]
-localnet = "<chain-id>"
-```
-
 ## Step 4: Publish your contract
 
 From your contract directory, run:
 
 ```bash
 cd packages/<example_contract>
-sui client test-publish --build-env localnet --pubfile-path ../../Pub.localnet.toml
+sui client test-publish -e testnet --pubfile-path ../../Pub.localnet.toml
 ```
 
 The `--pubfile-path ../../Pub.localnet.toml` flag tells the Sui CLI where to find the already-published DeepBook packages so it can resolve your dependencies against the live localnet deployment.
 
-The `[environments]` section in your `Move.toml` and `--build-env localnet` flag work together to tell the compiler which network environment to target.
+The `-e testnet` flag is used to build the dependencies against testnet, but the package is still published to your current network (e.g., localnet).
 
 ## Tips
 
 - **Iterating on your contract**: You only need to run `pnpm deploy-all` once. After that, you can keep re-publishing your custom contract as many times as you need — the `Pub.localnet.toml` will accumulate your published packages too.
 - **Fresh start**: Run `pnpm down` to tear down everything (containers, volumes, env keys), then `pnpm deploy-all` again. You'll need to re-publish your custom contract since the chain state is wiped.
-- **Building without publishing**: Run `sui move build --build-env localnet` from your contract directory to check compilation without publishing.
+- **Building without publishing**: Run `sui move build -e testnet` from your contract directory to check compilation without publishing.

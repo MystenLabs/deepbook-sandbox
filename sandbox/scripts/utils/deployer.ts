@@ -109,7 +109,7 @@ export class MoveDeployer {
 
         const args =
             this.network === "localnet"
-                ? ["client", "test-publish", "--json", "--build-env", "localnet", resolvedPath]
+                ? ["client", "test-publish", "--json", "-e", "testnet", resolvedPath]
                 : ["client", "publish", "--json", resolvedPath];
         let output: string;
         try {
@@ -220,11 +220,10 @@ export class MoveDeployer {
         const tomlPath = path.join(path.resolve(process.cwd(), pkg.path), "Move.toml");
         let patched = readFileSync(tomlPath, "utf-8");
         const isLocalnet = network === "localnet";
-        const envBlock = `[environments]\nlocalnet = "${chainId}"\n`;
 
         if (pkg.name === "token") {
             if (isLocalnet) {
-                patched = patched.replace(/\[addresses\]\s*\n\s*token\s*=\s*"0x0"\s*/, envBlock);
+                patched = patched.replace(/\[addresses\]\s*\n\s*token\s*=\s*"0x0"\s*/, "");
             }
         }
 
@@ -234,7 +233,7 @@ export class MoveDeployer {
                 'token = { local = "../token" }',
             );
             if (isLocalnet) {
-                patched = patched.replace(/\[addresses\]\s*\n\s*deepbook\s*=\s*"0x0"\s*/, envBlock);
+                patched = patched.replace(/\[addresses\]\s*\n\s*deepbook\s*=\s*"0x0"\s*/, "");
             }
         }
 
@@ -249,6 +248,10 @@ export class MoveDeployer {
             );
             if (isLocalnet) {
                 patched = patched.replace(
+                    /pyth\s*=\s*\{[^}]*git[^}]*\}/g,
+                    'pyth = { local = "../../packages/pyth" }',
+                );
+                patched = patched.replace(
                     /Pyth\s*=\s*\{[^}]*git[^}]*\}/g,
                     'pyth = { local = "../../packages/pyth" }',
                 );
@@ -258,7 +261,7 @@ export class MoveDeployer {
             if (isLocalnet) {
                 patched = patched.replace(
                     /\[addresses\]\s*\n\s*deepbook_margin\s*=\s*"0x0"\s*/,
-                    envBlock,
+                    "",
                 );
             }
         }
@@ -280,7 +283,7 @@ export class MoveDeployer {
             if (isLocalnet) {
                 patched = patched.replace(
                     /\[addresses\]\s*\n\s*margin_liquidation\s*=\s*"0x0"\s*/,
-                    envBlock,
+                    "",
                 );
             }
         }
