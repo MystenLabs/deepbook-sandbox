@@ -6,9 +6,9 @@ edition = "2024"         # edition = "legacy" to use legacy (pre-2024) Move
 
 [dependencies]
 # Deepbook dependencies
-token = { local = "../../../external/deepbook/packages/token" }
-deepbook = { local = "../../../external/deepbook/packages/deepbook" }
-deepbook_margin = { local = "../../../external/deepbook/packages/deepbook_margin" }
+token = { local = "../../.external-packages/token" }
+deepbook = { local = "../../.external-packages/deepbook" }
+deepbook_margin = { local = "../../.external-packages/deepbook_margin" }
 
 # Pyth and USDC dependencies
 pyth = { local = "../pyth" }

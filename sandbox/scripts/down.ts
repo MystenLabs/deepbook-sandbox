@@ -54,7 +54,15 @@ function main() {
         // may not exist
     }
 
-    // 3. Remove auto-generated .env keys (keep user-configured ones)
+    // 3. Remove leftover publish manifests
+    try {
+        unlinkSync(path.join(cwd, "Pub.localnet.toml"));
+    } catch {
+        // may not exist
+    }
+    log.success("Cleaned publish manifests");
+
+    // 4. Remove auto-generated .env keys (keep user-configured ones)
     log.phase("Cleaning generated .env keys");
     cleanEnvFile(cwd, USER_ENV_KEYS);
     log.success("Generated .env keys removed");
