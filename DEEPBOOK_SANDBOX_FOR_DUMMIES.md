@@ -125,13 +125,21 @@ From the `sandbox/` directory:
 pnpm deploy-all
 ```
 
+> **Speed tip (Intel/AMD only):** Add `--quick` to skip building the indexer and server images from source:
+>
+> ```bash
+> pnpm deploy-all --quick
+> ```
+>
+> This uses pre-built Docker Hub images instead of compiling Rust locally — much faster, but the images are `linux/amd64` only. Apple Silicon users should use the default command above, which builds native ARM images from source.
+
 Here's what happens behind the scenes:
 
 1. **Docker containers start** — Sui Localnet and PostgreSQL spin up. The Sui node generates a fresh keypair and copies it to `deployments/.sui-keystore`.
 2. **Key import** — The script reads the container's keypair, imports it into your host `sui` CLI, and configures a `localnet` environment pointing at `http://127.0.0.1:9000`.
 3. **Deployer funded** — The script requests SUI from the built-in faucet so the deployer has gas for publishing.
 4. **Move packages deployed** — Five packages are published in order: `token` (the DEEP coin), `deepbook` (the core order book), `deepbook_margin` (margin trading), `pyth` (oracle contracts), and supporting modules.
-5. **Indexer + server + faucet start** — The indexer starts reading checkpoints from the Sui node, the REST server comes online on port 9008, and the faucet service starts on port 9009.
+5. **Indexer + server + faucet start** — The indexer and server images are built from source (this compiles Rust, so it takes a few minutes the first time). Then the indexer starts reading checkpoints from the Sui node, the REST server comes online on port 9008, and the faucet service starts on port 9009. With `--quick`, the build step is skipped and pre-built Docker Hub images are used instead.
 6. **Pyth oracles created** — Price feed objects for SUI, DEEP, and USDC are created on-chain. A dedicated oracle keypair is generated and funded (separate from the deployer to avoid gas coin conflicts).
 7. **Oracle service starts** — Begins pushing real Pyth Network prices every 10 seconds.
 8. **Pools created** — A DEEP/SUI pool and a SUI/USDC pool are created, along with SUI and USDC margin pools.
@@ -139,7 +147,6 @@ Here's what happens behind the scenes:
 10. **Deployment manifest written** — All IDs are saved to `sandbox/deployments/localnet.json` and `sandbox/.env`.
 
 When you see `DeepBook Sandbox Ready!`, everything is running:
-
 
 | Endpoint                     | URL                                                            |
 | ---------------------------- | -------------------------------------------------------------- |
@@ -151,7 +158,6 @@ When you see `DeepBook Sandbox Ready!`, everything is running:
 | Market Maker Health          | [http://localhost:3001/health](http://localhost:3001/health)   |
 | Market Maker Metrics         | [http://localhost:9091/metrics](http://localhost:9091/metrics) |
 | Indexer Metrics              | [http://localhost:9184/metrics](http://localhost:9184/metrics) |
-
 
 ## 7. Launching the Dashboard
 
@@ -176,7 +182,8 @@ Open [http://localhost:5173](http://localhost:5173). The dashboard has four page
 cd sandbox
 
 # Start fresh (first time or after teardown)
-pnpm deploy-all
+pnpm deploy-all              # builds indexer/server from source
+pnpm deploy-all --quick      # uses pre-built images (Intel/AMD only)
 
 # Check that prices are updating
 curl http://localhost:9010/
@@ -248,21 +255,19 @@ cd sandbox
 pnpm down
 ```
 
-
-| What                                                           | Destroyed?                    |
-| -------------------------------------------------------------- | ----------------------------- |
-| Docker containers                                              | Yes — all stopped and removed |
-| Docker volumes (chain data, postgres)                          | Yes — wiped clean             |
-| Auto-generated .env keys (package IDs, oracle IDs, pool IDs)   | Yes — cleaned                 |
-| User-set .env values (NETWORK, SUI_TOOLS_IMAGE, MM_* settings) | No — preserved                |
-| Deployment manifest (deployments/localnet.json)                | No — kept for reference       |
-| Your source code                                               | Never                         |
-| Dashboard code/config                                          | Never                         |
-
+| What                                                            | Destroyed?                    |
+| --------------------------------------------------------------- | ----------------------------- |
+| Docker containers                                               | Yes — all stopped and removed |
+| Docker volumes (chain data, postgres)                           | Yes — wiped clean             |
+| Auto-generated .env keys (package IDs, oracle IDs, pool IDs)    | Yes — cleaned                 |
+| User-set .env values (NETWORK, SUI*TOOLS_IMAGE, MM*\* settings) | No — preserved                |
+| Deployment manifest (deployments/localnet.json)                 | No — kept for reference       |
+| Your source code                                                | Never                         |
+| Dashboard code/config                                           | Never                         |
 
 > **Note:** By default, `FORCE_REGENESIS=true` means the Sui node wipes chain state on every restart. Set it to empty in `.env` if you want data to persist across `deploy-all` runs.
 
-**Re-deploy without teardown** — just run `pnpm deploy-all` again. It will overwrite the `.env` with new package IDs and force-recreate containers.
+**Re-deploy without teardown** — just run `pnpm deploy-all` again (or `pnpm deploy-all --quick` on Intel/AMD). It will overwrite the `.env` with new package IDs and force-recreate containers.
 
 ## 11. Working with DeepBook Move Code
 
@@ -294,6 +299,8 @@ bunx prettier-move -c *.move --write
 
 **"Transaction failed" in oracle service** — The oracle's dedicated keypair ran out of SUI. This shouldn't happen since `deploy-all` funds it automatically. If it does, check `docker logs oracle-service` and re-run `pnpm deploy-all`.
 
+**Deploy takes a long time building Rust images** — The indexer and server are Rust services that compile from source by default. This is normal on first run (can take several minutes). On Intel/AMD machines, you can skip the build with `pnpm deploy-all --quick` to use pre-built Docker Hub images. Apple Silicon users must build from source since Docker Hub only publishes `linux/amd64` images.
+
 **Port conflicts** — Another process is using port 9000, 5432, or 9123. Stop the conflicting process or change ports in `docker-compose.yml`.
 
 **Dashboard can't connect** — Make sure the sandbox is running (`docker compose ps`). The dashboard talks to `localhost:9009` for the faucet and `localhost:9000` for the RPC.
@@ -302,10 +309,10 @@ bunx prettier-move -c *.move --write
 
 ## Appendix A: All Commands
 
-
 | Command                                     | Description                                                                           |
 | ------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `pnpm deploy-all`                           | Deploy everything — start containers, publish contracts, create pools, start services |
+| `pnpm deploy-all --quick`                   | Same as above but skip building indexer/server images (uses Docker Hub, amd64 only)   |
 | `pnpm down`                                 | Full teardown — stop containers, remove volumes, clean generated .env keys            |
 | `pnpm oracle-service`                       | Run the oracle service locally (outside Docker, for debugging)                        |
 | `pnpm market-maker`                         | Run the market maker locally (outside Docker, for debugging)                          |
@@ -321,42 +328,38 @@ bunx prettier-move -c *.move --write
 | `curl http://localhost:3001/health`         | Check market maker health                                                             |
 | `curl http://localhost:9091/metrics`        | View market maker Prometheus metrics                                                  |
 
-
 ## Appendix B: Configuration Reference
 
 All variables from `sandbox/.env.example`:
 
-
-| Variable                    | Required                        | Default       | Description                                                    |
-| --------------------------- | ------------------------------- | ------------- | -------------------------------------------------------------- |
-| `SUI_TOOLS_IMAGE`           | Yes (localnet)                  | —             | Docker image for Sui node; set based on CPU arch               |
-| `PRIVATE_KEY`               | No (auto-generated on localnet) | —             | Deployer/signer private key (`suiprivkey1...` or `0x...` hex)  |
-| `ORACLE_PRIVATE_KEY`        | No (auto-generated)             | —             | Dedicated oracle service keypair                               |
-| `NETWORK`                   | No                              | `localnet`    | Target network: `localnet` or `testnet`                        |
-| `RPC_URL`                   | No                              | auto-detected | Sui RPC endpoint override                                      |
-| `FORCE_REGENESIS`           | No                              | `true`        | Wipe chain state on restart; set empty to persist              |
-| `DEEPBOOK_PACKAGE_ID`       | No (auto-populated)             | —             | Deployed DeepBook package address                              |
-| `DEEP_TOKEN_PACKAGE_ID`     | No (auto-populated)             | —             | DEEP token package address                                     |
-| `DEEP_TREASURY_ID`          | No (auto-populated)             | —             | DEEP TreasuryCap object ID                                     |
-| `MARGIN_PACKAGE_ID`         | No (auto-populated)             | —             | Margin trading package address                                 |
-| `PYTH_PACKAGE_ID`           | No (auto-populated)             | —             | Pyth oracle package address                                    |
-| `POOL_ID`                   | No (auto-populated)             | —             | DEEP/SUI pool object ID                                        |
-| `BASE_COIN_TYPE`            | No (auto-populated)             | —             | Base coin type for the pool                                    |
-| `DEPLOYER_ADDRESS`          | No (auto-populated)             | —             | Deployer's Sui address                                         |
-| `DEEP_PRICE_INFO_OBJECT_ID` | No (auto-populated)             | —             | DEEP PriceInfoObject ID                                        |
-| `SUI_PRICE_INFO_OBJECT_ID`  | No (auto-populated)             | —             | SUI PriceInfoObject ID                                         |
-| `USDC_PRICE_INFO_OBJECT_ID` | No (auto-populated)             | —             | USDC PriceInfoObject ID                                        |
-| `FIRST_CHECKPOINT`          | No                              | —             | Starting checkpoint for the indexer                            |
-| `RUST_LOG`                  | No                              | `info`        | Log level for Rust services: trace, debug, info, warn, error   |
-| `MM_SPREAD_BPS`             | No                              | `10`          | Market maker spread in basis points (10 = 0.1%)                |
-| `MM_LEVELS_PER_SIDE`        | No                              | `5`           | Number of orders per side                                      |
-| `MM_LEVEL_SPACING_BPS`      | No                              | `5`           | Spacing between price levels in bps (0.05%)                    |
-| `MM_ORDER_SIZE_BASE`        | No                              | `10000000`    | Order size in base units (10 DEEP at 6 decimals)               |
-| `MM_REBALANCE_INTERVAL_MS`  | No                              | `10000`       | Rebalance interval in milliseconds                             |
-| `MM_FALLBACK_MID_PRICE`     | No                              | `100000000`   | Fallback mid price when oracle unavailable (9 decimals)        |
-| `MM_HEALTH_CHECK_PORT`      | No                              | `3000`        | Health check port inside container (mapped to host 3001)       |
-| `MM_METRICS_PORT`           | No                              | `9090`        | Prometheus metrics port inside container (mapped to host 9091) |
-
+| Variable                    | Required                        | Default       | Description                                                                     |
+| --------------------------- | ------------------------------- | ------------- | ------------------------------------------------------------------------------- |
+| `SUI_TOOLS_IMAGE`           | Yes (localnet)                  | —             | Docker image for Sui node; set based on CPU arch                                |
+| `PRIVATE_KEY`               | No (auto-generated on localnet) | —             | Deployer/signer private key (`suiprivkey1...` or `0x...` hex)                   |
+| `ORACLE_PRIVATE_KEY`        | No (auto-generated)             | —             | Dedicated oracle service keypair                                                |
+| `NETWORK`                   | No                              | `localnet`    | Target network: `localnet` or `testnet`                                         |
+| `RPC_URL`                   | No                              | auto-detected | Sui RPC endpoint override                                                       |
+| `FORCE_REGENESIS`           | No                              | `true`        | Wipe chain state on restart; set empty to persist                               |
+| `DEEPBOOK_PACKAGE_ID`       | No (auto-populated)             | —             | Deployed DeepBook package address                                               |
+| `DEEP_TOKEN_PACKAGE_ID`     | No (auto-populated)             | —             | DEEP token package address                                                      |
+| `DEEP_TREASURY_ID`          | No (auto-populated)             | —             | DEEP TreasuryCap object ID                                                      |
+| `MARGIN_PACKAGE_ID`         | No (auto-populated)             | —             | Margin trading package address                                                  |
+| `PYTH_PACKAGE_ID`           | No (auto-populated)             | —             | Pyth oracle package address                                                     |
+| `POOL_ID`                   | No (auto-populated)             | —             | DEEP/SUI pool object ID                                                         |
+| `BASE_COIN_TYPE`            | No (auto-populated)             | —             | Base coin type for the pool                                                     |
+| `DEPLOYER_ADDRESS`          | No (auto-populated)             | —             | Deployer's Sui address                                                          |
+| `DEEP_PRICE_INFO_OBJECT_ID` | No (auto-populated)             | —             | DEEP PriceInfoObject ID                                                         |
+| `SUI_PRICE_INFO_OBJECT_ID`  | No (auto-populated)             | —             | SUI PriceInfoObject ID                                                          |
+| `USDC_PRICE_INFO_OBJECT_ID` | No (auto-populated)             | —             | USDC PriceInfoObject ID                                                         |
+| `FIRST_CHECKPOINT`          | No                              | —             | Starting checkpoint for the indexer                                             |
+| `RUST_LOG`                  | No                              | `info`        | Log level for Rust services: trace, debug, info, warn, error                    |
+| `MM_POOLS`                  | No (auto-populated)             | —             | JSON array of per-pool configs (pool IDs, coin types, sizes, oracle refs, etc.) |
+| `MM_SPREAD_BPS`             | No                              | `10`          | Market maker spread in basis points (10 = 0.1%), shared across all pools        |
+| `MM_LEVELS_PER_SIDE`        | No                              | `5`           | Number of orders per side, shared across all pools                              |
+| `MM_LEVEL_SPACING_BPS`      | No                              | `500`         | Spacing between order price levels in bps (500 = 5%)                            |
+| `MM_REBALANCE_INTERVAL_MS`  | No                              | `10000`       | Rebalance interval in milliseconds                                              |
+| `MM_HEALTH_CHECK_PORT`      | No                              | `3000`        | Health check port inside container (mapped to host 3001)                        |
+| `MM_METRICS_PORT`           | No                              | `9090`        | Prometheus metrics port inside container (mapped to host 9091)                  |
 
 ## Appendix C: How It Boots (Under the Hood)
 
@@ -369,7 +372,7 @@ When you run `pnpm deploy-all`, here's the full sequence:
 5. **Faucet funding** — Requests SUI from the built-in faucet to fund the deployer address for gas.
 6. **Move deployment** — Publishes five packages in dependency order. Each `sui client publish` transaction creates objects (TreasuryCap, package ID, etc.) that are parsed and stored.
 7. **Env file update** — All package IDs, object IDs, and `FIRST_CHECKPOINT=0` are written to `sandbox/.env`.
-8. **Indexer + server + faucet start** — Starts `deepbook-indexer`, `deepbook-server`, and `deepbook-faucet` containers with `--force-recreate` so they pick up the new env vars.
+8. **Indexer + server + faucet start** — Builds the indexer and server images from source (`--build`), then starts `deepbook-indexer`, `deepbook-server`, and `deepbook-faucet` containers with `--force-recreate` so they pick up the new env vars. With `--quick`, the build step is skipped and the pre-built Docker Hub images are used as-is.
 9. **Pyth oracle setup** — Creates PriceInfoObjects on-chain for SUI, DEEP, and USDC. Generates a separate Ed25519 keypair for the oracle service, funds it via faucet, and saves `ORACLE_PRIVATE_KEY` to `.env`.
 10. **Oracle service start** — Starts the `oracle-service` container, which immediately begins fetching 24-hour-old prices from `benchmarks.pyth.network` and submitting update transactions every 10 seconds.
 11. **Pool creation** — Creates a DEEP/SUI pool and a SUI/USDC pool on-chain via the DeepBook contract. Also creates SUI and USDC margin pools. Pool IDs are written to `.env`.
@@ -378,17 +381,15 @@ When you run `pnpm deploy-all`, here's the full sequence:
 
 ## Appendix D: Docker Services Reference
 
-
-| Service            | Container Name          | Profile              | Ports (host:container) | Description                                  |
-| ------------------ | ----------------------- | -------------------- | ---------------------- | -------------------------------------------- |
-| `postgres`         | `deepbook-postgres`     | (always)             | 5432:5432              | PostgreSQL 16 database for the indexer       |
-| `sui-localnet`     | `sui-localnet`          | `localnet`           | 9000:9000, 9123:9123   | Full Sui node with built-in faucet           |
-| `market-maker`     | `deepbook-market-maker` | `localnet`           | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI pool          |
-| `deepbook-indexer` | `deepbook-indexer`      | `remote`, `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres |
-| `deepbook-server`  | `deepbook-server`       | `remote`, `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data  |
-| `deepbook-faucet`  | `deepbook-faucet`       | `localnet`, `remote` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens    |
-| `oracle-service`   | `oracle-service`        | `localnet`           | 9010:9010              | Updates Pyth price feeds every 10 seconds    |
-
+| Service            | Container Name          | Profile              | Ports (host:container) | Description                                     |
+| ------------------ | ----------------------- | -------------------- | ---------------------- | ----------------------------------------------- |
+| `postgres`         | `deepbook-postgres`     | (always)             | 5432:5432              | PostgreSQL 16 database for the indexer          |
+| `sui-localnet`     | `sui-localnet`          | `localnet`           | 9000:9000, 9123:9123   | Full Sui node with built-in faucet              |
+| `market-maker`     | `deepbook-market-maker` | `localnet`           | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools |
+| `deepbook-indexer` | `deepbook-indexer`      | `remote`, `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres    |
+| `deepbook-server`  | `deepbook-server`       | `remote`, `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data     |
+| `deepbook-faucet`  | `deepbook-faucet`       | `localnet`, `remote` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens       |
+| `oracle-service`   | `oracle-service`        | `localnet`           | 9010:9010              | Updates Pyth price feeds every 10 seconds       |
 
 ## Appendix E: Glossary
 
@@ -412,7 +413,6 @@ When you run `pnpm deploy-all`, here's the full sequence:
 
 ## Appendix F: Important Files
 
-
 | File                                      | Description                                                                             |
 | ----------------------------------------- | --------------------------------------------------------------------------------------- |
 | `sandbox/docker-compose.yml`              | Defines all Docker services, profiles, ports, and volumes                               |
@@ -435,7 +435,6 @@ When you run `pnpm deploy-all`, here's the full sequence:
 | `sandbox/deployments/localnet.json`       | Generated deployment manifest with all addresses and IDs                                |
 | `external/deepbook/`                      | Git submodule — DeepBook V3 Move smart contracts and Rust crates                        |
 
-
 ## Appendix G: Submodule Note
 
 DeepBook V3 source code is included as a git submodule at `external/deepbook/`, pointing to `https://github.com/MystenLabs/deepbookv3`. If you cloned without `--recurse-submodules`, initialize it with:
@@ -453,4 +452,3 @@ cd ../..
 git add external/deepbook
 git commit -m "Update deepbook submodule"
 ```
-
