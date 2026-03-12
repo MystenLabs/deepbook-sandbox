@@ -1,0 +1,21 @@
+[package]
+name = "example_contract"
+edition = "2024"         # edition = "legacy" to use legacy (pre-2024) Move
+# license = ""           # e.g., "MIT", "GPL", "Apache 2.0"
+# authors = ["..."]      # e.g., ["Joe Smith (joesmith@noemail.com)", "John Snow (johnsnow@noemail.com)"]
+
+[dependencies]
+# Deepbook dependencies
+token = { local = "../../.external-packages/token" }
+deepbook = { local = "../../.external-packages/deepbook" }
+deepbook_margin = { local = "../../.external-packages/deepbook_margin" }
+
+# Pyth and USDC dependencies
+pyth = { local = "../pyth" }
+usdc = { local = "../usdc" }
+
+[environments]
+localnet = "a62c4e17"
+
+# Read more about the package management system options:
+# https://docs.sui.io/guides/developer/sui-101/move-package-management
