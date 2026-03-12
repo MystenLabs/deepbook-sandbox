@@ -23,14 +23,18 @@ import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
 import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
+import { serializePoolConfigs, type PoolConfig } from "./market-maker/types";
 import { Keypair } from "@mysten/sui/cryptography";
 import log from "./utils/logger";
 
 async function main() {
+    const quick = process.argv.includes("--quick");
     const network = getNetwork();
     const sandboxRoot = getSandboxRoot();
 
     log.banner(` DeepBook sandbox [${network}] deployment`);
+    if (quick)
+        log.info("Quick mode: skipping indexer and server image builds (using pre-built images)");
 
     try {
         // On localnet, ensure .env has the minimum variables docker compose
@@ -143,6 +147,7 @@ async function main() {
                     ...(marginPkg && { marginPackageId: marginPkg.packageId }),
                 },
                 sandboxRoot,
+                { quick },
             );
         }
 
@@ -230,16 +235,56 @@ async function main() {
         // Phase 6: Start market maker (localnet only)
         if (network === "localnet") {
             log.phase("Phase 6/6: Starting market maker");
+
+            // Build multi-pool config for the market maker
+            const mmPools: PoolConfig[] = [
+                {
+                    poolId: pools.DEEP_SUI.poolId,
+                    baseCoinType: pools.DEEP_SUI.baseCoinType,
+                    quoteCoinType: pools.DEEP_SUI.quoteCoinType,
+                    basePriceInfoObjectId: pythOracleIds?.deepPriceInfoObjectId,
+                    quotePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
+                    tickSize: 1_000_000n, // 0.001 SUI
+                    lotSize: 1_000_000n, // 1 DEEP
+                    minSize: 10_000_000n, // 10 DEEP
+                    orderSizeBase: 10_000_000n, // 10 DEEP per order
+                    fallbackMidPrice: 100_000_000n, // 0.1 SUI
+                    baseDepositAmount: 1_000_000_000n, // 1000 DEEP
+                    quoteDepositAmount: 10_000_000_000n, // 10 SUI
+                    baseDecimals: 6,
+                    quoteDecimals: 9,
+                },
+                {
+                    poolId: pools.SUI_USDC.poolId,
+                    baseCoinType: pools.SUI_USDC.baseCoinType,
+                    quoteCoinType: pools.SUI_USDC.quoteCoinType,
+                    basePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
+                    quotePriceInfoObjectId: pythOracleIds?.usdcPriceInfoObjectId,
+                    tickSize: 1_000n, // 0.001 USDC
+                    lotSize: 100_000_000n, // 0.1 SUI
+                    minSize: 1_000_000_000n, // 1 SUI
+                    orderSizeBase: 1_000_000_000n, // 1 SUI per order
+                    fallbackMidPrice: 3_500_000n, // 3.5 USDC
+                    baseDepositAmount: 10_000_000_000n, // 10 SUI
+                    quoteDepositAmount: 100_000_000n, // 100 USDC
+                    baseDecimals: 9,
+                    quoteDecimals: 6,
+                },
+            ];
+
             updateEnvFile(sandboxRoot, {
                 DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
+                DEPLOYER_ADDRESS: signerAddress,
+                // Legacy single-pool vars (backward compat for tests and fallback)
                 POOL_ID: pools.DEEP_SUI.poolId,
                 BASE_COIN_TYPE: pools.DEEP_SUI.baseCoinType,
-                DEPLOYER_ADDRESS: signerAddress,
+                // Multi-pool config for the market maker
+                MM_POOLS: serializePoolConfigs(mmPools),
             });
-            log.success("Updated .env with market maker IDs");
+            log.success("Updated .env with market maker config");
 
             await startMarketMaker(sandboxRoot);
-            log.success("Market maker started");
+            log.success("Market maker started (DEEP/SUI + SUI/USDC)");
         }
 
         // Build summary — only user-facing URLs and key identifiers

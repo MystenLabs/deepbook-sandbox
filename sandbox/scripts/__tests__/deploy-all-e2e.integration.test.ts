@@ -120,7 +120,7 @@ describe("deploy-all E2E (subprocess)", () => {
 
         let stderr = "";
         const exitCode = await new Promise<number>((resolve, reject) => {
-            const child = spawn(tsxBin, [scriptPath], {
+            const child = spawn(tsxBin, [scriptPath, "--quick"], {
                 cwd: SANDBOX_ROOT,
                 env: {
                     ...process.env,
