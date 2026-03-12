@@ -25,7 +25,7 @@ import { PoolCreator } from "./utils/pool";
 import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
 import { serializePoolConfigs, type PoolConfig } from "./market-maker/types";
 import { Keypair } from "@mysten/sui/cryptography";
-import log from "./utils/logger";
+import log, { c } from "./utils/logger";
 
 async function main() {
     const quick = process.argv.includes("--quick");
@@ -37,15 +37,20 @@ async function main() {
         log.info("Quick mode: skipping indexer and server image builds (using pre-built images)");
 
     // Validate .env before doing anything else.
-    // On localnet a missing .env is OK (fresh setup — keys get auto-generated),
-    // but if the file exists it must contain all required keys on every network.
+    // On localnet, PRIVATE_KEY is auto-generated if missing, so we only
+    // enforce the other required keys. Non-localnet requires everything.
     const envCheck = validateEnvFile(sandboxRoot);
     if (!envCheck.valid) {
+        const missing =
+            network === "localnet"
+                ? envCheck.missing.filter((k) => k !== "PRIVATE_KEY")
+                : envCheck.missing;
+
         if (!envCheck.fileExists && network === "localnet") {
             log.info("No .env found — will create one during setup");
-        } else {
+        } else if (missing.length > 0) {
             throw new Error(
-                `sandbox/.env is missing required keys: ${envCheck.missing.join(", ")}. ` +
+                `sandbox/.env is missing required keys: ${missing.join(", ")}. ` +
                     (envCheck.fileExists
                         ? "Your .env file exists but is incomplete — fix it before deploying."
                         : `Create a .env with the required keys before deploying to ${network}.`),
@@ -317,6 +322,18 @@ async function main() {
         }
 
         log.summary("DeepBook Sandbox Ready!", summaryEntries);
+
+        if (network === "localnet" && !hasUserKey) {
+            const line = c.yellow("!".repeat(60));
+            console.log(line);
+            console.log(c.yellow(c.bold("  A NEW WALLET WAS AUTO-GENERATED FOR THIS DEPLOYMENT")));
+            console.log(c.yellow(`  Address: ${signerAddress}`));
+            console.log(c.yellow("  The private key has been saved to sandbox/.env"));
+            console.log(c.yellow("  Back it up if you want to reuse this wallet."));
+            console.log(line);
+            console.log();
+        }
+
         log.warn("The Deepbook Sandbox is running. To stop it run: pnpm down");
     } catch (error) {
         log.fail("Deployment failed");

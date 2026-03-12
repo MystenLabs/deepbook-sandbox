@@ -11,12 +11,14 @@ describe.skipIf(!!process.env.CI)("env utility tests", () => {
     let tmpDir: string;
 
     // Validate the real sandbox .env before running any tests.
-    // Catches accidentally deleted keys early with a clear message.
+    // PRIVATE_KEY is excluded — it gets auto-generated on localnet,
+    // so a missing key shouldn't block unit tests.
     beforeAll(() => {
         const result = validateEnvFile(getSandboxRoot());
-        if (!result.valid) {
+        const missing = result.missing.filter((k) => k !== "PRIVATE_KEY");
+        if (missing.length > 0) {
             throw new Error(
-                `sandbox/.env is missing required keys: ${result.missing.join(", ")}. ` +
+                `sandbox/.env is missing required keys: ${missing.join(", ")}. ` +
                     "Fix your .env before running tests.",
             );
         }
