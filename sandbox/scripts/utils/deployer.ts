@@ -1,4 +1,4 @@
-import { execFile } from "child_process";
+import { execFile, execFileSync } from "child_process";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
@@ -15,6 +15,8 @@ import type { Keypair } from "@mysten/sui/cryptography";
 import type { Network } from "./config";
 import log from "./logger";
 
+const CONTAINER_NAME = "sui-localnet";
+const CONTAINER_WORKSPACE = "/workspace";
 const EXTERNAL_SOURCE = "../external/deepbook/packages";
 
 /** Packages copied from the external submodule into the sandbox staging directory. */
@@ -74,9 +76,13 @@ export interface PackageInfo {
     deps: string[];
 }
 
-/** Extract the transaction digest from `sui client publish` JSON output. */
+/** Extract the transaction digest from `sui client test-publish` JSON output. */
 function parseDigestFromOutput(output: string): string {
-    const json = JSON.parse(output);
+    // The CLI may emit build logs / warnings before the JSON object.
+    // Strip everything before the first '{'.
+    const jsonStart = output.indexOf("{");
+    if (jsonStart === -1) throw new Error("No JSON object found in publish output");
+    const json = JSON.parse(output.slice(jsonStart));
 
     // effects are wrapped in a version envelope (V1, V2, …)
     const effects = json.effects;
@@ -93,6 +99,7 @@ function parseDigestFromOutput(output: string): string {
 
 export class MoveDeployer {
     private suiBinary: string;
+    private sandboxRoot: string;
 
     constructor(
         private client: SuiClient,
@@ -100,20 +107,90 @@ export class MoveDeployer {
         private network: Network,
     ) {
         this.suiBinary = process.env.SUI_BINARY || "sui";
+        this.sandboxRoot = getSandboxRoot();
+    }
+
+    /** Map a host-side absolute path to the equivalent path inside the container. */
+    private toContainerPath(hostPath: string): string {
+        const relative = path.relative(this.sandboxRoot, path.resolve(hostPath));
+        return `${CONTAINER_WORKSPACE}/${relative}`;
+    }
+
+    /**
+     * Import the deployer key into the container's sui CLI and switch
+     * to a localnet environment pointing at the in-container RPC.
+     */
+    private setupContainerCli(): void {
+        const privateKey = this.signer.getSecretKey();
+        const address = this.signer.getPublicKey().toSuiAddress();
+
+        // Import the funded deployer key (idempotent — warns if already present)
+        try {
+            execFileSync(
+                "docker",
+                ["exec", CONTAINER_NAME, "sui", "keytool", "import", privateKey, "ed25519"],
+                { stdio: "pipe" },
+            );
+        } catch {
+            // key may already exist in the container keystore
+        }
+
+        // Create localnet env pointing at localhost inside the container
+        try {
+            execFileSync(
+                "docker",
+                ["exec", CONTAINER_NAME, "sui", "client", "new-env", "--alias", "localnet", "--rpc", "http://127.0.0.1:9000"],
+                { stdio: "pipe" },
+            );
+        } catch {
+            // alias may already exist
+        }
+
+        // Switch to localnet env and the deployer address
+        execFileSync(
+            "docker",
+            ["exec", CONTAINER_NAME, "sui", "client", "switch", "--env", "localnet"],
+            { stdio: "pipe" },
+        );
+        execFileSync(
+            "docker",
+            ["exec", CONTAINER_NAME, "sui", "client", "switch", "--address", address],
+            { stdio: "pipe" },
+        );
+        log.success(`Container CLI configured for ${address}`);
+    }
+
+    /** Copy a host directory into the running sui-localnet container. */
+    private copyToContainer(hostPath: string): void {
+        const resolved = path.resolve(hostPath);
+        const dest = this.toContainerPath(resolved);
+        const parent = dest.substring(0, dest.lastIndexOf("/"));
+        execFileSync("docker", ["exec", CONTAINER_NAME, "mkdir", "-p", parent], { stdio: "pipe" });
+        execFileSync("docker", ["exec", CONTAINER_NAME, "rm", "-rf", dest], { stdio: "pipe" });
+        execFileSync("docker", ["cp", resolved, `${CONTAINER_NAME}:${dest}`], { stdio: "pipe" });
     }
 
     async deployPackage(packagePath: string, packageName: string): Promise<DeploymentResult> {
-        log.spin(`Publishing ${packageName} (sui client publish)`);
+        log.spin(`Publishing ${packageName} (sui client test-publish)`);
 
         const resolvedPath = path.resolve(process.cwd(), packagePath);
 
-        const args =
-            this.network === "localnet"
-                ? ["client", "test-publish", "--json", "--build-env", "localnet", resolvedPath]
-                : ["client", "publish", "--json", resolvedPath];
+        let command: string;
+        let execArgs: string[];
+
+        if (this.network === "localnet") {
+            const containerPkgPath = this.toContainerPath(resolvedPath);
+            const suiArgs = ["client", "test-publish", "--json", "--build-env", "localnet", containerPkgPath];
+            command = "docker";
+            execArgs = ["exec", CONTAINER_NAME, "sui", ...suiArgs];
+        } else {
+            command = this.suiBinary;
+            execArgs = ["client", "publish", "--json", resolvedPath];
+        }
+
         let output: string;
         try {
-            const { stdout } = await execFileAsync(this.suiBinary, args, {
+            const { stdout } = await execFileAsync(command, execArgs, {
                 encoding: "utf-8",
                 maxBuffer: 50 * 1024 * 1024, // 50 MB — publish output includes compiled bytecode
             });
@@ -128,7 +205,7 @@ export class MoveDeployer {
                     ? String((err as { stdout: unknown }).stdout)
                     : "";
             const detail = stderr || stdout || String(err);
-            throw new Error(`Failed to publish ${packageName}.\n${detail.slice(-800)}`);
+            throw new Error(`Failed to publish ${packageName}.\n${detail.slice(-4000)}`);
         }
 
         const transactionDigest = parseDigestFromOutput(output);
@@ -186,13 +263,34 @@ export class MoveDeployer {
         const packages =
             this.network === "testnet" ? allPackages.filter((p) => p.name !== "pyth") : allPackages;
 
+        if (this.network === "localnet") {
+            this.setupContainerCli();
+        }
+
         const deployed = new Map<string, DeploymentResult>();
 
         for (const pkg of packages) {
             this.preDeployment(pkg, deployed, chainId);
+            if (this.network === "localnet") {
+                this.copyToContainer(pkg.path);
+            }
             const result = await this.deployPackage(pkg.path, pkg.name);
             deployed.set(pkg.name, result);
             await new Promise((r) => setTimeout(r, 2000));
+        }
+
+        // Copy the Pub.localnet.toml from the container to the sandbox root
+        if (this.network === "localnet") {
+            try {
+                execFileSync(
+                    "docker",
+                    ["cp", `${CONTAINER_NAME}:/sui/Pub.localnet.toml`, sandboxRoot],
+                    { stdio: "pipe" },
+                );
+                log.success("Copied Pub.localnet.toml from container");
+            } catch {
+                log.warn("Could not copy Pub.localnet.toml from container");
+            }
         }
 
         return deployed;
