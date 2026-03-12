@@ -81,7 +81,7 @@ jobs:
         working-directory: sandbox
 
       - name: Run integration test (${{ matrix.test }})
-        run: pnpm exec vitest run ${{ matrix.test }}
+        run: pnpm exec vitest run --config vitest.integration.config.ts ${{ matrix.test }}
         working-directory: sandbox
 
       - name: Capture Docker diagnostics
