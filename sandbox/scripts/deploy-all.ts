@@ -15,6 +15,8 @@ import {
     configureAndStartLocalnetServices,
     startOracleService,
     startMarketMaker,
+    startDashboard,
+    DASHBOARD_PORT,
 } from "./utils/docker-compose";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
@@ -285,6 +287,12 @@ async function main() {
 
             await startMarketMaker(sandboxRoot);
             log.success("Market maker started (DEEP/SUI + SUI/USDC)");
+
+            log.spin("Building and starting dashboard...");
+            await startDashboard(sandboxRoot);
+            log.success(
+                `Dashboard running — open http://127.0.0.1:${DASHBOARD_PORT} in your browser`,
+            );
         }
 
         // Build summary — only user-facing URLs and key identifiers
@@ -294,6 +302,7 @@ async function main() {
             { label: "SUI Margin Pool", value: marginResult.marginPools.SUI },
             { label: "USDC Margin Pool", value: marginResult.marginPools.USDC },
             { label: "Deployment File", value: deploymentPath },
+            { label: "Dashboard", value: `http://127.0.0.1:${DASHBOARD_PORT}` },
         ];
         if (network === "testnet") {
             summaryEntries.push({ label: "DeepBook Server", value: "http://127.0.0.1:9008" });
