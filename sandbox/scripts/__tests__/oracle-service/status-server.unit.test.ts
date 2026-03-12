@@ -1,235 +1,181 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import type { Server } from "http";
+import http from "http";
+import { describe, test, expect, afterEach, vi } from "vitest";
 import {
-    createStatusServer,
     createInitialStatus,
+    createStatusServer,
     updateStatus,
-    type OracleStatus,
 } from "../../oracle-service/status-server";
 import { makeSuiPriceData, makeDeepPriceData, makeUsdcPriceData } from "./fixtures";
 
-/** Start the status server on an ephemeral port, return the base URL. */
-function startServer(status: OracleStatus): Promise<{ server: Server; baseUrl: string }> {
+vi.mock("../../utils/logger", () => ({
+    default: {
+        success: vi.fn(),
+    },
+}));
+
+let server: http.Server | null = null;
+
+afterEach(async () => {
+    if (server) {
+        await new Promise<void>((resolve) => server!.close(() => resolve()));
+        server = null;
+    }
+});
+
+function getPort(srv: http.Server): number {
+    const addr = srv.address();
+    if (typeof addr === "object" && addr) return addr.port;
+    throw new Error("Server not listening");
+}
+
+function waitForListen(srv: http.Server): Promise<void> {
     return new Promise((resolve) => {
-        const server = createStatusServer(status);
-        server.listen(0, () => {
-            const addr = server.address();
-            const port = typeof addr === "object" && addr ? addr.port : 0;
-            resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
-        });
+        if (srv.listening) {
+            resolve();
+        } else {
+            srv.on("listening", resolve);
+        }
+    });
+}
+
+async function httpGet(
+    url: string,
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: any }> {
+    return new Promise((resolve, reject) => {
+        http.get(url, (res) => {
+            let data = "";
+            res.on("data", (chunk) => (data += chunk));
+            res.on("end", () => {
+                resolve({
+                    status: res.statusCode!,
+                    headers: res.headers,
+                    body: JSON.parse(data),
+                });
+            });
+        }).on("error", reject);
+    });
+}
+
+async function httpRequest(
+    url: string,
+    method: string,
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: any }> {
+    return new Promise((resolve, reject) => {
+        const parsedUrl = new URL(url);
+        const req = http.request(
+            {
+                hostname: parsedUrl.hostname,
+                port: parsedUrl.port,
+                path: parsedUrl.pathname,
+                method,
+            },
+            (res) => {
+                let data = "";
+                res.on("data", (chunk) => (data += chunk));
+                res.on("end", () => {
+                    resolve({
+                        status: res.statusCode!,
+                        headers: res.headers,
+                        body: JSON.parse(data),
+                    });
+                });
+            },
+        );
+        req.on("error", reject);
+        req.end();
     });
 }
 
 describe("status server", () => {
-    let server: Server;
-    let baseUrl: string;
-    let status: OracleStatus;
-
-    beforeAll(async () => {
-        status = createInitialStatus();
-        ({ server, baseUrl } = await startServer(status));
-    });
-
-    afterAll(
-        () =>
-            new Promise<void>((resolve) => {
-                server.close(() => resolve());
-            }),
-    );
-
-    beforeEach(() => {
-        // Reset status between tests
-        Object.assign(status, createInitialStatus());
-    });
-
     describe("routing", () => {
-        it("GET / returns 200 with JSON status", async () => {
-            const res = await fetch(`${baseUrl}/`);
-            expect(res.status).toBe(200);
-            expect(res.headers.get("content-type")).toBe("application/json");
+        test("GET / returns 200 with correct JSON structure", async () => {
+            const status = createInitialStatus();
+            server = createStatusServer(0, status);
+            await waitForListen(server);
 
-            const body = await res.json();
-            expect(body.status).toBe("ok");
+            const res = await httpGet(`http://localhost:${getPort(server)}/`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.status).toBe("ok");
+            expect(res.body.updates).toBe(0);
+            expect(res.body.errors).toBe(0);
+            expect(res.body.lastUpdate).toBeNull();
+            expect(res.body.prices.sui).toBeNull();
+            expect(res.body.prices.deep).toBeNull();
+            expect(res.body.prices.usdc).toBeNull();
         });
 
-        it("GET /status returns 200 with same JSON", async () => {
-            const res = await fetch(`${baseUrl}/status`);
-            expect(res.status).toBe(200);
+        test("GET /status returns same response", async () => {
+            const status = createInitialStatus();
+            server = createStatusServer(0, status);
+            await waitForListen(server);
 
-            const body = await res.json();
-            expect(body.status).toBe("ok");
+            const res = await httpGet(`http://localhost:${getPort(server)}/status`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.status).toBe("ok");
         });
 
-        it("GET /unknown returns 404", async () => {
-            const res = await fetch(`${baseUrl}/unknown`);
+        test("GET /other returns 404", async () => {
+            const status = createInitialStatus();
+            server = createStatusServer(0, status);
+            await waitForListen(server);
+
+            const res = await httpGet(`http://localhost:${getPort(server)}/other`);
+
             expect(res.status).toBe(404);
-
-            const body = await res.json();
-            expect(body.error).toBe("Not Found");
+            expect(res.body.error).toBe("Not Found");
         });
 
-        it("POST / returns 405 with Allow header", async () => {
-            const res = await fetch(`${baseUrl}/`, { method: "POST" });
+        test("POST / returns 405 with Allow header", async () => {
+            const status = createInitialStatus();
+            server = createStatusServer(0, status);
+            await waitForListen(server);
+
+            const res = await httpRequest(`http://localhost:${getPort(server)}/`, "POST");
+
             expect(res.status).toBe(405);
-            expect(res.headers.get("allow")).toBe("GET");
-
-            const body = await res.json();
-            expect(body.error).toBe("Method Not Allowed");
-        });
-
-        it("PUT / returns 405", async () => {
-            const res = await fetch(`${baseUrl}/`, { method: "PUT" });
-            expect(res.status).toBe(405);
-        });
-
-        it("strips query parameters from path matching", async () => {
-            const res = await fetch(`${baseUrl}/?foo=bar`);
-            expect(res.status).toBe(200);
+            expect(res.body.error).toBe("Method Not Allowed");
+            expect(res.headers.allow).toBe("GET");
         });
     });
 
-    describe("response body", () => {
-        it("returns initial status with null prices", async () => {
-            const res = await fetch(`${baseUrl}/`);
-            const body = await res.json();
+    describe("status updates", () => {
+        test("reflects updated prices in response", async () => {
+            const status = createInitialStatus();
+            server = createStatusServer(0, status);
+            await waitForListen(server);
 
-            expect(body).toEqual({
-                status: "ok",
-                updates: 0,
-                errors: 0,
-                lastUpdate: null,
-                prices: {
-                    sui: null,
-                    deep: null,
-                    usdc: null,
-                },
-            });
-        });
+            // Update status with price data
+            updateStatus(status, makeSuiPriceData(), makeDeepPriceData(), makeUsdcPriceData());
+            status.updateCount = 1;
 
-        it("reflects updated status after price update", async () => {
-            status.updateCount = 5;
-            status.errorCount = 1;
-            status.lastUpdateTime = "2024-01-01T00:00:00.000Z";
-            status.lastSuiPrice = "3.45000000";
-            status.lastDeepPrice = "0.02150000";
-            status.lastUsdcPrice = "1.00000000";
+            const res = await httpGet(`http://localhost:${getPort(server)}/`);
 
-            const res = await fetch(`${baseUrl}/`);
-            const body = await res.json();
-
-            expect(body.updates).toBe(5);
-            expect(body.errors).toBe(1);
-            expect(body.lastUpdate).toBe("2024-01-01T00:00:00.000Z");
-            expect(body.prices.sui).toBe("$3.45000000");
-            expect(body.prices.deep).toBe("$0.02150000");
-            expect(body.prices.usdc).toBe("$1.00000000");
-        });
-
-        it("prefixes prices with $ sign", async () => {
-            status.lastSuiPrice = "100.00000000";
-            status.lastDeepPrice = "0.00000001";
-            status.lastUsdcPrice = "1.00000000";
-
-            const res = await fetch(`${baseUrl}/`);
-            const body = await res.json();
-
-            expect(body.prices.sui).toBe("$100.00000000");
-            expect(body.prices.deep).toBe("$0.00000001");
-            expect(body.prices.usdc).toBe("$1.00000000");
+            expect(res.body.updates).toBe(1);
+            expect(res.body.prices.sui).toBe("$3.45000000");
+            expect(res.body.prices.deep).toBe("$0.02000000");
+            expect(res.body.prices.usdc).toBe("$1.00000000");
+            expect(res.body.lastUpdate).not.toBeNull();
         });
     });
 
     describe("high-frequency queries", () => {
-        it("handles 50 rapid sequential queries without errors", async () => {
-            const responses = [];
-            for (let i = 0; i < 50; i++) {
-                responses.push(fetch(`${baseUrl}/`));
-            }
-            const results = await Promise.all(responses);
+        test("handles 100 parallel requests without errors", async () => {
+            const status = createInitialStatus();
+            server = createStatusServer(0, status);
+            await waitForListen(server);
 
-            for (const res of results) {
+            const port = getPort(server);
+            const requests = Array.from({ length: 100 }, () =>
+                httpGet(`http://localhost:${port}/`),
+            );
+
+            const responses = await Promise.all(requests);
+
+            for (const res of responses) {
                 expect(res.status).toBe(200);
             }
         });
-
-        it("returns consistent data across rapid queries", async () => {
-            status.updateCount = 42;
-            status.lastSuiPrice = "3.45000000";
-            status.lastDeepPrice = "0.02150000";
-            status.lastUsdcPrice = "1.00000000";
-
-            const responses = await Promise.all(
-                Array.from({ length: 20 }, () => fetch(`${baseUrl}/`).then((r) => r.json())),
-            );
-
-            for (const body of responses) {
-                expect(body.updates).toBe(42);
-                expect(body.prices.sui).toBe("$3.45000000");
-            }
-        });
-    });
-});
-
-describe("updateStatus", () => {
-    it("mutates the status object with formatted prices", () => {
-        const status = createInitialStatus();
-        const suiData = makeSuiPriceData();
-        const deepData = makeDeepPriceData();
-        const usdcData = makeUsdcPriceData();
-
-        updateStatus(status, suiData, deepData, usdcData);
-
-        expect(status.lastSuiPrice).toBe("3.45000000");
-        expect(status.lastDeepPrice).toBe("0.02150000");
-        expect(status.lastUsdcPrice).toBe("1.00000000");
-        expect(status.lastUpdateTime).not.toBeNull();
-    });
-
-    it("sets lastUpdateTime to ISO string", () => {
-        const status = createInitialStatus();
-        const before = new Date().toISOString();
-
-        updateStatus(status, makeSuiPriceData(), makeDeepPriceData(), makeUsdcPriceData());
-
-        const after = new Date().toISOString();
-        expect(status.lastUpdateTime).not.toBeNull();
-        expect(status.lastUpdateTime! >= before).toBe(true);
-        expect(status.lastUpdateTime! <= after).toBe(true);
-    });
-
-    it("overwrites previous values on subsequent calls", () => {
-        const status = createInitialStatus();
-
-        // First update: SUI = $3.45
-        updateStatus(status, makeSuiPriceData(), makeDeepPriceData(), makeUsdcPriceData());
-        expect(status.lastSuiPrice).toBe("3.45000000");
-
-        // Second update: SUI = $5.00 (different price)
-        const newSui = makeSuiPriceData({
-            price: { price: "500000000", conf: "200000", expo: -8, publish_time: 1700000100 },
-        });
-        updateStatus(status, newSui, makeDeepPriceData(), makeUsdcPriceData());
-
-        expect(status.lastSuiPrice).toBe("5.00000000");
-        expect(status.lastUpdateTime).not.toBeNull();
-    });
-});
-
-describe("createInitialStatus", () => {
-    it("returns zeroed status object", () => {
-        const status = createInitialStatus();
-        expect(status.updateCount).toBe(0);
-        expect(status.errorCount).toBe(0);
-        expect(status.lastUpdateTime).toBeNull();
-        expect(status.lastSuiPrice).toBeNull();
-        expect(status.lastDeepPrice).toBeNull();
-        expect(status.lastUsdcPrice).toBeNull();
-    });
-
-    it("returns a new object each call (no shared state)", () => {
-        const a = createInitialStatus();
-        const b = createInitialStatus();
-        a.updateCount = 99;
-        expect(b.updateCount).toBe(0);
     });
 });

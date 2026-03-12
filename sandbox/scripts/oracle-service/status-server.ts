@@ -1,11 +1,8 @@
 import http from "http";
 import type { ParsedPriceData } from "./types";
 import { formatPrice } from "./format-price";
+import log from "../utils/logger";
 
-/**
- * Shared mutable state read by the HTTP status endpoint
- * and written by the update loop.
- */
 export interface OracleStatus {
     updateCount: number;
     errorCount: number;
@@ -15,7 +12,6 @@ export interface OracleStatus {
     lastUsdcPrice: string | null;
 }
 
-/** Create a fresh zero-state status object. */
 export function createInitialStatus(): OracleStatus {
     return {
         updateCount: 0,
@@ -27,7 +23,6 @@ export function createInitialStatus(): OracleStatus {
     };
 }
 
-/** Mutate `status` with the latest price data from Pyth. */
 export function updateStatus(
     status: OracleStatus,
     suiData: ParsedPriceData,
@@ -40,19 +35,8 @@ export function updateStatus(
     status.lastUsdcPrice = formatPrice(usdcData.price.price, usdcData.price.expo);
 }
 
-/**
- * Create an HTTP server that exposes oracle status as JSON.
- *
- * Routes:
- *   GET /        → 200 JSON status
- *   GET /status  → 200 JSON status
- *   Other paths  → 404
- *   Non-GET      → 405
- *
- * The caller is responsible for calling `server.listen(port)`.
- */
-export function createStatusServer(status: OracleStatus): http.Server {
-    return http.createServer((req, res) => {
+export function createStatusServer(port: number, status: OracleStatus): http.Server {
+    const server = http.createServer((req, res) => {
         const path = req.url?.split("?")[0] ?? "";
         const isStatusPath = path === "/" || path === "/status";
 
@@ -89,4 +73,8 @@ export function createStatusServer(status: OracleStatus): http.Server {
             ),
         );
     });
+    server.listen(port, () => {
+        log.success(`Status endpoint: http://localhost:${port}`);
+    });
+    return server;
 }

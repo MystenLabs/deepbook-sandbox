@@ -3,7 +3,7 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { getClient, getNetwork } from "../utils/config";
 import { PythClient } from "./pyth-client";
 import { OracleUpdater } from "./oracle-updater";
-import { createStatusServer, createInitialStatus, updateStatus } from "./status-server";
+import { createInitialStatus, createStatusServer, updateStatus } from "./status-server";
 import type { OracleConfig } from "./types";
 import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID, USDC_PRICE_FEED_ID } from "./constants";
 import log from "../utils/logger";
@@ -13,11 +13,11 @@ import log from "../utils/logger";
  *
  * This service:
  * 1. Fetches historical price data from Pyth Network API every 10 seconds
- * 2. Updates the SUI and DEEP PriceInfoObjects on-chain
+ * 2. Updates the SUI, DEEP, and USDC PriceInfoObjects on-chain
  * 3. Exposes a health/status endpoint on port 9010
  *
  * Required env vars:
- *   PYTH_PACKAGE_ID, DEEP_PRICE_INFO_OBJECT_ID, SUI_PRICE_INFO_OBJECT_ID
+ *   PYTH_PACKAGE_ID, DEEP_PRICE_INFO_OBJECT_ID, SUI_PRICE_INFO_OBJECT_ID, USDC_PRICE_INFO_OBJECT_ID
  */
 
 const STATUS_PORT = 9010;
@@ -38,9 +38,6 @@ function requireEnv(name: string): string {
     if (!value) throw new Error(`Missing required env var: ${name}`);
     return value;
 }
-
-/** Shared state for the status endpoint */
-const status = createInitialStatus();
 
 async function main() {
     log.banner("Oracle Service");
@@ -82,10 +79,8 @@ async function main() {
     }
 
     // Start status/health endpoint
-    const server = createStatusServer(status);
-    server.listen(STATUS_PORT, () => {
-        log.success(`Status endpoint: http://localhost:${STATUS_PORT}`);
-    });
+    const status = createInitialStatus();
+    createStatusServer(STATUS_PORT, status);
 
     log.phase("Starting price feed updates");
 
@@ -97,7 +92,7 @@ async function main() {
             // Fetch price data from Pyth
             const priceUpdate = await pythClient.fetchPriceUpdates();
 
-            // Find SUI and DEEP data for status tracking
+            // Find SUI, DEEP, and USDC data for status tracking
             const suiData = priceUpdate.parsed.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
             const deepData = priceUpdate.parsed.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
             const usdcData = priceUpdate.parsed.find((p) => p.id === USDC_PRICE_FEED_ID.slice(2));

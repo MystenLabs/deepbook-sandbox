@@ -263,7 +263,7 @@ services:
 
   # ============================================================
   # Oracle Service
-  # Updates Pyth price feeds for SUI and DEEP on localnet
+  # Updates Pyth price feeds for SUI, DEEP, and USDC on localnet
   # ============================================================
   oracle-service:
     profiles:

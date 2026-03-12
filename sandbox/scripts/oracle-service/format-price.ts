@@ -1,8 +1,9 @@
 /**
- * Formats a Pyth price integer + exponent into a human-readable decimal string.
+ * Formats a Pyth price value for display.
  *
- * @example formatPrice("345000000", -8) → "3.45000000"
- * @example formatPrice("2150000", -8)   → "0.02150000"
+ * @param price - Integer price as string (e.g., "345000000")
+ * @param expo - Exponent (e.g., -8)
+ * @returns Formatted decimal string (e.g., "3.45000000")
  */
 export function formatPrice(price: string, expo: number): string {
     const priceNum = Number.parseInt(price);

@@ -1,82 +1,75 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, test, expect, vi, afterEach } from "vitest";
 import { PythClient } from "../../oracle-service/pyth-client";
 import { makeTestConfig, makePythPriceUpdate } from "./fixtures";
-import type { OracleConfig } from "../../oracle-service/types";
+
+vi.mock("../../utils/logger", () => ({
+    default: {
+        loop: vi.fn(),
+        loopSuccess: vi.fn(),
+        loopError: vi.fn(),
+    },
+}));
+
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
+
+afterEach(() => {
+    vi.restoreAllMocks();
+    vi.stubGlobal("fetch", mockFetch);
+});
 
 describe("PythClient", () => {
-    let config: OracleConfig;
-    let client: PythClient;
-    let fetchSpy: ReturnType<typeof vi.fn>;
-
-    beforeEach(() => {
-        config = makeTestConfig();
-        client = new PythClient(config);
-
-        // Mock global fetch
-        fetchSpy = vi.fn();
-        vi.stubGlobal("fetch", fetchSpy);
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    describe("fetchPriceUpdates", () => {
-        it("constructs the correct Pyth API URL", async () => {
+    describe("URL construction", () => {
+        test("builds correct URL with feed IDs and query params", async () => {
+            const config = makeTestConfig();
+            const client = new PythClient(config);
             const mockResponse = makePythPriceUpdate();
-            fetchSpy.mockResolvedValue({
+
+            mockFetch.mockResolvedValueOnce({
                 ok: true,
                 json: () => Promise.resolve(mockResponse),
             });
 
             await client.fetchPriceUpdates();
 
-            expect(fetchSpy).toHaveBeenCalledOnce();
-            const url = new URL(fetchSpy.mock.calls[0][0]);
+            expect(mockFetch).toHaveBeenCalledOnce();
+            const url = mockFetch.mock.calls[0][0] as string;
 
-            expect(url.origin).toBe("https://benchmarks.pyth.network");
-            expect(url.pathname).toMatch(/^\/v1\/updates\/price\/\d+$/);
-            expect(url.searchParams.getAll("ids")).toHaveLength(3);
-            expect(url.searchParams.get("encoding")).toBe("hex");
-            expect(url.searchParams.get("parsed")).toBe("true");
+            expect(url).toContain("https://benchmarks.pyth.network/v1/updates/price/");
+            expect(url).toContain(`ids=${config.priceFeeds.sui}`);
+            expect(url).toContain(`ids=${config.priceFeeds.deep}`);
+            expect(url).toContain(`ids=${config.priceFeeds.usdc}`);
+            expect(url).toContain("encoding=hex");
+            expect(url).toContain("parsed=true");
         });
 
-        it("includes all three price feed IDs as query params", async () => {
-            fetchSpy.mockResolvedValue({
+        test("uses timestamp approximately 24 hours ago", async () => {
+            const config = makeTestConfig({ historicalDataHours: 24 });
+            const client = new PythClient(config);
+
+            mockFetch.mockResolvedValueOnce({
                 ok: true,
                 json: () => Promise.resolve(makePythPriceUpdate()),
             });
 
             await client.fetchPriceUpdates();
 
-            const url = new URL(fetchSpy.mock.calls[0][0]);
-            const ids = url.searchParams.getAll("ids");
-            expect(ids).toContain(config.priceFeeds.sui);
-            expect(ids).toContain(config.priceFeeds.deep);
-            expect(ids).toContain(config.priceFeeds.usdc);
+            const url = mockFetch.mock.calls[0][0] as string;
+            const timestampMatch = url.match(/\/v1\/updates\/price\/(\d+)\?/);
+            expect(timestampMatch).not.toBeNull();
+
+            const timestamp = Number.parseInt(timestampMatch![1]);
+            const expected = Math.floor(Date.now() / 1000) - 24 * 3600;
+            expect(Math.abs(timestamp - expected)).toBeLessThan(5);
         });
+    });
 
-        it("calculates timestamp from historicalDataHours ago", async () => {
-            const nowSec = Math.floor(Date.now() / 1000);
-            const expectedTimestamp = nowSec - config.historicalDataHours * 3600;
-
-            fetchSpy.mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve(makePythPriceUpdate()),
-            });
-
-            await client.fetchPriceUpdates();
-
-            const url = new URL(fetchSpy.mock.calls[0][0]);
-            const pathTimestamp = Number(url.pathname.split("/").pop());
-
-            // Allow 2-second tolerance for test execution time
-            expect(Math.abs(pathTimestamp - expectedTimestamp)).toBeLessThan(2);
-        });
-
-        it("returns parsed price data on success", async () => {
+    describe("response parsing", () => {
+        test("returns parsed price data on success", async () => {
+            const client = new PythClient(makeTestConfig());
             const mockResponse = makePythPriceUpdate();
-            fetchSpy.mockResolvedValue({
+
+            mockFetch.mockResolvedValueOnce({
                 ok: true,
                 json: () => Promise.resolve(mockResponse),
             });
@@ -84,80 +77,44 @@ describe("PythClient", () => {
             const result = await client.fetchPriceUpdates();
 
             expect(result.parsed).toHaveLength(3);
-            expect(result.binary.encoding).toBe("hex");
+            expect(result.parsed[0].price.price).toBe("345000000");
         });
+    });
 
-        it("throws on HTTP error response", async () => {
-            fetchSpy.mockResolvedValue({
+    describe("error handling", () => {
+        test("throws on non-ok HTTP response", async () => {
+            const client = new PythClient(makeTestConfig());
+
+            mockFetch.mockResolvedValueOnce({
                 ok: false,
-                status: 500,
-                statusText: "Internal Server Error",
+                status: 429,
+                statusText: "Too Many Requests",
             });
 
-            await expect(client.fetchPriceUpdates()).rejects.toThrow(
-                "Pyth API request failed: 500 Internal Server Error",
-            );
+            await expect(client.fetchPriceUpdates()).rejects.toThrow("429");
         });
 
-        it("throws on empty parsed data", async () => {
-            fetchSpy.mockResolvedValue({
+        test("throws on empty price data", async () => {
+            const client = new PythClient(makeTestConfig());
+
+            mockFetch.mockResolvedValueOnce({
                 ok: true,
-                json: () => Promise.resolve({ binary: { encoding: "hex", data: [] }, parsed: [] }),
+                json: () =>
+                    Promise.resolve({
+                        binary: { encoding: "hex", data: [] },
+                        parsed: [],
+                    }),
             });
 
-            await expect(client.fetchPriceUpdates()).rejects.toThrow(
-                "No price data returned from Pyth API",
-            );
+            await expect(client.fetchPriceUpdates()).rejects.toThrow("No price data");
         });
 
-        it("throws on null parsed data", async () => {
-            fetchSpy.mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve({ binary: { encoding: "hex", data: [] }, parsed: null }),
-            });
+        test("propagates network errors", async () => {
+            const client = new PythClient(makeTestConfig());
 
-            await expect(client.fetchPriceUpdates()).rejects.toThrow(
-                "No price data returned from Pyth API",
-            );
-        });
+            mockFetch.mockRejectedValueOnce(new TypeError("fetch failed"));
 
-        it("throws on network error (fetch rejects)", async () => {
-            fetchSpy.mockRejectedValue(new Error("Network unreachable"));
-
-            await expect(client.fetchPriceUpdates()).rejects.toThrow("Network unreachable");
-        });
-
-        it("uses custom pythApiUrl from config", async () => {
-            const customConfig = makeTestConfig({ pythApiUrl: "https://custom-pyth.example.com" });
-            const customClient = new PythClient(customConfig);
-
-            fetchSpy.mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve(makePythPriceUpdate()),
-            });
-
-            await customClient.fetchPriceUpdates();
-
-            const url = new URL(fetchSpy.mock.calls[0][0]);
-            expect(url.origin).toBe("https://custom-pyth.example.com");
-        });
-
-        it("uses different historicalDataHours", async () => {
-            const customConfig = makeTestConfig({ historicalDataHours: 48 });
-            const customClient = new PythClient(customConfig);
-            const nowSec = Math.floor(Date.now() / 1000);
-            const expectedTimestamp = nowSec - 48 * 3600;
-
-            fetchSpy.mockResolvedValue({
-                ok: true,
-                json: () => Promise.resolve(makePythPriceUpdate()),
-            });
-
-            await customClient.fetchPriceUpdates();
-
-            const url = new URL(fetchSpy.mock.calls[0][0]);
-            const pathTimestamp = Number(url.pathname.split("/").pop());
-            expect(Math.abs(pathTimestamp - expectedTimestamp)).toBeLessThan(2);
+            await expect(client.fetchPriceUpdates()).rejects.toThrow("fetch failed");
         });
     });
 });

@@ -18,7 +18,7 @@ export class OracleUpdater {
     ) {}
 
     /**
-     * Updates both SUI and DEEP price feeds on-chain
+     * Updates SUI, DEEP, and USDC price feeds on-chain
      */
     async updatePriceFeeds(
         priceData: ParsedPriceData[],
@@ -73,7 +73,7 @@ export class OracleUpdater {
             }
 
             log.loopSuccess(`Updated price feeds (digest: ${result.digest})`);
-            this.logPriceData(suiData, deepData);
+            this.logPriceData(suiData, deepData, usdcData);
         } catch (error) {
             log.loopError("Failed to update price feeds", error);
             throw error;
@@ -164,8 +164,13 @@ export class OracleUpdater {
     /**
      * Logs price data in a readable format
      */
-    private logPriceData(suiData: ParsedPriceData, deepData: ParsedPriceData) {
+    private logPriceData(
+        suiData: ParsedPriceData,
+        deepData: ParsedPriceData,
+        usdcData: ParsedPriceData,
+    ) {
         log.loopDetail(`SUI:  $${formatPrice(suiData.price.price, suiData.price.expo)}`);
         log.loopDetail(`DEEP: $${formatPrice(deepData.price.price, deepData.price.expo)}`);
+        log.loopDetail(`USDC: $${formatPrice(usdcData.price.price, usdcData.price.expo)}`);
     }
 }
