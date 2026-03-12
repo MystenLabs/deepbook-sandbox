@@ -75,7 +75,9 @@ async function main() {
             try {
                 importKeyToHostCli(process.env.PRIVATE_KEY!, signer.getPublicKey().toSuiAddress());
             } catch {
-                log.warn("Could not import key to host sui CLI (sui binary not found?) — not required for localnet");
+                log.warn(
+                    "Could not import key to host sui CLI (sui binary not found?) — not required for localnet",
+                );
             }
             log.success("Using PRIVATE_KEY from .env");
         } else if (network === "localnet") {
@@ -87,7 +89,9 @@ async function main() {
             try {
                 importKeyToHostCli(privateKey, keypair.getPublicKey().toSuiAddress());
             } catch {
-                log.warn("Could not import key to host sui CLI (sui binary not found?) — not required for localnet");
+                log.warn(
+                    "Could not import key to host sui CLI (sui binary not found?) — not required for localnet",
+                );
             }
             updateEnvFile(sandboxRoot, { PRIVATE_KEY: privateKey });
             log.success("Container key imported");

@@ -74,7 +74,11 @@ function cleanupLocalnet(cwd: string): void {
     // If not cleaned up they can break subsequent test runs.
     const fsSync = require("fs");
     for (const name of ["pub.localnet.toml", "Pub.localnet.toml"]) {
-        try { fsSync.unlinkSync(path.join(cwd, name)); } catch { /* may not exist */ }
+        try {
+            fsSync.unlinkSync(path.join(cwd, name));
+        } catch {
+            /* may not exist */
+        }
     }
 }
 

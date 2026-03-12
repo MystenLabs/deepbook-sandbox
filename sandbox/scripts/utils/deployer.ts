@@ -139,7 +139,17 @@ export class MoveDeployer {
         try {
             execFileSync(
                 "docker",
-                ["exec", CONTAINER_NAME, "sui", "client", "new-env", "--alias", "localnet", "--rpc", "http://127.0.0.1:9000"],
+                [
+                    "exec",
+                    CONTAINER_NAME,
+                    "sui",
+                    "client",
+                    "new-env",
+                    "--alias",
+                    "localnet",
+                    "--rpc",
+                    "http://127.0.0.1:9000",
+                ],
                 { stdio: "pipe" },
             );
         } catch {
@@ -180,7 +190,16 @@ export class MoveDeployer {
 
         if (this.network === "localnet") {
             const containerPkgPath = this.toContainerPath(resolvedPath);
-            const suiArgs = ["client", "test-publish", "--json", "--build-env", "localnet", containerPkgPath];
+            const suiArgs = [
+                "client",
+                "test-publish",
+                "--json",
+                "--build-env",
+                "localnet",
+                "--pubfile-path",
+                this.sandboxRoot + "/Pub.localnet.toml",
+                containerPkgPath,
+            ];
             command = "docker";
             execArgs = ["exec", CONTAINER_NAME, "sui", ...suiArgs];
         } else {
