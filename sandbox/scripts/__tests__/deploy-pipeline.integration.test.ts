@@ -108,6 +108,13 @@ describe("deploy-all pipeline (localnet)", () => {
             ].join("\n") + "\n";
         await fs.writeFile(ENV_PATH, envContent, "utf-8");
 
+        // ── Remove stale publish manifest (chain-id mismatch across runs) ──
+        try {
+            await fs.unlink(path.join(SANDBOX_ROOT, "Pub.localnet.toml"));
+        } catch {
+            // may not exist
+        }
+
         // ── Clean slate: tear down any leftover containers ───────────
         dockerDown(SANDBOX_ROOT);
 
@@ -428,7 +435,12 @@ describe("deploy-all pipeline (localnet)", () => {
             ["compose", ...envFileArgs, "--profile", "localnet", "config", "--services"],
             { cwd: SANDBOX_ROOT, encoding: "utf-8" },
         );
-        const services = configResult.stdout.trim().split("\n").filter(Boolean).sort();
+        // Exclude dashboard — it's not started by the test pipeline
+        const services = configResult.stdout
+            .trim()
+            .split("\n")
+            .filter((s) => s && s !== "dashboard")
+            .sort();
         expect(services.length, "docker compose returned no services").toBeGreaterThan(0);
 
         for (const service of services) {
