@@ -13,22 +13,50 @@ export interface ReadinessStatus {
     timestamp: string;
     checks: {
         balanceManager: boolean;
-        pool: boolean;
+        pools: number;
+    };
+}
+
+export interface PoolOrdersResponse {
+    pair: string;
+    poolId: string;
+    midPrice: number | null;
+    orders: {
+        orderId: string;
+        price: number;
+        quantity: number;
+        isBid: boolean;
+    }[];
+}
+
+export interface OrdersResponse {
+    pools: PoolOrdersResponse[];
+    config: {
+        spreadBps: number;
+        levelsPerSide: number;
+        levelSpacingBps: number;
     };
 }
 
 type HealthCheck = () => HealthStatus;
 type ReadinessCheck = () => ReadinessStatus;
+type OrdersProvider = () => OrdersResponse;
 
 export class HealthServer {
     private server: http.Server | null = null;
     private startTime = Date.now();
     private healthCheck: HealthCheck;
     private readinessCheck: ReadinessCheck;
+    private ordersProvider: OrdersProvider;
 
-    constructor(healthCheck: HealthCheck, readinessCheck: ReadinessCheck) {
+    constructor(
+        healthCheck: HealthCheck,
+        readinessCheck: ReadinessCheck,
+        ordersProvider: OrdersProvider,
+    ) {
         this.healthCheck = healthCheck;
         this.readinessCheck = readinessCheck;
+        this.ordersProvider = ordersProvider;
     }
 
     start(port: number): Promise<void> {
@@ -48,6 +76,10 @@ export class HealthServer {
                         "Content-Type": "application/json",
                     });
                     res.end(JSON.stringify(status));
+                } else if (url.pathname === "/orders") {
+                    const data = this.ordersProvider();
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify(data));
                 } else {
                     res.writeHead(404);
                     res.end("Not Found");

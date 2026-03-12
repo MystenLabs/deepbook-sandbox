@@ -224,6 +224,7 @@ describe("deploy-all pipeline (localnet)", () => {
                 ...(marginPkg && { marginPackageId: marginPkg.packageId }),
             },
             SANDBOX_ROOT,
+            { quick: true },
         );
 
         // Indexer metrics should respond

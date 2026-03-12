@@ -1,13 +1,19 @@
 import type { SuiClient } from "@mysten/sui/client";
 import type { Keypair } from "@mysten/sui/cryptography";
 import type { MarketMakerConfig } from "./config";
-import type { DeploymentManifest } from "./types";
+import type { DeploymentManifest, PoolConfig } from "./types";
 import { BalanceManagerService } from "./balance-manager";
 import { OrderManager } from "./order-manager";
-import { calculateGridLevels } from "./grid-strategy";
+import { calculateGridLevels, buildGridParams } from "./grid-strategy";
 import { fetchOracleMidPrice } from "./price-feed";
-import { explorerObjectUrl, formatPrice, formatDeep } from "./types";
-import { HealthServer, type HealthStatus, type ReadinessStatus } from "./health";
+import { explorerObjectUrl, formatAmount, pairLabel } from "./types";
+import {
+    HealthServer,
+    type HealthStatus,
+    type ReadinessStatus,
+    type OrdersResponse,
+    type PoolOrdersResponse,
+} from "./health";
 import { MetricsServer, updateMetrics, getMetrics } from "./metrics";
 import log from "../utils/logger";
 
@@ -18,6 +24,15 @@ export interface MarketMakerContext {
     config: MarketMakerConfig;
 }
 
+/** Per-pool runtime state. */
+interface PoolState {
+    pool: PoolConfig;
+    label: string;
+    orderManager: OrderManager;
+    hasBaseBalance: boolean;
+    lastMidPrice: bigint | null;
+}
+
 export class MarketMaker {
     private client: SuiClient;
     private signer: Keypair;
@@ -25,15 +40,13 @@ export class MarketMaker {
     private manifest: DeploymentManifest;
 
     private balanceManagerId: string | null = null;
-    private orderManager: OrderManager | null = null;
+    private poolStates: PoolState[] = [];
     private healthServer: HealthServer | null = null;
     private metricsServer: MetricsServer | null = null;
 
     private isRunning = false;
     private isReady = false;
     private isShuttingDown = false;
-    private hasDeepBalance = false;
-    private lastMidPrice: bigint | null = null;
     private rebalanceTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(ctx: MarketMakerContext) {
@@ -51,11 +64,8 @@ export class MarketMaker {
         log.resetSteps();
 
         const packageId = this.manifest.packages.deepbook.packageId;
-        const poolId = this.manifest.pool.poolId;
-        const baseType = this.manifest.pool.baseCoin;
-        const quoteType = this.manifest.pool.quoteCoin;
 
-        // Create BalanceManager
+        // Create BalanceManager (shared across all pools)
         log.step("Creating BalanceManager...");
         const bmService = new BalanceManagerService(this.client, this.signer, packageId);
         const bmInfo = await bmService.createBalanceManager();
@@ -66,43 +76,87 @@ export class MarketMaker {
         // Wait for object to be available on localnet
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        // Deposit SUI for quote asset (for buying DEEP)
-        log.step("Depositing SUI...");
-        const suiDepositAmount = 10_000_000_000n; // 10 SUI
-        await bmService.deposit(this.balanceManagerId, "0x2::sui::SUI", suiDepositAmount);
-        log.success(`Deposited: ${Number(suiDepositAmount) / 1e9} SUI`);
+        // Collect unique coin types and their deposit amounts across all pools.
+        // If multiple pools use the same coin, take the larger deposit amount.
+        const deposits = new Map<string, { amount: bigint; decimals: number; label: string }>();
+        for (const pool of this.manifest.pools) {
+            const baseLabel = pool.baseCoinType.split("::").pop()?.toUpperCase() ?? "BASE";
+            const quoteLabel = pool.quoteCoinType.split("::").pop()?.toUpperCase() ?? "QUOTE";
 
-        // Wait for SUI deposit to propagate before touching another coin object
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+            const existing = deposits.get(pool.baseCoinType);
+            if (!existing || pool.baseDepositAmount > existing.amount) {
+                deposits.set(pool.baseCoinType, {
+                    amount: pool.baseDepositAmount,
+                    decimals: pool.baseDecimals,
+                    label: baseLabel,
+                });
+            }
 
-        // Deposit DEEP for base asset (for selling DEEP)
-        log.step("Depositing DEEP...");
-        const deepDepositAmount = 1_000_000_000n; // 1000 DEEP (6 decimals)
-        try {
-            await bmService.deposit(this.balanceManagerId, baseType, deepDepositAmount);
-            log.success(`Deposited: ${Number(deepDepositAmount) / 1e6} DEEP`);
-            this.hasDeepBalance = true;
-        } catch (e) {
-            log.warn("DEEP deposit failed (no DEEP tokens). Running bid-only mode.");
+            const existingQuote = deposits.get(pool.quoteCoinType);
+            if (!existingQuote || pool.quoteDepositAmount > existingQuote.amount) {
+                deposits.set(pool.quoteCoinType, {
+                    amount: pool.quoteDepositAmount,
+                    decimals: pool.quoteDecimals,
+                    label: quoteLabel,
+                });
+            }
         }
 
-        // Create OrderManager
-        this.orderManager = new OrderManager(
-            this.client,
-            this.signer,
-            packageId,
-            poolId,
-            baseType,
-            quoteType,
-            this.balanceManagerId,
-            this.manifest.network.type,
-        );
+        // Deposit each unique coin type
+        const depositedCoins = new Set<string>();
+        for (const [coinType, { amount, decimals, label }] of deposits) {
+            log.step(`Depositing ${label}...`);
+            try {
+                await bmService.deposit(this.balanceManagerId, coinType, amount);
+                log.success(`Deposited: ${formatAmount(amount, decimals)} ${label}`);
+                depositedCoins.add(coinType);
+            } catch (e) {
+                log.warn(
+                    `${label} deposit failed. Pools needing ${label} as base will run bid-only.`,
+                );
+            }
+            // Wait for deposit to propagate before next coin
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+
+        // Initialize per-pool state
+        for (const pool of this.manifest.pools) {
+            const label = pairLabel(pool.baseCoinType, pool.quoteCoinType);
+            log.step(`Setting up pool: ${label}`);
+
+            const orderManager = new OrderManager(
+                this.client,
+                this.signer,
+                packageId,
+                pool.poolId,
+                pool.baseCoinType,
+                pool.quoteCoinType,
+                this.balanceManagerId,
+                this.manifest.network.type,
+            );
+
+            const hasBaseBalance = depositedCoins.has(pool.baseCoinType);
+
+            this.poolStates.push({
+                pool,
+                label,
+                orderManager,
+                hasBaseBalance,
+                lastMidPrice: null,
+            });
+
+            if (!hasBaseBalance) {
+                log.warn(`${label}: no base balance — running bid-only mode`);
+            }
+            log.success(`${label} ready`);
+        }
 
         // Start health check server
         log.step("Starting health check server...");
         this.healthServer = new HealthServer(
             () => this.getHealthStatus(),
             () => this.getReadinessStatus(),
+            () => this.getOrdersData(),
         );
         await this.healthServer.start(this.config.healthCheckPort);
 
@@ -115,7 +169,7 @@ export class MarketMaker {
         await new Promise((resolve) => setTimeout(resolve, 3000));
 
         this.isReady = true;
-        log.success("Market Maker Initialized");
+        log.success(`Market Maker Initialized — ${this.poolStates.length} pool(s)`);
     }
 
     /**
@@ -136,6 +190,7 @@ export class MarketMaker {
         log.detail(`Rebalance interval: ${this.config.rebalanceIntervalMs}ms`);
         log.detail(`Levels per side: ${this.config.levelsPerSide}`);
         log.detail(`Spread: ${this.config.spreadBps} bps`);
+        log.detail(`Pools: ${this.poolStates.map((s) => s.label).join(", ")}`);
 
         // Run initial rebalance
         await this.rebalance();
@@ -159,13 +214,15 @@ export class MarketMaker {
             this.rebalanceTimer = null;
         }
 
-        // Cancel all outstanding orders
-        if (this.orderManager && this.orderManager.getActiveOrderCount() > 0) {
-            log.info("Canceling outstanding orders...");
-            try {
-                await this.orderManager.cancelAllOrders();
-            } catch (error) {
-                log.loopError("Error canceling orders", error);
+        // Cancel all outstanding orders on each pool
+        for (const state of this.poolStates) {
+            if (state.orderManager.getActiveOrderCount() > 0) {
+                log.info(`Canceling orders on ${state.label}...`);
+                try {
+                    await state.orderManager.cancelAllOrders();
+                } catch (error) {
+                    log.loopError(`Error canceling orders on ${state.label}`, error);
+                }
             }
         }
 
@@ -181,65 +238,96 @@ export class MarketMaker {
     }
 
     /**
-     * Execute a single rebalance cycle.
+     * Execute a single rebalance cycle across all pools (sequentially).
      */
     private async rebalance(): Promise<void> {
-        if (!this.orderManager || this.isShuttingDown) return;
+        if (this.isShuttingDown) return;
 
-        log.loop("Rebalancing...");
+        for (const state of this.poolStates) {
+            if (this.isShuttingDown) return;
+            await this.rebalancePool(state);
+        }
+    }
+
+    /**
+     * Rebalance a single pool.
+     */
+    private async rebalancePool(state: PoolState): Promise<void> {
+        const { pool, label, orderManager } = state;
+
+        log.loop(`Rebalancing ${label}...`);
 
         try {
             // Fetch mid price from Pyth oracle
             let midPrice: bigint | undefined;
-            const oraclePrice = await fetchOracleMidPrice(this.client, this.manifest);
-            if (oraclePrice) {
-                this.lastMidPrice = oraclePrice;
-                midPrice = oraclePrice;
-                log.loopDetail(`Mid price: ${Number(oraclePrice) / 1e9} DEEP/SUI (oracle)`);
-            } else if (this.lastMidPrice) {
-                midPrice = this.lastMidPrice;
-                log.loopDetail(
-                    `Mid price: ${Number(midPrice) / 1e9} DEEP/SUI (last known -- oracle unavailable)`,
+            const pythPackageId = this.manifest.packages.pyth?.packageId;
+            if (pythPackageId) {
+                const oraclePrice = await fetchOracleMidPrice(
+                    this.client,
+                    pool,
+                    pythPackageId,
+                    this.manifest.deployerAddress,
                 );
-            } else {
+                if (oraclePrice) {
+                    state.lastMidPrice = oraclePrice;
+                    midPrice = oraclePrice;
+                    log.loopDetail(
+                        `${label} mid: ${formatAmount(oraclePrice, pool.quoteDecimals)} (oracle)`,
+                    );
+                }
+            }
+
+            if (!midPrice && state.lastMidPrice) {
+                midPrice = state.lastMidPrice;
                 log.loopDetail(
-                    `Mid price: ${Number(this.config.fallbackMidPrice) / 1e9} DEEP/SUI (fallback -- oracle unavailable)`,
+                    `${label} mid: ${formatAmount(midPrice, pool.quoteDecimals)} (last known)`,
+                );
+            } else if (!midPrice) {
+                log.loopDetail(
+                    `${label} mid: ${formatAmount(pool.fallbackMidPrice, pool.quoteDecimals)} (fallback)`,
                 );
             }
 
             // Cancel all existing orders
-            if (this.orderManager.getActiveOrderCount() > 0) {
-                await this.orderManager.cancelAllOrders();
+            if (orderManager.getActiveOrderCount() > 0) {
+                await orderManager.cancelAllOrders();
             }
 
             // Calculate new grid levels
-            let levels = calculateGridLevels(this.config, midPrice);
-            // Filter out asks if no DEEP balance
-            if (!this.hasDeepBalance) {
+            const gridParams = buildGridParams(this.config, pool);
+            let levels = calculateGridLevels(gridParams, midPrice);
+
+            // Filter out asks if no base balance
+            if (!state.hasBaseBalance) {
                 levels = levels.filter((l) => l.isBid);
             }
+
             const bids = levels.filter((l) => l.isBid);
             const asks = levels.filter((l) => !l.isBid);
-            log.loopDetail(`Grid: ${bids.length} bids, ${asks.length} asks`);
+            log.loopDetail(`${label} grid: ${bids.length} bids, ${asks.length} asks`);
             for (const level of asks) {
                 log.loopDetail(
-                    `  ASK  ${formatPrice(level.price)} DEEP/SUI  ${formatDeep(level.quantity)} DEEP`,
+                    `  ASK  ${formatAmount(level.price, pool.quoteDecimals)}  ${formatAmount(level.quantity, pool.baseDecimals)}`,
                 );
             }
             for (const level of bids) {
                 log.loopDetail(
-                    `  BID  ${formatPrice(level.price)} DEEP/SUI  ${formatDeep(level.quantity)} DEEP`,
+                    `  BID  ${formatAmount(level.price, pool.quoteDecimals)}  ${formatAmount(level.quantity, pool.baseDecimals)}`,
                 );
             }
 
             // Place new orders
-            await this.orderManager.placeOrders(levels);
-            log.loopSuccess(`Placed ${bids.length} bids + ${asks.length} asks`);
+            await orderManager.placeOrders(levels);
+            log.loopSuccess(`${label}: ${bids.length} bids + ${asks.length} asks`);
 
-            // Update metrics
-            updateMetrics({ rebalance: true });
+            // Update metrics with total active orders across all pools
+            const totalActiveOrders = this.poolStates.reduce(
+                (sum, s) => sum + s.orderManager.getActiveOrderCount(),
+                0,
+            );
+            updateMetrics({ rebalance: true, activeOrders: totalActiveOrders });
         } catch (error) {
-            log.loopError("Rebalance error", error);
+            log.loopError(`${label} rebalance error`, error);
             updateMetrics({ error: true });
         }
     }
@@ -266,6 +354,7 @@ export class MarketMaker {
             timestamp: new Date().toISOString(),
             uptime: this.healthServer?.getUptime() || 0,
             details: {
+                pools: this.poolStates.map((s) => s.label),
                 activeOrders: metrics.activeOrders,
                 totalOrdersPlaced: metrics.ordersPlacedTotal,
                 totalRebalances: metrics.rebalancesTotal,
@@ -283,7 +372,38 @@ export class MarketMaker {
             timestamp: new Date().toISOString(),
             checks: {
                 balanceManager: this.balanceManagerId !== null,
-                pool: this.orderManager !== null,
+                pools: this.poolStates.length,
+            },
+        };
+    }
+
+    /**
+     * Get current orders and config for the dashboard.
+     */
+    private getOrdersData(): OrdersResponse {
+        const pools: PoolOrdersResponse[] = this.poolStates.map((state) => {
+            const activeOrders = state.orderManager.getActiveOrders();
+            return {
+                pair: state.label,
+                poolId: state.pool.poolId,
+                midPrice: state.lastMidPrice
+                    ? Number(state.lastMidPrice) / 10 ** state.pool.quoteDecimals
+                    : null,
+                orders: activeOrders.map((o) => ({
+                    orderId: o.orderId,
+                    price: Number(o.price) / 10 ** state.pool.quoteDecimals,
+                    quantity: Number(o.quantity) / 10 ** state.pool.baseDecimals,
+                    isBid: o.isBid,
+                })),
+            };
+        });
+
+        return {
+            pools,
+            config: {
+                spreadBps: this.config.spreadBps,
+                levelsPerSide: this.config.levelsPerSide,
+                levelSpacingBps: this.config.levelSpacingBps,
             },
         };
     }

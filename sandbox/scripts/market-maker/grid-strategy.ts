@@ -1,5 +1,35 @@
 import type { MarketMakerConfig } from "./config";
-import type { GridLevel } from "./types";
+import type { GridLevel, PoolConfig } from "./types";
+
+/**
+ * Parameters needed for grid calculation, combining shared config with per-pool values.
+ */
+export interface GridParams {
+    spreadBps: number;
+    levelsPerSide: number;
+    levelSpacingBps: number;
+    tickSize: bigint;
+    lotSize: bigint;
+    minSize: bigint;
+    orderSizeBase: bigint;
+    fallbackMidPrice: bigint;
+}
+
+/**
+ * Build GridParams by merging shared config with per-pool config.
+ */
+export function buildGridParams(config: MarketMakerConfig, pool: PoolConfig): GridParams {
+    return {
+        spreadBps: config.spreadBps,
+        levelsPerSide: config.levelsPerSide,
+        levelSpacingBps: config.levelSpacingBps,
+        tickSize: pool.tickSize,
+        lotSize: pool.lotSize,
+        minSize: pool.minSize,
+        orderSizeBase: pool.orderSizeBase,
+        fallbackMidPrice: pool.fallbackMidPrice,
+    };
+}
 
 /**
  * Calculate grid levels around the mid price.
@@ -10,13 +40,13 @@ import type { GridLevel } from "./types";
  * - Each level is spaced by levelSpacingBps from the previous
  * - The closest bid/ask are spreadBps/2 from mid price
  *
- * @param config - Market maker configuration
- * @param midPrice - Mid price from oracle. Falls back to config.fallbackMidPrice.
+ * @param params - Grid parameters (shared config + per-pool values)
+ * @param midPrice - Mid price from oracle. Falls back to params.fallbackMidPrice.
  */
-export function calculateGridLevels(config: MarketMakerConfig, midPrice?: bigint): GridLevel[] {
+export function calculateGridLevels(params: GridParams, midPrice?: bigint): GridLevel[] {
     const { spreadBps, levelsPerSide, levelSpacingBps, orderSizeBase, tickSize, lotSize, minSize } =
-        config;
-    const effectiveMidPrice = midPrice ?? config.fallbackMidPrice;
+        params;
+    const effectiveMidPrice = midPrice ?? params.fallbackMidPrice;
 
     const levels: GridLevel[] = [];
 

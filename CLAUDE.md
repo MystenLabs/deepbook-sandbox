@@ -152,7 +152,7 @@ bunx prettier-move -c *.move --write        # Format Move files
 ```bash
 cd sandbox
 
-# Deploy DeepBook to localnet (starts containers, deploys Move packages, creates DEEP/SUI pool, starts MM)
+# Deploy DeepBook to localnet (starts containers, deploys packages, creates pools, starts MM)
 pnpm deploy-all
 
 # Full teardown (stops containers, removes volumes, cleans generated .env keys)
