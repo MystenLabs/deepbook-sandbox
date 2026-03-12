@@ -20,6 +20,8 @@ concurrency:
 
 env:
   SUI_TOOLS_IMAGE: mysten/sui-tools:compat
+  INDEXER_IMAGE: mysten/deepbookv3-sandbox-indexer:794efb1c54ee5cc4f0f367233a4e70818aa0defb
+  SERVER_IMAGE: mysten/deepbookv3-server:794efb1c54ee5cc4f0f367233a4e70818aa0defb
 
 jobs:
   integration:
@@ -69,29 +71,19 @@ jobs:
 
       - name: Pre-build Docker images
         run: |
-          # Default amd64 image refs (CI runs on x86_64; docker-compose.yml defaults to arm64)
-          : "${MARKET_MAKER_IMAGE:=mysten/deepbook-sandbox-market-maker:89def920ad19a1a1a040b3df66cdd0d87e5300c2}"
-          : "${INDEXER_IMAGE:=mysten/deepbookv3-sandbox-indexer:794efb1c54ee5cc4f0f367233a4e70818aa0defb}"
-          : "${SERVER_IMAGE:=mysten/deepbookv3-server:794efb1c54ee5cc4f0f367233a4e70818aa0defb}"
-          : "${FAUCET_IMAGE:=mysten/deepbook-sandbox-faucet:89def920ad19a1a1a040b3df66cdd0d87e5300c2}"
-          : "${ORACLE_SERVICE_IMAGE:=mysten/deepbook-sandbox-oracle-service:89def920ad19a1a1a040b3df66cdd0d87e5300c2}"
-
           cat > .env.test <<EOF
           PRIVATE_KEY=dummy
           SUI_TOOLS_IMAGE=${SUI_TOOLS_IMAGE}
           FORCE_REGENESIS=true
-          MARKET_MAKER_IMAGE=${MARKET_MAKER_IMAGE}
           INDEXER_IMAGE=${INDEXER_IMAGE}
           SERVER_IMAGE=${SERVER_IMAGE}
-          FAUCET_IMAGE=${FAUCET_IMAGE}
-          ORACLE_SERVICE_IMAGE=${ORACLE_SERVICE_IMAGE}
           EOF
           sed -i 's/^ *//' .env.test
 
           # Pull pre-built images from Docker Hub
           docker pull postgres:16-alpine
-          docker pull "${INDEXER_IMAGE}"
-          docker pull "${SERVER_IMAGE}"
+          docker pull "$INDEXER_IMAGE"
+          docker pull "$SERVER_IMAGE"
 
           # Build Node.js services locally (fast, no caching needed)
           docker compose --env-file .env.test --profile localnet build market-maker oracle-service deepbook-faucet
