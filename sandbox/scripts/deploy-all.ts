@@ -205,6 +205,14 @@ async function main() {
         const { pools } = await poolCreator.createDeepbookPools(deployedPackages);
         const marginResult = await poolCreator.createMarginPools(deployedPackages, pools);
 
+        log.spin("Seeding margin pools with initial liquidity...");
+        const seedResult = await poolCreator.seedMarginPools(
+            deployedPackages,
+            marginResult.marginPools,
+            marginResult.registryId,
+        );
+        log.success(`Margin pools seeded (SupplierCap: ${seedResult.supplierCapId})`);
+
         // Write deployment manifest (reference-only, not read by services)
         const manifest = {
             network: {
@@ -236,6 +244,7 @@ async function main() {
                 SUI_USDC: pools.SUI_USDC,
             },
             marginPools: marginResult.marginPools,
+            supplierCapId: seedResult.supplierCapId,
             deploymentTime: new Date().toISOString(),
             deployerAddress: signerAddress,
         };
