@@ -303,7 +303,11 @@ export class MoveDeployer {
             try {
                 execFileSync(
                     "docker",
-                    ["cp", `${CONTAINER_NAME}:${CONTAINER_WORKSPACE}/Pub.localnet.toml`, sandboxRoot],
+                    [
+                        "cp",
+                        `${CONTAINER_NAME}:${CONTAINER_WORKSPACE}/Pub.localnet.toml`,
+                        sandboxRoot,
+                    ],
                     { stdio: "pipe" },
                 );
                 log.success("Copied Pub.localnet.toml from container");
