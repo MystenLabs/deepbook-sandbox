@@ -197,7 +197,7 @@ export class MoveDeployer {
                 "--build-env",
                 "localnet",
                 "--pubfile-path",
-                this.sandboxRoot + "/Pub.localnet.toml",
+                `${CONTAINER_WORKSPACE}/Pub.localnet.toml`,
                 containerPkgPath,
             ];
             command = "docker";
@@ -303,7 +303,7 @@ export class MoveDeployer {
             try {
                 execFileSync(
                     "docker",
-                    ["cp", `${CONTAINER_NAME}:/sui/Pub.localnet.toml`, sandboxRoot],
+                    ["cp", `${CONTAINER_NAME}:${CONTAINER_WORKSPACE}/Pub.localnet.toml`, sandboxRoot],
                     { stdio: "pipe" },
                 );
                 log.success("Copied Pub.localnet.toml from container");
