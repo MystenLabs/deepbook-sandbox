@@ -45,7 +45,7 @@ const RPC_URL = "http://127.0.0.1:9000";
 // Docker cleanup helper
 // ---------------------------------------------------------------------------
 
-function dockerDown(cwd: string): void {
+function cleanupLocalnet(cwd: string): void {
     const envFileArgs = process.env.SANDBOX_ENV_FILE
         ? ["--env-file", process.env.SANDBOX_ENV_FILE]
         : [];
@@ -54,6 +54,17 @@ function dockerDown(cwd: string): void {
         ["compose", ...envFileArgs, "--profile", "localnet", "down", "-v", "--remove-orphans"],
         { cwd, encoding: "utf-8", stdio: "inherit" },
     );
+
+    // Remove publish manifests left behind by container-side `sui client test-publish`.
+    // If not cleaned up they can break subsequent test runs.
+    const fsSync = require("fs");
+    for (const name of ["pub.localnet.toml", "Pub.localnet.toml"]) {
+        try {
+            fsSync.unlinkSync(path.join(cwd, name));
+        } catch {
+            /* may not exist */
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -92,10 +103,10 @@ describe("deploy-all E2E (subprocess)", () => {
         await fs.writeFile(ENV_PATH, envContent, "utf-8");
 
         // ── Clean slate: tear down any leftover containers ───────────
-        dockerDown(SANDBOX_ROOT);
+        cleanupLocalnet(SANDBOX_ROOT);
 
         // ── Register exit handler to clean up on crash/Ctrl+C ────────
-        exitHandler = () => dockerDown(SANDBOX_ROOT);
+        exitHandler = () => cleanupLocalnet(SANDBOX_ROOT);
         process.on("exit", exitHandler);
     }, 300_000);
 
@@ -364,7 +375,7 @@ describe("deploy-all E2E (subprocess)", () => {
     // ----------------------------------------------------------------
     afterAll(async () => {
         // Tear down containers
-        dockerDown(SANDBOX_ROOT);
+        cleanupLocalnet(SANDBOX_ROOT);
 
         // Remove .env.test and reset routing
         try {
