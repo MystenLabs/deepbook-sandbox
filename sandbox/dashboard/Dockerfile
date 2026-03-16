@@ -2,6 +2,10 @@
 FROM node:22-alpine AS builder
 RUN corepack enable
 
+# Accept build arg for API token
+ARG VITE_CONTROL_API_TOKEN
+ENV VITE_CONTROL_API_TOKEN=$VITE_CONTROL_API_TOKEN
+
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install
