@@ -52,6 +52,12 @@ async function main() {
                 // Replaced in Phase 1 with the container-generated key.
                 defaults.PRIVATE_KEY = Ed25519Keypair.generate().getSecretKey();
             }
+            if (!process.env.CONTROL_API_TOKEN) {
+                // Generate random token for control API authentication
+                const { randomBytes } = await import("crypto");
+                const randomStr = randomBytes(16).toString("hex").substring(0, 26);
+                defaults.CONTROL_API_TOKEN = `deepbook-${randomStr}`;
+            }
             if (Object.keys(defaults).length > 0) {
                 updateEnvFile(sandboxRoot, defaults);
                 Object.assign(process.env, defaults);
