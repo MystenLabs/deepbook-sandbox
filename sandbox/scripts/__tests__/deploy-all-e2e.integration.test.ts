@@ -350,11 +350,11 @@ describe("deploy-all E2E (subprocess)", () => {
             ["compose", ...envFileArgs, "--profile", "localnet", "config", "--services"],
             { cwd: SANDBOX_ROOT, encoding: "utf-8" },
         );
-        // Exclude dashboard — not started by deploy-all in test mode
+        // Exclude dashboard and control-api — not started by deploy-all in test mode
         const services = configResult.stdout
             .trim()
             .split("\n")
-            .filter((s) => s && s !== "dashboard")
+            .filter((s) => s && s !== "dashboard" && s !== "control-api")
             .sort();
         expect(services.length, "docker compose returned no services").toBeGreaterThan(0);
 

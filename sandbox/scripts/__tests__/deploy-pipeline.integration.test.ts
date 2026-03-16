@@ -451,11 +451,11 @@ describe("deploy-all pipeline (localnet)", () => {
             ["compose", ...envFileArgs, "--profile", "localnet", "config", "--services"],
             { cwd: SANDBOX_ROOT, encoding: "utf-8" },
         );
-        // Exclude dashboard — it's not started by the test pipeline
+        // Exclude dashboard and control-api — they're not started by the test pipeline
         const services = configResult.stdout
             .trim()
             .split("\n")
-            .filter((s) => s && s !== "dashboard")
+            .filter((s) => s && s !== "dashboard" && s !== "control-api")
             .sort();
         expect(services.length, "docker compose returned no services").toBeGreaterThan(0);
 
