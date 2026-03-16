@@ -288,7 +288,7 @@ services:
     build:
       context: ./dashboard
       args:
-        VITE_CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:?Set CONTROL_API_TOKEN in .env}
+        VITE_CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:-placeholder-token-will-be-generated}
     image: ${DASHBOARD_IMAGE:-}
     container_name: deepbook-dashboard
     ports:
@@ -356,7 +356,7 @@ services:
     image: ${CONTROL_API_IMAGE:-mysten/deepbook-sandbox-control-api:latest}
     container_name: control-api
     environment:
-      CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:?Set CONTROL_API_TOKEN in .env}
+      CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:-placeholder-token-will-be-generated}
       PORT: "9011"
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-sandbox}
     ports:
