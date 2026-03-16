@@ -13,7 +13,7 @@ export interface ServiceListResponse {
 export interface ServiceActionResponse {
     success: boolean;
     message: string;
-    service: string;
+    service?: string;
 }
 
 export interface LogsResponse {

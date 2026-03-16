@@ -175,6 +175,35 @@ export function createRoutes(config: Config) {
         }
     });
 
+    // Restart all services
+    app.post("/services/restart-all", async (c) => {
+        try {
+            await docker.restartAllServices(config.COMPOSE_PROJECT_NAME);
+            logAudit({
+                action: "RESTART_ALL_SERVICES",
+                success: true,
+            });
+
+            const response: ServiceActionResponse = {
+                success: true,
+                message: "All services restarted successfully",
+            };
+            return c.json(response);
+        } catch (error) {
+            logAudit({
+                action: "RESTART_ALL_SERVICES",
+                success: false,
+                message: error instanceof Error ? error.message : "Unknown error",
+            });
+            return c.json(
+                {
+                    error: error instanceof Error ? error.message : "Failed to restart all services",
+                },
+                500,
+            );
+        }
+    });
+
     // Reset environment
     app.post("/reset", async (c) => {
         try {

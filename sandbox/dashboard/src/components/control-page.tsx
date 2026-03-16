@@ -95,6 +95,14 @@ const controlApi = {
         if (!response.ok) throw new Error("Failed to reset environment");
     },
 
+    async restartAllServices(): Promise<void> {
+        const response = await fetch("/api/control/services/restart-all", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${getApiToken()}` },
+        });
+        if (!response.ok) throw new Error("Failed to restart all services");
+    },
+
     async fetchConfig(): Promise<ConfigResponse> {
         const response = await fetch("/api/control/config", {
             headers: { Authorization: `Bearer ${getApiToken()}` },
@@ -322,6 +330,8 @@ export function ControlPage() {
     const [showConfigEditor, setShowConfigEditor] = useState(false);
     const [resetError, setResetError] = useState<string | null>(null);
     const [configError, setConfigError] = useState<string | null>(null);
+    const [restartAllSuccess, setRestartAllSuccess] = useState<string | null>(null);
+    const [restartAllError, setRestartAllError] = useState<string | null>(null);
 
     const queryClient = useQueryClient();
 
@@ -363,6 +373,20 @@ export function ControlPage() {
         },
     });
 
+    const restartAllMutation = useMutation({
+        mutationFn: controlApi.restartAllServices,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["services"] });
+            setRestartAllSuccess("All services restarted successfully");
+            setRestartAllError(null);
+            setTimeout(() => setRestartAllSuccess(null), 3000);
+        },
+        onError: (error: Error) => {
+            setRestartAllError(`Failed to restart all services: ${error.message}`);
+            setRestartAllSuccess(null);
+        },
+    });
+
     if (error) {
         return (
             <Alert variant="destructive">
@@ -384,6 +408,14 @@ export function ControlPage() {
                     </p>
                 </div>
                 <div className="flex gap-2">
+                    <Button
+                        variant="secondary"
+                        onClick={() => restartAllMutation.mutate()}
+                        disabled={restartAllMutation.isPending}
+                    >
+                        <RotateCw className="mr-2 h-4 w-4" />
+                        {restartAllMutation.isPending ? "Restarting..." : "Restart All Services"}
+                    </Button>
                     <Button variant="outline" onClick={() => setShowConfigEditor(true)}>
                         <Save className="mr-2 h-4 w-4" /> Edit Config
                     </Button>
@@ -395,6 +427,22 @@ export function ControlPage() {
                     </Button>
                 </div>
             </div>
+
+            {restartAllSuccess && (
+                <Alert className="bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
+                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    <AlertDescription className="text-green-800 dark:text-green-200">
+                        {restartAllSuccess}
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {restartAllError && (
+                <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{restartAllError}</AlertDescription>
+                </Alert>
+            )}
 
             {isLoading ? (
                 <div>Loading services...</div>

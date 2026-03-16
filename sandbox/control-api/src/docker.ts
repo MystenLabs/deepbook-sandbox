@@ -108,6 +108,26 @@ export async function getServiceLogs(
     }
 }
 
+export async function restartAllServices(projectName: string): Promise<void> {
+    try {
+        // Get list of running services first
+        const services = await listServices(projectName);
+        const serviceNames = services
+            .filter(s => s.name !== "control-api" && s.name !== "dashboard")
+            .map(s => s.name);
+
+        if (serviceNames.length === 0) {
+            return;
+        }
+
+        // Restart all services at once
+        await execAsync(`docker-compose -p ${projectName} restart ${serviceNames.join(" ")}`);
+    } catch (error) {
+        console.error("Failed to restart all services:", error);
+        throw new Error("Failed to restart all services");
+    }
+}
+
 export async function resetEnvironment(projectName: string): Promise<void> {
     try {
         // Stop all services
