@@ -44,9 +44,10 @@ export async function listServices(projectName: string): Promise<ServiceInfo[]> 
                     name: data.Service,
                     status: data.State === "running" ? "running" : "stopped",
                     uptime: data.Status || undefined,
-                    ports: data.Publishers?.map((p: { PublishedPort: number }) =>
-                        p.PublishedPort?.toString()
-                    ).filter(Boolean) || [],
+                    ports:
+                        data.Publishers?.map((p: { PublishedPort: number }) =>
+                            p.PublishedPort?.toString(),
+                        ).filter(Boolean) || [],
                     image: data.Image || undefined,
                 });
             } catch (parseErr) {
@@ -113,8 +114,8 @@ export async function restartAllServices(projectName: string): Promise<void> {
         // Get list of running services first
         const services = await listServices(projectName);
         const serviceNames = services
-            .filter(s => s.name !== "control-api" && s.name !== "dashboard")
-            .map(s => s.name);
+            .filter((s) => s.name !== "control-api" && s.name !== "dashboard")
+            .map((s) => s.name);
 
         if (serviceNames.length === 0) {
             return;

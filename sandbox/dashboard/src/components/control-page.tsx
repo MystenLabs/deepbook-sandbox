@@ -4,7 +4,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, CheckCircle2, Circle, Play, Square, RotateCw, Trash2, Save, Eye, EyeOff, Download } from "lucide-react";
+import {
+    AlertCircle,
+    CheckCircle2,
+    Circle,
+    Play,
+    Square,
+    RotateCw,
+    Trash2,
+    Save,
+    Eye,
+    EyeOff,
+    Download,
+} from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
     Dialog,
@@ -184,11 +196,11 @@ function ServiceCard({ service }: { service: ServiceInfo }) {
     const downloadLogs = () => {
         if (!logsData?.logs) return;
 
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
         const filename = `${service.name}-logs-${timestamp}.txt`;
-        const blob = new Blob([logsData.logs], { type: 'text/plain' });
+        const blob = new Blob([logsData.logs], { type: "text/plain" });
         const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
+        const link = document.createElement("a");
         link.href = url;
         link.download = filename;
         document.body.appendChild(link);
@@ -273,15 +285,15 @@ function ServiceCard({ service }: { service: ServiceInfo }) {
                     >
                         <RotateCw className="mr-1 h-3 w-3" /> Restart
                     </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowLogs(!showLogs)}
-                    >
+                    <Button size="sm" variant="outline" onClick={() => setShowLogs(!showLogs)}>
                         {showLogs ? (
-                            <><EyeOff className="mr-1 h-3 w-3" /> Hide Logs</>
+                            <>
+                                <EyeOff className="mr-1 h-3 w-3" /> Hide Logs
+                            </>
                         ) : (
-                            <><Eye className="mr-1 h-3 w-3" /> View Logs</>
+                            <>
+                                <Eye className="mr-1 h-3 w-3" /> View Logs
+                            </>
                         )}
                     </Button>
                 </div>
@@ -294,7 +306,9 @@ function ServiceCard({ service }: { service: ServiceInfo }) {
                                 id={`lines-${service.name}`}
                                 type="number"
                                 value={logLines}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLogLines(parseInt(e.target.value) || 100)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                    setLogLines(parseInt(e.target.value) || 100)
+                                }
                                 className="w-24"
                                 min={10}
                                 max={1000}
@@ -335,7 +349,11 @@ export function ControlPage() {
 
     const queryClient = useQueryClient();
 
-    const { data: servicesData, isLoading, error } = useQuery({
+    const {
+        data: servicesData,
+        isLoading,
+        error,
+    } = useQuery({
         queryKey: ["services"],
         queryFn: controlApi.fetchServices,
         refetchInterval: 10000,
@@ -419,10 +437,7 @@ export function ControlPage() {
                     <Button variant="outline" onClick={() => setShowConfigEditor(true)}>
                         <Save className="mr-2 h-4 w-4" /> Edit Config
                     </Button>
-                    <Button
-                        variant="destructive"
-                        onClick={() => setShowResetDialog(true)}
-                    >
+                    <Button variant="destructive" onClick={() => setShowResetDialog(true)}>
                         <Trash2 className="mr-2 h-4 w-4" /> Reset Environment
                     </Button>
                 </div>
@@ -460,13 +475,15 @@ export function ControlPage() {
                     <DialogHeader>
                         <DialogTitle>Reset Environment</DialogTitle>
                         <DialogDescription>
-                            This will stop all services and remove all volumes. All data will be lost.
+                            This will stop all services and remove all volumes. All data will be
+                            lost.
                         </DialogDescription>
                     </DialogHeader>
                     <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
-                            This action cannot be undone. All deployment data and volumes will be permanently deleted.
+                            This action cannot be undone. All deployment data and volumes will be
+                            permanently deleted.
                         </AlertDescription>
                     </Alert>
                     {resetError && (
@@ -476,10 +493,13 @@ export function ControlPage() {
                         </Alert>
                     )}
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => {
-                            setShowResetDialog(false);
-                            setResetError(null);
-                        }}>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowResetDialog(false);
+                                setResetError(null);
+                            }}
+                        >
                             Cancel
                         </Button>
                         <Button
@@ -499,7 +519,8 @@ export function ControlPage() {
                     <DialogHeader>
                         <DialogTitle>Configuration Editor</DialogTitle>
                         <DialogDescription>
-                            Edit the .env configuration file. Changes require service restart to take effect.
+                            Edit the .env configuration file. Changes require service restart to
+                            take effect.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
@@ -511,21 +532,28 @@ export function ControlPage() {
                         )}
                         <Textarea
                             value={configContent || configData?.content || ""}
-                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setConfigContent(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                                setConfigContent(e.target.value)
+                            }
                             className="font-mono text-sm"
                             rows={20}
                         />
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => {
-                            setShowConfigEditor(false);
-                            setConfigError(null);
-                        }}>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowConfigEditor(false);
+                                setConfigError(null);
+                            }}
+                        >
                             Cancel
                         </Button>
                         <Button
                             onClick={() =>
-                                updateConfigMutation.mutate(configContent || configData?.content || "")
+                                updateConfigMutation.mutate(
+                                    configContent || configData?.content || "",
+                                )
                             }
                             disabled={updateConfigMutation.isPending}
                         >

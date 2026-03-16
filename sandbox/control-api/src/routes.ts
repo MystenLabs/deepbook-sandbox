@@ -151,7 +151,11 @@ export function createRoutes(config: Config) {
         }
 
         try {
-            const logs = await docker.getServiceLogs(config.COMPOSE_PROJECT_NAME, serviceName, lines);
+            const logs = await docker.getServiceLogs(
+                config.COMPOSE_PROJECT_NAME,
+                serviceName,
+                lines,
+            );
 
             const response: LogsResponse = {
                 logs,
@@ -197,7 +201,8 @@ export function createRoutes(config: Config) {
             });
             return c.json(
                 {
-                    error: error instanceof Error ? error.message : "Failed to restart all services",
+                    error:
+                        error instanceof Error ? error.message : "Failed to restart all services",
                 },
                 500,
             );
