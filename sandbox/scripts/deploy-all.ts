@@ -52,6 +52,9 @@ async function main() {
                 // Replaced in Phase 1 with the container-generated key.
                 defaults.PRIVATE_KEY = Ed25519Keypair.generate().getSecretKey();
             }
+            if (!process.env.FORCE_REGENESIS) {
+                defaults.FORCE_REGENESIS = "true";
+            }
             if (Object.keys(defaults).length > 0) {
                 updateEnvFile(sandboxRoot, defaults);
                 Object.assign(process.env, defaults);
