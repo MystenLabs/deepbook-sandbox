@@ -6,20 +6,16 @@ A one-command local development environment for DeepBook V3 — the decentralize
 
 ## 1. What Is This?
 
-DeepBook V3 is a decentralized central limit order book (CLOB) built on the Sui blockchain. Think of it as a stock exchange smart contract: buyers and sellers post limit orders, and the contract matches them automatically. Building against it normally requires deploying to a shared testnet, waiting for transactions, and competing with other developers for network resources.
-
-DeepBook Sandbox eliminates that friction. One command starts a private Sui blockchain on your machine, deploys the entire DeepBook protocol (smart contracts, token, oracle feeds, margin trading), creates liquidity pools pre-filled with a market maker, and hands you a working dashboard. You get a complete exchange in Docker containers that resets cleanly every time.
-
-After following this guide you'll have a running local DeepBook instance with live order books, a faucet for free test tokens, real-time price feeds, and a React dashboard to monitor everything.
+A one-command local sandbox for DeepBook V3. It spins up a private Sui localnet, deploys the full DeepBook protocol (token, order book, margin, oracle, USDC), seeds pools with a market maker, and launches a monitoring dashboard — all in Docker containers that reset cleanly every time.
 
 ## 2. How It All Fits Together
 
 ```
                             +----------------------------+
                             |     Web Dashboard          |
-                            |  (React, localhost:5173)   |
+                            |  (nginx, localhost:5173)   |
                             +------------+---------------+
-                                         | HTTP (Vite proxy)
+                                         | HTTP (nginx proxy)
        +---------------+-----------+-----+--------+-----------------+
        |               |           |              |                 |
 +------v------+ +------v-----+ +--v--------+ +---v----------+ +---v--------------+
@@ -46,11 +42,11 @@ After following this guide you'll have a running local DeepBook instance with li
             +--------+
 ```
 
-The **Sui Localnet** container runs a full Sui blockchain node. The **deploy-all** script publishes all Move smart contracts (token, deepbook, margin, pyth, usdc) to this chain, then starts the supporting services. The **Oracle Service** pushes real Pyth Network prices for SUI and DEEP every 10 seconds. The **Market Maker** maintains a grid of buy/sell orders so the pools have liquidity. The **Indexer** reads blockchain checkpoints and writes events into **PostgreSQL**, and the **DeepBook Server** exposes that data as a REST API. The **Faucet** distributes both SUI (proxied to the native Sui faucet) and DEEP tokens (signed transfers from the deployer).
+The **Sui Localnet** container runs a Sui local network. The **deploy-all** script publishes all Move smart contracts (token, deepbook, margin, pyth, usdc) to this chain, then starts the supporting services. The **Oracle Service** pushes real Pyth Network prices for SUI and DEEP every 10 seconds. The **Market Maker** maintains a grid of buy/sell orders so the pools have liquidity. The **Indexer** reads blockchain checkpoints and writes events into **PostgreSQL**, and the **DeepBook Server** exposes that data as a REST API. The **Faucet** distributes both SUI (proxied to the native Sui faucet) and DEEP tokens (signed transfers from the deployer).
 
 ## 3. Prerequisites
 
-- **Docker Desktop** — install from [docker.com](https://docs.docker.com/get-docker/) (includes `docker compose`). Make sure the Docker daemon is running (whale icon in your menu bar)
+- **Docker Desktop** — install from [docker.com](https://docs.docker.com/get-docker/) (includes `docker compose`). Allocate at least **8 GB of memory** in Docker Desktop settings. Make sure the Docker daemon is running (whale icon in your menu bar)
 - **Node.js 18+** — `brew install node` (or download from [nodejs.org](https://nodejs.org/))
 - **pnpm** — `npm install -g pnpm`
 - **Sui CLI** — `brew install sui` (version 1.63.2-1.64.1 recommended; run `sui --version` to verify)
@@ -66,7 +62,14 @@ cd deepbook-sandbox/sandbox
 # Install dependencies
 pnpm install
 
-# Deploy everything (auto-detects your CPU architecture, no .env setup needed)
+# (Optional) Set up your environment
+# Copy the example env file and configure your private key and Sui tools image
+# for your CPU architecture. deploy-all auto-detects these if left unset,
+# but setting PRIVATE_KEY lets you reuse the same deployer address across runs.
+cp .env.example .env
+# Edit .env: set PRIVATE_KEY and verify SUI_TOOLS_IMAGE matches your arch
+
+# Deploy everything (auto-detects CPU architecture if .env values are not set)
 pnpm deploy-all
 ```
 
@@ -78,6 +81,7 @@ When you see `DeepBook Sandbox Ready!`, everything is running:
 
 | Endpoint                     | URL                          |
 | ---------------------------- | ---------------------------- |
+| Dashboard                    | http://localhost:5173        |
 | Sui RPC                      | http://localhost:9000        |
 | Sui Faucet (native)          | http://localhost:9123        |
 | DeepBook Faucet (SUI + DEEP) | http://localhost:9009        |
@@ -97,16 +101,6 @@ curl http://localhost:3001/health
 # Check all containers are healthy
 docker compose ps
 ```
-
-**Launch the dashboard** (optional):
-
-```bash
-cd sandbox/dashboard
-pnpm install
-pnpm dev
-```
-
-Open http://localhost:5173 to monitor service health, view the order book, request faucet tokens, and browse deployment addresses.
 
 **Tear it all down** when you're done:
 
@@ -135,22 +129,16 @@ When you run `pnpm deploy-all`, here's the full sequence:
 
 ## 6. The Dashboard
 
-The web dashboard is a separate React app (not part of the Docker stack):
+The web dashboard is a React app served by an nginx container as part of the Docker stack. It starts automatically with `pnpm deploy-all` and is available at http://localhost:5173.
 
-```bash
-cd sandbox/dashboard
-pnpm install
-pnpm dev
-```
-
-Open http://localhost:5173. The dashboard has four pages:
+The dashboard has four pages:
 
 - **Health** — Real-time status of all services (Sui node, indexer, oracle, market maker, faucet), auto-refreshes every 10 seconds
 - **Market Maker** — Order book bar chart, active bid/ask levels, and grid configuration
 - **Faucet** — Connect a Sui wallet and request SUI or DEEP tokens
 - **Deployment** — Browse deployed package IDs, pool addresses, and Pyth oracle objects with explorer links
 
-The Vite dev server proxies API requests to the sandbox services:
+Nginx proxies API requests to the sandbox services:
 
 | Path            | Target           | Service          |
 | --------------- | ---------------- | ---------------- |
@@ -410,15 +398,16 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 
 ## Appendix C: Docker Services Reference
 
-| Service            | Container Name          | Profile              | Ports (host:container) | Description                                     |
-| ------------------ | ----------------------- | -------------------- | ---------------------- | ----------------------------------------------- |
-| `postgres`         | `deepbook-postgres`     | (always)             | 5432:5432              | PostgreSQL 16 database for the indexer          |
-| `sui-localnet`     | `sui-localnet`          | `localnet`           | 9000:9000, 9123:9123   | Full Sui node with built-in faucet              |
-| `market-maker`     | `deepbook-market-maker` | `localnet`           | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools |
-| `deepbook-indexer` | `deepbook-indexer`      | `remote`, `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres    |
-| `deepbook-server`  | `deepbook-server`       | `remote`, `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data     |
-| `deepbook-faucet`  | `deepbook-faucet`       | `localnet`, `remote` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens       |
-| `oracle-service`   | `oracle-service`        | `localnet`           | 9010:9010              | Updates Pyth price feeds every 10 seconds       |
+| Service            | Container Name          | Profile              | Ports (host:container) | Description                                        |
+| ------------------ | ----------------------- | -------------------- | ---------------------- | -------------------------------------------------- |
+| `postgres`         | `deepbook-postgres`     | (always)             | 5432:5432              | PostgreSQL 16 database for the indexer             |
+| `sui-localnet`     | `sui-localnet`          | `localnet`           | 9000:9000, 9123:9123   | Full Sui node with built-in faucet                 |
+| `market-maker`     | `deepbook-market-maker` | `localnet`           | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools    |
+| `deepbook-indexer` | `deepbook-indexer`      | `remote`, `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres       |
+| `deepbook-server`  | `deepbook-server`       | `remote`, `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |
+| `deepbook-faucet`  | `deepbook-faucet`       | `localnet`, `remote` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens          |
+| `oracle-service`   | `oracle-service`        | `localnet`           | 9010:9010              | Updates Pyth price feeds every 10 seconds          |
+| `dashboard`        | `deepbook-dashboard`    | `localnet`, `remote` | 5173:80                | Web UI for monitoring and interacting with sandbox |
 
 ## Appendix D: Data Flows
 
