@@ -19,8 +19,12 @@ export function authMiddleware(config: Config) {
         if (token !== config.CONTROL_API_TOKEN) {
             console.log(`[AUTH] REJECTED: Token mismatch`);
             console.log(`[AUTH] Received token (first 20 chars): "${token.substring(0, 20)}..."`);
-            console.log(`[AUTH] Expected token (first 20 chars): "${config.CONTROL_API_TOKEN.substring(0, 20)}..."`);
-            console.log(`[AUTH] Received token length: ${token.length}, Expected: ${config.CONTROL_API_TOKEN.length}`);
+            console.log(
+                `[AUTH] Expected token (first 20 chars): "${config.CONTROL_API_TOKEN.substring(0, 20)}..."`,
+            );
+            console.log(
+                `[AUTH] Received token length: ${token.length}, Expected: ${config.CONTROL_API_TOKEN.length}`,
+            );
             return c.json({ error: "Invalid token" }, 401);
         }
 

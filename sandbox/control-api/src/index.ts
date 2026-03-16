@@ -9,11 +9,14 @@ const config = loadConfig();
 const app = new Hono();
 
 // CORS middleware - allow dashboard to call this API
-app.use("/*", cors({
-    origin: "*", // In production, restrict this to dashboard origin
-    allowMethods: ["GET", "POST", "PUT", "DELETE"],
-    allowHeaders: ["Content-Type", "Authorization"],
-}));
+app.use(
+    "/*",
+    cors({
+        origin: "*", // In production, restrict this to dashboard origin
+        allowMethods: ["GET", "POST", "PUT", "DELETE"],
+        allowHeaders: ["Content-Type", "Authorization"],
+    }),
+);
 
 // Apply rate limiting to all routes
 app.use("/*", rateLimitMiddleware(100, 60000)); // 100 requests per minute
