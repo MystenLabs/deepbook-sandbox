@@ -72,7 +72,7 @@ pnpm deploy-all
 
 > **First run takes several minutes.** Docker images need to be downloaded and the indexer/server Rust binaries compile from source. Subsequent runs are faster thanks to Docker layer caching.
 >
-> **Intel/AMD shortcut:** `pnpm deploy-all --quick` skips building the Rust images from source and uses pre-built Docker Hub images instead. Apple Silicon users must build from source (Docker Hub only publishes `linux/amd64` images for these services).
+> **shortcut:** `pnpm deploy-all --quick` skips building the Rust images from source and uses pre-built Docker Hub images instead.
 
 When you see `DeepBook Sandbox Ready!`, everything is running:
 
@@ -256,7 +256,7 @@ cd sandbox
 
 # Start fresh (first time or after teardown)
 pnpm deploy-all              # builds indexer/server from source
-pnpm deploy-all --quick      # uses pre-built images (Intel/AMD only)
+pnpm deploy-all --quick      # uses pre-built images
 
 # Check that prices are updating
 curl http://localhost:9010/
@@ -338,7 +338,7 @@ bunx prettier-move -c *.move --write
 
 **"Transaction failed" in oracle service** — The oracle's dedicated keypair ran out of SUI. This shouldn't happen since `deploy-all` funds it automatically. If it does, check `docker logs oracle-service` and re-run `pnpm deploy-all`.
 
-**Deploy takes a long time building Rust images** — The indexer and server are Rust services that compile from source by default. This is normal on first run (can take several minutes). On Intel/AMD machines, you can skip the build with `pnpm deploy-all --quick`. Apple Silicon users must build from source since Docker Hub only publishes `linux/amd64` images for these services.
+**Deploy takes a long time building Rust images** — The indexer and server are Rust services that compile from source by default. This is normal on first run (can take several minutes). You can skip the build with `pnpm deploy-all --quick` and download the pre-built images from Docker Hub.
 
 **Port conflicts** — Another process is using port 9000, 5432, or 9123. Stop the conflicting process or change ports in `docker-compose.yml`.
 
@@ -353,7 +353,7 @@ bunx prettier-move -c *.move --write
 | Command                                     | Description                                                                           |
 | ------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `pnpm deploy-all`                           | Deploy everything — start containers, publish contracts, create pools, start services |
-| `pnpm deploy-all --quick`                   | Same as above but skip building indexer/server images (uses Docker Hub, amd64 only)   |
+| `pnpm deploy-all --quick`                   | Same as above but skip building indexer/server images (uses Docker Hub)               |
 | `pnpm down`                                 | Full teardown — stop containers, remove volumes, clean generated .env keys            |
 | `pnpm oracle-service`                       | Run the oracle service locally (outside Docker, for debugging)                        |
 | `pnpm market-maker`                         | Run the market maker locally (outside Docker, for debugging)                          |
