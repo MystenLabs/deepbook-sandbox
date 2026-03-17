@@ -301,6 +301,7 @@ export class MoveDeployer {
         // Copy the Pub.localnet.toml from the container to the sandbox root
         if (this.network === "localnet") {
             try {
+                const pubTomlPath = path.join(sandboxRoot, "Pub.localnet.toml");
                 execFileSync(
                     "docker",
                     [
@@ -310,7 +311,11 @@ export class MoveDeployer {
                     ],
                     { stdio: "pipe" },
                 );
-                log.success("Copied Pub.localnet.toml from container");
+                // Rewrite container paths to local machine paths
+                let pubToml = readFileSync(pubTomlPath, "utf-8");
+                pubToml = pubToml.replaceAll(CONTAINER_WORKSPACE, sandboxRoot);
+                writeFileSync(pubTomlPath, pubToml);
+                log.success("Copied Pub.localnet.toml from container (paths rewritten to local)");
             } catch {
                 log.warn("Could not copy Pub.localnet.toml from container");
             }
