@@ -115,7 +115,7 @@ services:
     build:
       context: .
       dockerfile: ./scripts/market-maker/Dockerfile
-    image: mysten/deepbook-sandbox-market-maker:latest
+    image: ${MARKET_MAKER_IMAGE:-mysten/deepbook-sandbox-market-maker:89def920ad19a1a1a040b3df66cdd0d87e5300c2-arm64}
     container_name: deepbook-market-maker
     environment:
       NETWORK: localnet
@@ -163,7 +163,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: mysten/deepbookv3-sandbox-indexer:0c5ca6bd2da2f0ea6759dc658e46ada3da236bbc
+    image: ${INDEXER_IMAGE:-mysten/deepbookv3-sandbox-indexer:794efb1c54ee5cc4f0f367233a4e70818aa0defb-arm64}
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-sandbox/Dockerfile
@@ -208,7 +208,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: mysten/deepbookv3-server:0c5ca6bd2da2f0ea6759dc658e46ada3da236bbc
+    image: ${SERVER_IMAGE:-mysten/deepbookv3-server:794efb1c54ee5cc4f0f367233a4e70818aa0defb-arm64}
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-server/Dockerfile
@@ -250,7 +250,7 @@ services:
       - remote
     build:
       context: ./faucet
-    image: mysten/deepbook-sandbox-faucet:latest
+    image: ${FAUCET_IMAGE:-mysten/deepbook-sandbox-faucet:89def920ad19a1a1a040b3df66cdd0d87e5300c2-arm64}
     container_name: deepbook-faucet
     environment:
       NETWORK: ${NETWORK:-localnet}
@@ -278,6 +278,34 @@ services:
     restart: unless-stopped
 
   # ============================================================
+  # Dashboard
+  # Web UI for monitoring and interacting with the sandbox
+  # ============================================================
+  dashboard:
+    profiles:
+      - localnet
+      - remote
+    build:
+      context: ./dashboard
+    image: ${DASHBOARD_IMAGE:-}
+    container_name: deepbook-dashboard
+    ports:
+      - "5173:80"
+    networks:
+      - deepbook-net
+    depends_on:
+      sui-localnet:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ============================================================
   # Oracle Service
   # Updates Pyth price feeds for SUI, DEEP, and USDC on localnet
   # ============================================================
@@ -287,7 +315,7 @@ services:
     build:
       context: .
       dockerfile: ./scripts/oracle-service/Dockerfile
-    image: mysten/deepbook-sandbox-oracle-service:latest
+    image: ${ORACLE_SERVICE_IMAGE:-mysten/deepbook-sandbox-oracle-service:89def920ad19a1a1a040b3df66cdd0d87e5300c2-arm64}
     container_name: oracle-service
     environment:
       NETWORK: localnet

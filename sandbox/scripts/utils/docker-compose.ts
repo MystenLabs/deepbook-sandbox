@@ -59,6 +59,9 @@ export const LOCALNET_FAUCET_PORT = 9123;
 /** DeepBook server REST API port (remote profile). */
 export const DEEPBOOK_SERVER_PORT = 9008;
 
+/** Dashboard port (host-side, maps to container port 80). */
+export const DASHBOARD_PORT = 5173;
+
 /**
  * Resolve the sandbox root directory (where docker-compose.yml lives).
  * Works when running from sandbox/ or from project root.
@@ -295,6 +298,41 @@ export async function startMarketMaker(
         const stderr = result.stderr?.trim() || "";
         throw new Error(
             `Failed to start market maker (exit ${result.status})${stderr ? `\n${stderr}` : ""}`,
+        );
+    }
+}
+
+/**
+ * Start the dashboard container.
+ * Builds the image quietly first, then starts the container with --force-recreate.
+ */
+export async function startDashboard(
+    sandboxRoot?: string,
+    envOverlay?: Record<string, string>,
+): Promise<void> {
+    const cwd = sandboxRoot ?? getSandboxRoot();
+    const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
+
+    // Build quietly to suppress verbose BuildKit output
+    const buildResult = runDockerComposeVisible(
+        ["--profile", "localnet", "build", "--quiet", "dashboard"],
+        { cwd, env },
+    );
+    if (buildResult.status !== 0) {
+        const stderr = buildResult.stderr?.trim() || "";
+        throw new Error(
+            `Failed to build dashboard image (exit ${buildResult.status})${stderr ? `\n${stderr}` : ""}`,
+        );
+    }
+
+    const upResult = runDockerComposeVisible(
+        ["--profile", "localnet", "up", "-d", "--force-recreate", "dashboard"],
+        { cwd, env },
+    );
+    if (upResult.status !== 0) {
+        const stderr = upResult.stderr?.trim() || "";
+        throw new Error(
+            `Failed to start dashboard (exit ${upResult.status})${stderr ? `\n${stderr}` : ""}`,
         );
     }
 }

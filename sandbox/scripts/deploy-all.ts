@@ -15,6 +15,8 @@ import {
     configureAndStartLocalnetServices,
     startOracleService,
     startMarketMaker,
+    startDashboard,
+    DASHBOARD_PORT,
 } from "./utils/docker-compose";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
@@ -72,7 +74,13 @@ async function main() {
         if (network === "localnet" && hasUserKey) {
             // Use the existing key from .env
             signer = getSigner();
-            importKeyToHostCli(process.env.PRIVATE_KEY!, signer.getPublicKey().toSuiAddress());
+            try {
+                importKeyToHostCli(process.env.PRIVATE_KEY!, signer.getPublicKey().toSuiAddress());
+            } catch {
+                log.warn(
+                    "Could not import key to host sui CLI (sui binary not found?) — not required for localnet",
+                );
+            }
             log.success("Using PRIVATE_KEY from .env");
         } else if (network === "localnet") {
             // No user key — read the container-generated key
@@ -80,7 +88,13 @@ async function main() {
             const { keypair, privateKey } = readContainerKey(sandboxRoot);
             signer = keypair;
             process.env.PRIVATE_KEY = privateKey;
-            importKeyToHostCli(privateKey, keypair.getPublicKey().toSuiAddress());
+            try {
+                importKeyToHostCli(privateKey, keypair.getPublicKey().toSuiAddress());
+            } catch {
+                log.warn(
+                    "Could not import key to host sui CLI (sui binary not found?) — not required for localnet",
+                );
+            }
             updateEnvFile(sandboxRoot, { PRIVATE_KEY: privateKey });
             log.success("Container key imported");
         } else if (hasPrivateKey()) {
@@ -191,6 +205,14 @@ async function main() {
         const { pools } = await poolCreator.createDeepbookPools(deployedPackages);
         const marginResult = await poolCreator.createMarginPools(deployedPackages, pools);
 
+        log.spin("Seeding margin pools with initial liquidity...");
+        const seedResult = await poolCreator.seedMarginPools(
+            deployedPackages,
+            marginResult.marginPools,
+            marginResult.registryId,
+        );
+        log.success(`Margin pools seeded (SupplierCap: ${seedResult.supplierCapId})`);
+
         // Write deployment manifest (reference-only, not read by services)
         const manifest = {
             network: {
@@ -222,6 +244,7 @@ async function main() {
                 SUI_USDC: pools.SUI_USDC,
             },
             marginPools: marginResult.marginPools,
+            supplierCapId: seedResult.supplierCapId,
             deploymentTime: new Date().toISOString(),
             deployerAddress: signerAddress,
         };
@@ -285,6 +308,12 @@ async function main() {
 
             await startMarketMaker(sandboxRoot);
             log.success("Market maker started (DEEP/SUI + SUI/USDC)");
+
+            log.spin("Building and starting dashboard...");
+            await startDashboard(sandboxRoot);
+            log.success(
+                `Dashboard running — open http://127.0.0.1:${DASHBOARD_PORT} in your browser`,
+            );
         }
 
         // Build summary — only user-facing URLs and key identifiers
@@ -294,6 +323,7 @@ async function main() {
             { label: "SUI Margin Pool", value: marginResult.marginPools.SUI },
             { label: "USDC Margin Pool", value: marginResult.marginPools.USDC },
             { label: "Deployment File", value: deploymentPath },
+            { label: "Dashboard", value: `http://127.0.0.1:${DASHBOARD_PORT}` },
         ];
         if (network === "testnet") {
             summaryEntries.push({ label: "DeepBook Server", value: "http://127.0.0.1:9008" });

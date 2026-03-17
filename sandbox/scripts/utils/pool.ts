@@ -5,6 +5,7 @@ import type { SuiObjectChangeCreated } from "@mysten/sui/client";
 import type { DeploymentResult } from "./deployer";
 import log from "./logger";
 import { fromHex, SUI_CLOCK_OBJECT_ID } from "@mysten/sui/utils";
+import { bcs } from "@mysten/sui/bcs";
 import { SUI_PRICE_FEED_ID, USDC_PRICE_FEED_ID } from "../oracle-service/constants";
 
 // --- Scalars ---
@@ -81,6 +82,10 @@ const POOL_RISK_CONFIG = {
     poolLiquidationReward: 0.03,
 };
 
+// --- Margin pool seed liquidity defaults ---
+const MARGIN_SEED_USDC = 10_000; // 10,000 USDC (~1% of 1M supply cap)
+const MARGIN_SEED_SUI = 100; // 100 SUI (~0.02% of 500K supply cap)
+
 // --- Public types ---
 
 export interface PoolEntry {
@@ -96,6 +101,11 @@ export interface PoolsResult {
 export interface MarginPoolsResult {
     marginPools: Record<string, string>;
     registryId: string;
+}
+
+export interface SeedMarginPoolsResult {
+    supplierCapId: string;
+    transactionDigest: string;
 }
 
 // --- PoolCreator ---
@@ -422,6 +432,132 @@ export class PoolCreator {
         return {
             marginPools,
             registryId: registry.objectId,
+        };
+    }
+
+    async seedMarginPools(
+        deployedPackages: Map<string, DeploymentResult>,
+        marginPools: Record<string, string>,
+        registryId: string,
+    ): Promise<SeedMarginPoolsResult> {
+        const marginPkg = deployedPackages.get("deepbook_margin");
+        const usdcPkg = deployedPackages.get("usdc");
+
+        if (!marginPkg || !usdcPkg) {
+            throw new Error(
+                `Missing required packages: deepbook_margin=${!!marginPkg}, usdc=${!!usdcPkg}`,
+            );
+        }
+
+        const usdcType = `${usdcPkg.packageId}::usdc::USDC`;
+        const suiType = "0x2::sui::SUI";
+        const signerAddress = this.signer.getPublicKey().toSuiAddress();
+
+        const usdcSeedAmount = BigInt(MARGIN_SEED_USDC) * BigInt(USDC_ASSET_DEFAULTS.scalar);
+        const suiSeedAmount = BigInt(MARGIN_SEED_SUI) * BigInt(SUI_ASSET_DEFAULTS.scalar);
+
+        // Fetch deployer's USDC coins for merge/split
+        const usdcCoins = await this.client.getCoins({
+            owner: signerAddress,
+            coinType: usdcType,
+        });
+
+        if (usdcCoins.data.length === 0) {
+            throw new Error(`No USDC coins found for ${signerAddress}`);
+        }
+
+        const tx = new Transaction();
+        tx.setGasBudget(500_000_000);
+
+        // 1. Mint SupplierCap
+        const supplierCap = tx.moveCall({
+            target: `${marginPkg.packageId}::margin_pool::mint_supplier_cap`,
+            arguments: [tx.object(registryId), tx.object(SUI_CLOCK_OBJECT_ID)],
+        });
+
+        // 2. Prepare USDC coin (merge if fragmented, then split seed amount)
+        const usdcCoinIds = usdcCoins.data.map((c) => c.coinObjectId);
+        let usdcCoin;
+        if (usdcCoinIds.length === 1) {
+            usdcCoin = tx.splitCoins(tx.object(usdcCoinIds[0]), [tx.pure.u64(usdcSeedAmount)]);
+        } else {
+            const [first, ...rest] = usdcCoinIds;
+            const primaryCoin = tx.object(first);
+            if (rest.length > 0) {
+                tx.mergeCoins(
+                    primaryCoin,
+                    rest.map((id) => tx.object(id)),
+                );
+            }
+            usdcCoin = tx.splitCoins(primaryCoin, [tx.pure.u64(usdcSeedAmount)]);
+        }
+
+        // 3. Prepare SUI coin (split from gas)
+        const suiCoin = tx.splitCoins(tx.gas, [tx.pure.u64(suiSeedAmount)]);
+
+        // 4. Supply USDC to margin pool
+        tx.moveCall({
+            target: `${marginPkg.packageId}::margin_pool::supply`,
+            typeArguments: [usdcType],
+            arguments: [
+                tx.object(marginPools.USDC),
+                tx.object(registryId),
+                supplierCap,
+                usdcCoin,
+                tx.pure(bcs.option(bcs.Address).serialize(null)),
+                tx.object(SUI_CLOCK_OBJECT_ID),
+            ],
+        });
+
+        // 5. Supply SUI to margin pool
+        tx.moveCall({
+            target: `${marginPkg.packageId}::margin_pool::supply`,
+            typeArguments: [suiType],
+            arguments: [
+                tx.object(marginPools.SUI),
+                tx.object(registryId),
+                supplierCap,
+                suiCoin,
+                tx.pure(bcs.option(bcs.Address).serialize(null)),
+                tx.object(SUI_CLOCK_OBJECT_ID),
+            ],
+        });
+
+        // 6. Transfer SupplierCap to deployer
+        tx.transferObjects([supplierCap], signerAddress);
+
+        log.detail(`Seeding ${MARGIN_SEED_USDC} USDC and ${MARGIN_SEED_SUI} SUI`);
+        log.spin("Executing margin pool seed liquidity transaction...");
+        const result = await this.client.signAndExecuteTransaction({
+            transaction: tx,
+            signer: this.signer,
+            options: {
+                showEffects: true,
+                showObjectChanges: true,
+            },
+        });
+
+        if (result.effects?.status.status !== "success") {
+            throw new Error(
+                `Failed to seed margin pools: ${result.effects?.status.error || "Unknown error"}`,
+            );
+        }
+
+        // Extract SupplierCap from created objects
+        const supplierCapObj = result.objectChanges?.find(
+            (obj): obj is SuiObjectChangeCreated =>
+                obj.type === "created" && obj.objectType.includes("::margin_pool::SupplierCap"),
+        );
+
+        if (!supplierCapObj) {
+            throw new Error("SupplierCap object not found in transaction result");
+        }
+
+        await this.client.waitForTransaction({ digest: result.digest });
+
+        return {
+            supplierCapId: supplierCapObj.objectId,
+            transactionDigest: result.digest,
         };
     }
 
