@@ -60,7 +60,7 @@ const FAUCET_HOST = "http://127.0.0.1:9123";
 // Docker cleanup helper
 // ---------------------------------------------------------------------------
 
-function dockerDown(cwd: string): void {
+function cleanupLocalnet(cwd: string): void {
     const envFileArgs = process.env.SANDBOX_ENV_FILE
         ? ["--env-file", process.env.SANDBOX_ENV_FILE]
         : [];
@@ -69,6 +69,17 @@ function dockerDown(cwd: string): void {
         ["compose", ...envFileArgs, "--profile", "localnet", "down", "-v", "--remove-orphans"],
         { cwd, encoding: "utf-8", stdio: "inherit" },
     );
+
+    // Remove publish manifests left behind by container-side `sui client test-publish`.
+    // If not cleaned up they can break subsequent test runs.
+    const fsSync = require("fs");
+    for (const name of ["pub.localnet.toml", "Pub.localnet.toml"]) {
+        try {
+            fsSync.unlinkSync(path.join(cwd, name));
+        } catch {
+            /* may not exist */
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -108,11 +119,18 @@ describe("deploy-all pipeline (localnet)", () => {
             ].join("\n") + "\n";
         await fs.writeFile(ENV_PATH, envContent, "utf-8");
 
+        // ── Remove stale publish manifest (chain-id mismatch across runs) ──
+        try {
+            await fs.unlink(path.join(SANDBOX_ROOT, "Pub.localnet.toml"));
+        } catch {
+            // may not exist
+        }
+
         // ── Clean slate: tear down any leftover containers ───────────
-        dockerDown(SANDBOX_ROOT);
+        cleanupLocalnet(SANDBOX_ROOT);
 
         // ── Register exit handler to clean up on crash/Ctrl+C ────────
-        exitHandler = () => dockerDown(SANDBOX_ROOT);
+        exitHandler = () => cleanupLocalnet(SANDBOX_ROOT);
         process.on("exit", exitHandler);
     }, 300_000);
 
@@ -142,8 +160,13 @@ describe("deploy-all pipeline (localnet)", () => {
         // Replace the placeholder in .env with the real key
         updateEnvFile(SANDBOX_ROOT, { PRIVATE_KEY: privateKey });
 
-        // Import into the host's sui CLI for `sui client publish`
-        importKeyToHostCli(privateKey, signerAddress);
+        // Import into the host's sui CLI (best-effort, not required for localnet
+        // since publishing runs inside the container via docker exec)
+        try {
+            importKeyToHostCli(privateKey, signerAddress);
+        } catch {
+            // host sui binary not available — fine, container handles publishing
+        }
     }, 600_000);
 
     // ----------------------------------------------------------------
@@ -428,7 +451,12 @@ describe("deploy-all pipeline (localnet)", () => {
             ["compose", ...envFileArgs, "--profile", "localnet", "config", "--services"],
             { cwd: SANDBOX_ROOT, encoding: "utf-8" },
         );
-        const services = configResult.stdout.trim().split("\n").filter(Boolean).sort();
+        // Exclude dashboard — it's not started by the test pipeline
+        const services = configResult.stdout
+            .trim()
+            .split("\n")
+            .filter((s) => s && s !== "dashboard")
+            .sort();
         expect(services.length, "docker compose returned no services").toBeGreaterThan(0);
 
         for (const service of services) {
@@ -460,7 +488,7 @@ describe("deploy-all pipeline (localnet)", () => {
     // ----------------------------------------------------------------
     afterAll(async () => {
         // Tear down containers
-        dockerDown(SANDBOX_ROOT);
+        cleanupLocalnet(SANDBOX_ROOT);
 
         // Remove .env.test and reset routing
         try {
