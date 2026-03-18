@@ -1,0 +1,8 @@
+# Source: https://github.com/MystenLabs/deepbookv3
+# Commit: 1108a55bd52b5562bcca3d9f77db402a1c60710a
+# Date: 2026-03-18
+#
+# To update vendored packages from the submodule:
+#   cd external/deepbook && git pull origin main && cd ../..
+#   cp -r external/deepbook/packages/{token,deepbook,deepbook_margin,margin_liquidation} sandbox/packages/deepbook-v3/
+#   Update this file with the new commit hash.

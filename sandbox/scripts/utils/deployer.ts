@@ -17,7 +17,7 @@ import log from "./logger";
 
 const CONTAINER_NAME = "sui-localnet";
 const CONTAINER_WORKSPACE = "/workspace";
-const EXTERNAL_SOURCE = "../external/deepbook/packages";
+const EXTERNAL_SOURCE = "packages/deepbook-v3";
 
 /** Packages copied from the external submodule into the sandbox staging directory. */
 const EXTERNAL_PACKAGES = ["token", "deepbook", "deepbook_margin", "margin_liquidation"] as const;

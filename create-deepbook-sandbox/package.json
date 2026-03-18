@@ -1,0 +1,20 @@
+{
+    "name": "create-deepbook-sandbox",
+    "version": "0.1.0",
+    "description": "Scaffold a DeepBook V3 sandbox environment",
+    "type": "module",
+    "bin": {
+        "create-deepbook-sandbox": "./bin/cli.mjs"
+    },
+    "files": ["bin/", "lib/"],
+    "engines": {
+        "node": ">=18"
+    },
+    "keywords": ["deepbook", "sui", "defi", "sandbox", "create"],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/MystenLabs/deepbook-sandbox.git",
+        "directory": "create-deepbook-sandbox"
+    },
+    "license": "Apache-2.0"
+}

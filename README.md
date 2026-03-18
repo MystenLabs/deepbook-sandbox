@@ -2,6 +2,25 @@
 
 A one-command local development environment for DeepBook V3 — the decentralized order book on Sui.
 
+## Quick Start
+
+```bash
+npx create-deepbook-sandbox my-sandbox
+cd my-sandbox/sandbox
+pnpm deploy-all
+```
+
+Or clone and run manually:
+
+```bash
+git clone https://github.com/MystenLabs/deepbook-sandbox.git
+cd deepbook-sandbox/sandbox
+pnpm install
+pnpm deploy-all
+```
+
+> **Note:** The git submodule (`external/deepbook/`) is optional. Move packages are vendored in `sandbox/packages/deepbook-v3/`. The submodule is only needed if you want to build the Rust indexer/server Docker images from source.
+
 ---
 
 ## 1. What Is This?
@@ -55,8 +74,8 @@ The **Sui Localnet** container runs a Sui local network. The **deploy-all** scri
 ## 4. Quickstart
 
 ```bash
-# Clone the repo with submodules (required — DeepBook source is a submodule)
-git clone --recurse-submodules https://github.com/MystenLabs/deepbook-sandbox.git
+# Clone the repo
+git clone https://github.com/MystenLabs/deepbook-sandbox.git
 cd deepbook-sandbox/sandbox
 
 # Install dependencies
@@ -171,7 +190,7 @@ Your `Move.toml` can reference any of these local dependencies:
 | `pyth`               | `../pyth`                                     | Pyth oracle price feeds                                |
 | `usdc`               | `../usdc`                                     | USDC coin type                                         |
 
-> **Note:** The `.external-packages/` directory is created automatically by `pnpm deploy-all`. Your contract won't build until you've run it at least once.
+> **Note:** The `.external-packages/` directory is a staging copy created automatically by `pnpm deploy-all` (from the vendored source in `packages/deepbook-v3/`). Your contract won't build until you've run it at least once.
 
 Your `Move.toml` needs an `[environments]` section with the localnet chain ID (you can find the value in `Pub.localnet.toml` after deploying):
 
@@ -472,22 +491,34 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `sandbox/Pub.localnet.toml`               | Generated publish manifest for Sui CLI dependency resolution                            |
 | `external/deepbook/`                      | Git submodule — DeepBook V3 Move smart contracts and Rust crates                        |
 
-## Appendix G: Submodule Note
+## Appendix G: Submodule & Vendored Packages
 
-DeepBook V3 source code is included as a git submodule at `external/deepbook/`, pointing to `https://github.com/MystenLabs/deepbookv3`. If you cloned without `--recurse-submodules`, initialize it with:
+### Vendored Move Packages
+
+The four DeepBook Move packages (`token`, `deepbook`, `deepbook_margin`, `margin_liquidation`) are vendored in `sandbox/packages/deepbook-v3/`. The source commit is recorded in `sandbox/packages/VERSION`. These are the packages deployed by `pnpm deploy-all` — no submodule needed.
+
+### Git Submodule (Optional)
+
+The full DeepBook V3 repo is available as a git submodule at `external/deepbook/`. This is **only needed** if you want to:
+- Build the indexer/server Docker images from source (instead of pre-built images)
+- Update the vendored Move packages to a newer version
+
+Initialize the submodule:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-To update to the latest DeepBook code:
+### Updating Vendored Packages
+
+To update the vendored packages from the submodule:
 
 ```bash
-cd external/deepbook
-git pull origin main
-cd ../..
-git add external/deepbook
-git commit -m "Update deepbook submodule"
+cd external/deepbook && git pull origin main && cd ../..
+cp -r external/deepbook/packages/{token,deepbook,deepbook_margin,margin_liquidation} sandbox/packages/deepbook-v3/
+# Update sandbox/packages/VERSION with the new commit hash
+git add sandbox/packages/deepbook-v3 sandbox/packages/VERSION
+git commit -m "Update vendored DeepBook packages"
 ```
 
 ## Appendix H: Contributing

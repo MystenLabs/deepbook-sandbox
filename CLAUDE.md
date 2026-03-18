@@ -13,12 +13,15 @@ When making changes in this repository:
 
 This project provides a toolset for reducing builder friction with one-liner deployments, Dockerized stack, and a web dashboard for DeepBook V3 instances.
 
-**DeepBookV3** is included as a git submodule at `./external/deepbook/`. It's a decentralized central limit order book (CLOB) built on Sui. Key resources:
+**DeepBookV3** is a decentralized central limit order book (CLOB) built on Sui. Move packages are vendored in `sandbox/packages/deepbook-v3/` (source commit in `sandbox/packages/VERSION`). The full repo is optionally available as a git submodule at `./external/deepbook/` for building Rust images from source. Key resources:
 
-- Submodule README: `./external/deepbook/README.md`
+- Vendored packages: `./sandbox/packages/deepbook-v3/` (token, deepbook, deepbook_margin, margin_liquidation)
+- Submodule (optional): `./external/deepbook/README.md`
 - Move code guidelines: `./external/deepbook/CLAUDE.md` (use `/deepbookv3` skill for comprehensive Move guidance)
 - [Contract Documentation](https://docs.sui.io/standards/deepbookv3)
 - [SDK Documentation](https://docs.sui.io/standards/deepbookv3-sdk)
+
+**Bootstrapper package** (`create-deepbook-sandbox/`): A zero-dependency npm package that lets users scaffold a sandbox with `npx create-deepbook-sandbox my-sandbox`. Downloads a GitHub release tarball, extracts, configures `.env`, and installs dependencies.
 
 ## File Structure
 
@@ -26,8 +29,22 @@ This project provides a toolset for reducing builder friction with one-liner dep
 deepbook-sandbox/
 ├── CLAUDE.md              # This file - agent instructions
 ├── README.md              # Project overview
+├── create-deepbook-sandbox/  # npx bootstrapper package
+│   ├── package.json
+│   ├── bin/cli.mjs        # CLI entry point
+│   └── lib/scaffold.mjs   # Download, extract, install logic
 ├── sandbox/
 │   ├── docker-compose.yml # Docker orchestration
+│   ├── packages/
+│   │   ├── deepbook-v3/   # Vendored Move packages (from external/deepbook)
+│   │   │   ├── token/
+│   │   │   ├── deepbook/
+│   │   │   ├── deepbook_margin/
+│   │   │   └── margin_liquidation/
+│   │   ├── pyth/          # Pyth oracle contracts
+│   │   ├── usdc/          # USDC token type
+│   │   ├── example_contract/  # Template for custom contracts
+│   │   └── VERSION        # Records vendored source commit
 │   ├── dashboard/         # Web dashboard (React SPA, Dockerized with nginx)
 │   │   ├── Dockerfile
 │   │   ├── nginx.conf     # Reverse-proxy config (replicates Vite dev proxy)
@@ -63,7 +80,7 @@ deepbook-sandbox/
 │       │   └── types.ts           # TypeScript types
 │       └── utils/         # Shared utilities
 └── external/
-    └── deepbook/          # Git submodule - DeepBookV3 source
+    └── deepbook/          # Git submodule (optional) - DeepBookV3 source
         ├── packages/      # Move smart contracts
         └── crates/        # Rust crates (indexer, API server)
 ```
