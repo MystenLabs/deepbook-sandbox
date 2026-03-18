@@ -4,25 +4,10 @@ import path from "path";
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 
 import { cleanEnvFile, REQUIRED_ENV_KEYS, USER_ENV_KEYS, validateEnvFile } from "../utils/env";
-import { getSandboxRoot } from "../utils/docker-compose";
 import log from "../utils/logger";
 
-describe.skipIf(!!process.env.CI)("env utility tests", () => {
+describe("env utility tests", () => {
     let tmpDir: string;
-
-    // Validate the real sandbox .env before running any tests.
-    // PRIVATE_KEY is excluded — it gets auto-generated on localnet,
-    // so a missing key shouldn't block unit tests.
-    beforeAll(() => {
-        const result = validateEnvFile(getSandboxRoot());
-        const missing = result.missing.filter((k) => k !== "PRIVATE_KEY");
-        if (missing.length > 0) {
-            throw new Error(
-                `sandbox/.env is missing required keys: ${missing.join(", ")}. ` +
-                    "Fix your .env before running tests.",
-            );
-        }
-    });
 
     beforeEach(async () => {
         tmpDir = await mkdtemp(path.join(tmpdir(), "env-test-"));
