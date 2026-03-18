@@ -2,6 +2,8 @@
 
 A one-command local development environment for DeepBook V3 — the decentralized order book on Sui.
 
+> **New here?** Start with the **[Getting Started guide](./GETTING_STARTED.md)** — a streamlined tutorial that gets you from zero to a running sandbox with a custom contract in under 15 minutes.
+
 ---
 
 ## 1. What Is This?
