@@ -62,7 +62,24 @@ function main() {
     }
     log.success("Cleaned publish manifests");
 
-    // 4. Remove auto-generated .env keys (keep user-configured ones)
+    // 4. Restore deployment-patched Move.toml files to committed state
+    const repoRoot = path.resolve(cwd, "..");
+    const patchedManifests = ["sandbox/packages/pyth/Move.toml", "sandbox/packages/usdc/Move.toml"];
+    log.phase("Restoring patched Move.toml files");
+    const checkoutResult = spawnSync("git", ["checkout", "--", ...patchedManifests], {
+        cwd: repoRoot,
+        encoding: "utf-8",
+        stdio: "inherit",
+    });
+    if (checkoutResult.status === 0) {
+        log.success("Move.toml files restored");
+    } else {
+        log.warn(
+            "Could not restore Move.toml files (git checkout failed — files may already be clean)",
+        );
+    }
+
+    // 5. Remove auto-generated .env keys (keep user-configured ones)
     log.phase("Cleaning generated .env keys");
     cleanEnvFile(cwd, USER_ENV_KEYS);
     log.success("Generated .env keys removed");
