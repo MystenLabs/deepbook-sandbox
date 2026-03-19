@@ -401,7 +401,7 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | Service            | Container Name          | Profile              | Ports (host:container) | Description                                        |
 | ------------------ | ----------------------- | -------------------- | ---------------------- | -------------------------------------------------- |
 | `postgres`         | `deepbook-postgres`     | (always)             | 5432:5432              | PostgreSQL 16 database for the indexer             |
-| `sui-localnet`     | `sui-localnet`          | `localnet`           | 45516:45516, 9123:9123  | Full Sui node with built-in faucet                 |
+| `sui-localnet`     | `sui-localnet`          | `localnet`           | 45516:45516, 9123:9123 | Full Sui node with built-in faucet                 |
 | `market-maker`     | `deepbook-market-maker` | `localnet`           | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools    |
 | `deepbook-indexer` | `deepbook-indexer`      | `remote`, `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres       |
 | `deepbook-server`  | `deepbook-server`       | `remote`, `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |
