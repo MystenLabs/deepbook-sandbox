@@ -314,8 +314,9 @@ export async function startDashboard(
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
 
     // Build quietly to suppress verbose BuildKit output
+    // Use --no-cache to ensure VITE_CONTROL_API_TOKEN is embedded
     const buildResult = runDockerComposeVisible(
-        ["--profile", "localnet", "build", "--quiet", "dashboard"],
+        ["--profile", "localnet", "build", "--no-cache", "--quiet", "dashboard"],
         { cwd, env },
     );
     if (buildResult.status !== 0) {
@@ -333,6 +334,25 @@ export async function startDashboard(
         const stderr = upResult.stderr?.trim() || "";
         throw new Error(
             `Failed to start dashboard (exit ${upResult.status})${stderr ? `\n${stderr}` : ""}`,
+        );
+    }
+}
+
+export async function startControlApi(
+    sandboxRoot?: string,
+    envOverlay?: Record<string, string>,
+): Promise<void> {
+    const cwd = sandboxRoot ?? getSandboxRoot();
+    const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
+
+    const upResult = runDockerComposeVisible(
+        ["--profile", "localnet", "up", "-d", "control-api"],
+        { cwd, env },
+    );
+    if (upResult.status !== 0) {
+        const stderr = upResult.stderr?.trim() || "";
+        throw new Error(
+            `Failed to start control-api (exit ${upResult.status})${stderr ? `\n${stderr}` : ""}`,
         );
     }
 }
