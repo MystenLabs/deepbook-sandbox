@@ -64,6 +64,8 @@ async function main() {
                 // If CONTROL_API_TOKEN exists but VITE_CONTROL_API_TOKEN doesn't,
                 // set VITE_CONTROL_API_TOKEN to the same value
                 defaults.VITE_CONTROL_API_TOKEN = process.env.CONTROL_API_TOKEN;
+            if (!process.env.FORCE_REGENESIS) {
+                defaults.FORCE_REGENESIS = "true";
             }
             if (Object.keys(defaults).length > 0) {
                 updateEnvFile(sandboxRoot, defaults);

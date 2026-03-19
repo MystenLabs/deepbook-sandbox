@@ -220,6 +220,19 @@ describe("deploy-all pipeline (localnet)", () => {
     }, 480_000);
 
     // ----------------------------------------------------------------
+    // Phase 3b: Pub.localnet.toml copied & paths rewritten to host
+    // ----------------------------------------------------------------
+    test("copies Pub.localnet.toml with host paths", async () => {
+        const tomlPath = path.join(SANDBOX_ROOT, "Pub.localnet.toml");
+        const content = await fs.readFile(tomlPath, "utf-8");
+
+        // Must not contain the container workspace prefix
+        expect(content).not.toContain("/workspace");
+        // Must contain the sandbox root (host-side) path instead
+        expect(content).toContain(SANDBOX_ROOT);
+    }, 10_000);
+
+    // ----------------------------------------------------------------
     // Phase 4: Write package IDs to .env
     // ----------------------------------------------------------------
     test("writes package IDs to .env", async () => {
