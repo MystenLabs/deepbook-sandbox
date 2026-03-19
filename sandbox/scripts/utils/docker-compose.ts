@@ -345,10 +345,10 @@ export async function startControlApi(
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
 
-    const upResult = runDockerComposeVisible(
-        ["--profile", "localnet", "up", "-d", "control-api"],
-        { cwd, env },
-    );
+    const upResult = runDockerComposeVisible(["--profile", "localnet", "up", "-d", "control-api"], {
+        cwd,
+        env,
+    });
     if (upResult.status !== 0) {
         const stderr = upResult.stderr?.trim() || "";
         throw new Error(
