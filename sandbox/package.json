@@ -1,6 +1,6 @@
 {
     "name": "deepbook-sandbox",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "type": "module",
     "private": true,
     "description": "DeepBook V3 localnet deployment sandbox",

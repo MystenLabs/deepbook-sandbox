@@ -84,3 +84,21 @@ The `[environments]` section in your `Move.toml` and `--build-env localnet` flag
 - **Iterating on your contract**: You only need to run `pnpm deploy-all` once. After that, you can keep re-publishing your custom contract as many times as you need — the `Pub.localnet.toml` will accumulate your published packages too.
 - **Fresh start**: Run `pnpm down` to tear down everything (containers, volumes, env keys), then `pnpm deploy-all` again. You'll need to re-publish your custom contract since the chain state is wiped.
 - **Building without publishing**: Run `sui move build --build-env localnet` from your contract directory to check compilation without publishing.
+
+## Troubleshooting
+
+### Duplicate dependency error when publishing
+
+If you get a "duplicate dependency" error for `pyth` (or another transitive dependency) when publishing, it means the compiler is resolving the same package from two different paths. This happens when your `Move.toml` uses a relative path (e.g., `../pyth`) that resolves differently than the path recorded in `Pub.localnet.toml`.
+
+**Fix:** Replace the relative path with the full absolute path as it appears in `sandbox/Pub.localnet.toml`. For example:
+
+```toml
+# Instead of:
+pyth = { local = "../pyth" }
+
+# Use the full path (check Pub.localnet.toml for the exact value):
+pyth = { local = "/Users/you/path/to/deepbook-sandbox/sandbox/packages/pyth" }
+```
+
+This ensures the compiler sees the dependency as the same package that was already published, avoiding the duplicate.
