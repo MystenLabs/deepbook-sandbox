@@ -109,8 +109,8 @@ jobs:
           echo "=== .env.test contents (redacted) ===" >> /tmp/docker-logs/diagnostics.log
           sed 's/PRIVATE_KEY=.*/PRIVATE_KEY=<redacted>/' sandbox/.env.test >> /tmp/docker-logs/diagnostics.log 2>/dev/null || echo "no .env.test" >> /tmp/docker-logs/diagnostics.log
           echo "" >> /tmp/docker-logs/diagnostics.log
-          echo "=== port 9000 listener ===" >> /tmp/docker-logs/diagnostics.log
-          ss -tln | grep 9000 >> /tmp/docker-logs/diagnostics.log 2>&1 || echo "port 9000 not listening" >> /tmp/docker-logs/diagnostics.log
+          echo "=== port 45516 listener ===" >> /tmp/docker-logs/diagnostics.log
+          ss -tln | grep 45516 >> /tmp/docker-logs/diagnostics.log 2>&1 || echo "port 45516 not listening" >> /tmp/docker-logs/diagnostics.log
           echo "" >> /tmp/docker-logs/diagnostics.log
           echo "=== all compose logs ===" > /tmp/docker-logs/compose.log
           cd sandbox && docker compose --env-file .env.test --profile localnet logs --no-color --tail 500 >> /tmp/docker-logs/compose.log 2>&1 || true

@@ -8,7 +8,7 @@ import "./index.css";
 import App from "./App.tsx";
 
 const { networkConfig } = createNetworkConfig({
-    localnet: { network: "localnet", url: "http://localhost:9000" },
+    localnet: { network: "localnet", url: "http://localhost:45516" },
 });
 
 const queryClient = new QueryClient();

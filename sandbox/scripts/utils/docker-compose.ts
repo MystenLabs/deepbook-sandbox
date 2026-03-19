@@ -53,7 +53,7 @@ function runDockerComposeVisible(
 }
 
 /** Default RPC and faucet ports for localnet (from docker-compose). */
-export const LOCALNET_RPC_PORT = 9000;
+export const LOCALNET_RPC_PORT = 45516;
 export const LOCALNET_FAUCET_PORT = 9123;
 
 /** DeepBook server REST API port (remote profile). */

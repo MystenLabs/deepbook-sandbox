@@ -85,10 +85,10 @@ services:
         cp /root/.sui/sui_config/sui.keystore /shared/.sui-keystore;
         chmod 644 /shared/.sui-keystore;
         export RUST_LOG="off,sui_node=info";
-        exec sui start --data-ingestion-dir /checkpoints --with-faucet ${FORCE_REGENESIS:+--force-regenesis}
+        exec sui start --data-ingestion-dir /checkpoints --with-faucet ${FORCE_REGENESIS:+--force-regenesis} --fullnode-rpc-port 45516
       '
     ports:
-      - "9000:9000" # RPC
+      - "45516:45516" # RPC
       - "9123:9123" # Faucet
     volumes:
       - sui_data:/root/.sui
@@ -97,7 +97,7 @@ services:
     networks:
       - deepbook-net
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9000'"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/45516'"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -119,7 +119,7 @@ services:
     container_name: deepbook-market-maker
     environment:
       NETWORK: localnet
-      RPC_URL: http://sui-localnet:9000
+      RPC_URL: http://sui-localnet:45516
       PRIVATE_KEY: ${PRIVATE_KEY:?Set PRIVATE_KEY in .env}
       VERBOSE: "1"
       DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID}
@@ -218,7 +218,7 @@ services:
     container_name: deepbook-server
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-      RPC_URL: http://host.docker.internal:9000 # Overwrite this for testnet
+      RPC_URL: http://host.docker.internal:45516 # Overwrite this for testnet
       DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-}
       DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
       DEEP_TREASURY_ID: ${DEEP_TREASURY_ID:-}
@@ -320,7 +320,7 @@ services:
     environment:
       NETWORK: localnet
       ORACLE_PRIVATE_KEY: ${ORACLE_PRIVATE_KEY:-}
-      RPC_URL: http://sui-localnet:9000
+      RPC_URL: http://sui-localnet:45516
       PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID:-}
       DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID:-}
       SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID:-}

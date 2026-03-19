@@ -148,7 +148,7 @@ export class MoveDeployer {
                     "--alias",
                     "localnet",
                     "--rpc",
-                    "http://127.0.0.1:9000",
+                    "http://127.0.0.1:45516",
                 ],
                 { stdio: "pipe" },
             );

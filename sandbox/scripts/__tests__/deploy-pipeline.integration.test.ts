@@ -53,7 +53,7 @@ const ENV_FILE = ".env.test";
 const ENV_PATH = path.join(SANDBOX_ROOT, ENV_FILE);
 const DEPLOYMENTS_DIR = path.join(SANDBOX_ROOT, "deployments");
 
-const RPC_URL = "http://127.0.0.1:9000";
+const RPC_URL = "http://127.0.0.1:45516";
 const FAUCET_HOST = "http://127.0.0.1:9123";
 
 // ---------------------------------------------------------------------------
@@ -139,7 +139,7 @@ describe("deploy-all pipeline (localnet)", () => {
     // ----------------------------------------------------------------
     test("starts localnet", async () => {
         const { rpcPort, faucetPort } = await startLocalnet(SANDBOX_ROOT);
-        expect(rpcPort).toBe(9000);
+        expect(rpcPort).toBe(45516);
         expect(faucetPort).toBe(9123);
 
         // RPC should be responding

@@ -39,7 +39,7 @@ const SANDBOX_ROOT = path.resolve(__dirname, "../..");
 const ENV_FILE = ".env.test";
 const ENV_PATH = path.join(SANDBOX_ROOT, ENV_FILE);
 
-const RPC_URL = "http://127.0.0.1:9000";
+const RPC_URL = "http://127.0.0.1:45516";
 
 // ---------------------------------------------------------------------------
 // Docker cleanup helper

@@ -65,7 +65,7 @@ async function main() {
         if (network === "localnet") {
             log.phase("Starting localnet (docker compose)");
             await startLocalnet(sandboxRoot);
-            log.success("RPC: http://127.0.0.1:9000");
+            log.success("RPC: http://127.0.0.1:45516");
             log.success("Faucet: http://127.0.0.1:9123");
         }
 

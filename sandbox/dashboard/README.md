@@ -23,13 +23,13 @@ pnpm dev          # http://localhost:5173
 
 The dev server proxies API requests to the sandbox services:
 
-| Path            | Target           | Service          |
-| --------------- | ---------------- | ---------------- |
-| `/api/sui`      | `localhost:9000` | Sui localnet RPC |
-| `/api/oracle`   | `localhost:9010` | Oracle service   |
-| `/api/mm`       | `localhost:3001` | Market maker     |
-| `/api/faucet`   | `localhost:9009` | Faucet           |
-| `/api/deepbook` | `localhost:9008` | DeepBook server  |
+| Path            | Target            | Service          |
+| --------------- | ----------------- | ---------------- |
+| `/api/sui`      | `localhost:45516` | Sui localnet RPC |
+| `/api/oracle`   | `localhost:9010`  | Oracle service   |
+| `/api/mm`       | `localhost:3001`  | Market maker     |
+| `/api/faucet`   | `localhost:9009`  | Faucet           |
+| `/api/deepbook` | `localhost:9008`  | DeepBook server  |
 
 > Make sure the sandbox stack is running (`pnpm deploy-all` from `sandbox/`) before starting the dashboard.
 
