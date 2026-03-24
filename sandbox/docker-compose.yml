@@ -115,7 +115,7 @@ services:
     build:
       context: .
       dockerfile: ./scripts/market-maker/Dockerfile
-    image: ${MARKET_MAKER_IMAGE:-mysten/deepbook-sandbox-market-maker:89def920ad19a1a1a040b3df66cdd0d87e5300c2-arm64}
+    image: ${MARKET_MAKER_IMAGE:-mysten/deepbook-sandbox-market-maker:d751ee341af732200c06f48c44be9bbfbcf64163-arm64}
     container_name: deepbook-market-maker
     environment:
       NETWORK: localnet
@@ -250,7 +250,7 @@ services:
       - remote
     build:
       context: ./faucet
-    image: ${FAUCET_IMAGE:-mysten/deepbook-sandbox-faucet:89def920ad19a1a1a040b3df66cdd0d87e5300c2-arm64}
+    image: ${FAUCET_IMAGE:-mysten/deepbook-sandbox-faucet:d751ee341af732200c06f48c44be9bbfbcf64163-arm64}
     container_name: deepbook-faucet
     environment:
       NETWORK: ${NETWORK:-localnet}
@@ -315,7 +315,7 @@ services:
     build:
       context: .
       dockerfile: ./scripts/oracle-service/Dockerfile
-    image: ${ORACLE_SERVICE_IMAGE:-mysten/deepbook-sandbox-oracle-service:89def920ad19a1a1a040b3df66cdd0d87e5300c2-arm64}
+    image: ${ORACLE_SERVICE_IMAGE:-mysten/deepbook-sandbox-oracle-service:d751ee341af732200c06f48c44be9bbfbcf64163-arm64}
     container_name: oracle-service
     environment:
       NETWORK: localnet

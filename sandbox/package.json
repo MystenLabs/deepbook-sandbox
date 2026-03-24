@@ -1,6 +1,6 @@
 {
     "name": "deepbook-sandbox",
-    "version": "1.0.0",
+    "version": "0.2.0",
     "type": "module",
     "private": true,
     "description": "DeepBook V3 localnet deployment sandbox",
@@ -9,9 +9,9 @@
         "down": "tsx scripts/down.ts",
         "oracle-service": "tsx scripts/oracle-service/index.ts",
         "market-maker": "tsx scripts/market-maker/index.ts",
+        "test": "vitest run",
         "test:unit": "vitest run --config vitest.unit.config.ts",
-        "test:unit:verbose": "vitest run --config vitest.unit.config.ts --reporter verbose",
-        "test:integration": "vitest run"
+        "test:integration": "vitest run --config vitest.integration.config.ts"
     },
     "dependencies": {
         "@mysten/sui": "^1.45.2",
