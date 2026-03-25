@@ -20,7 +20,7 @@ const checks: Check[] = [
     {
         name: "pnpm",
         command: "pnpm --version",
-        hint: "Install pnpm: corepack enable && corepack prepare pnpm@latest --activate",
+        hint: "Install pnpm: npm install -g pnpm",
     },
     {
         name: "git",
