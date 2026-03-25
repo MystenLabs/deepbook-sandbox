@@ -32,6 +32,15 @@ async function main() {
 
     console.log("=== DEEP/SUI Order Book ===\n");
 
+    // Format price with enough precision to distinguish levels.
+    // DeepBook prices can be very small (e.g. 0.0000305), so fixed 4
+    // decimals would truncate them all to 0.0000.
+    const formatPrice = (n: number) => {
+        if (n === 0) return "0";
+        // Show up to 8 decimals, then strip trailing zeros
+        return n.toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
+    };
+
     // Ask side (sellers) — displayed top-down (highest first)
     const asks = ticks.ask_prices.map((price, i) => ({
         price: Number(price),
@@ -39,7 +48,9 @@ async function main() {
     }));
 
     for (const level of asks.reverse()) {
-        console.log(`  ASK  ${level.price.toFixed(4)}  ${level.quantity.toFixed(2)} DEEP`);
+        console.log(
+            `  ASK  ${formatPrice(level.price).padStart(10)}  ${level.quantity.toFixed(2)} DEEP`,
+        );
     }
 
     console.log(`  --- mid: ${midPrice} ---`);
@@ -51,7 +62,9 @@ async function main() {
     }));
 
     for (const level of bids) {
-        console.log(`  BID  ${level.price.toFixed(4)}  ${level.quantity.toFixed(2)} DEEP`);
+        console.log(
+            `  BID  ${formatPrice(level.price).padStart(10)}  ${level.quantity.toFixed(2)} DEEP`,
+        );
     }
 
     console.log("\nDone.");

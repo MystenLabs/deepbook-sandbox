@@ -49,8 +49,9 @@ async function main() {
     const result = await signAndExecute(client, keypair, orderTx);
     console.log(`Order executed. Transaction digest: ${result.digest}\n`);
 
-    // Check the BalanceManager balance to confirm the fill
-    const balance = await client.deepbook.checkManagerBalance(balanceManagerKey, "DEEP");
+    // Check the BalanceManager balance to confirm the fill.
+    // checkManagerBalance returns { coinType, balance } with the balance in human units.
+    const { balance } = await client.deepbook.checkManagerBalance(balanceManagerKey, "DEEP");
     console.log(`DEEP balance in BalanceManager: ${balance}`);
 
     console.log("\nDone.");

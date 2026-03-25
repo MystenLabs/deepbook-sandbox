@@ -30,7 +30,17 @@ async function main() {
     await signAndExecute(client, keypair, depositTx);
     console.log("Deposit confirmed.\n");
 
-    // Place a limit BID at 0.05 SUI per DEEP — well below the ~0.1 market price.
+    // Query the current mid price so we can place our bid below it.
+    // A bid below all resting bids will rest on the book without filling.
+    const midPrice = await client.deepbook.midPrice("DEEP_SUI");
+
+    // Round down to the pool's tick size (0.000001 SUI for DEEP/SUI).
+    // On-chain prices must be exact multiples of the tick size.
+    const TICK_SIZE = 0.000001;
+    const bidPrice = Math.floor((midPrice * 0.5) / TICK_SIZE) * TICK_SIZE;
+    console.log(`Mid price: ${midPrice} SUI/DEEP — bidding at ${bidPrice}\n`);
+
+    // Place a limit BID well below the mid price.
     // This ensures the order rests on the book rather than filling immediately.
     //
     // Order types:
@@ -46,7 +56,7 @@ async function main() {
         poolKey: "DEEP_SUI",
         balanceManagerKey,
         clientOrderId: "1",
-        price: 0.05,
+        price: bidPrice,
         quantity: 10,
         isBid: true,
         orderType: OrderType.NO_RESTRICTION,
@@ -54,7 +64,7 @@ async function main() {
         payWithDeep: false,
     })(orderTx);
 
-    console.log("Placing limit BID: 10 DEEP @ 0.05 SUI...");
+    console.log(`Placing limit BID: 10 DEEP @ ${bidPrice} SUI...`);
     const result = await signAndExecute(client, keypair, orderTx);
     console.log(`Order placed. Transaction digest: ${result.digest}\n`);
 

@@ -271,6 +271,11 @@ export async function setupWithBalanceManager(): Promise<SandboxConfigWithBM> {
         throw new Error("Failed to extract BalanceManager ID from transaction result");
     }
 
+    // Wait for the transaction to be fully indexed by the gRPC node.
+    // Without this, the next transaction may fail with "Object not found"
+    // because the shared BalanceManager hasn't been processed yet.
+    await tempClient.core.waitForTransaction({ digest: result.Transaction!.digest });
+
     console.log(`BalanceManager created: ${balanceManagerId}\n`);
 
     // Step 4: Re-create client with BM registered
@@ -290,7 +295,8 @@ export async function setupWithBalanceManager(): Promise<SandboxConfigWithBM> {
 
 /**
  * Sign and execute a transaction, throwing on failure.
- * Returns the successful transaction result.
+ * Waits for the transaction to be fully indexed before returning,
+ * so subsequent transactions can safely reference modified objects.
  */
 export async function signAndExecute(
     client: SandboxClient,
@@ -306,6 +312,10 @@ export async function signAndExecute(
     if (result.$kind === "FailedTransaction") {
         throw new Error(`Transaction failed: ${JSON.stringify(result.FailedTransaction)}`);
     }
+
+    // Wait for the gRPC node to fully index this transaction.
+    // Without this, the next transaction may not see updated object state.
+    await client.core.waitForTransaction({ digest: result.Transaction!.digest });
 
     return result.Transaction!;
 }

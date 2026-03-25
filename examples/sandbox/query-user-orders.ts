@@ -22,17 +22,26 @@ async function main() {
 
     // --- Step 1: Deposit and place a resting limit order ---
 
+    // Query mid price so we can bid well below it (ensures the order rests)
+    const midPrice = await client.deepbook.midPrice("DEEP_SUI");
+
+    // Round down to the pool's tick size (0.000001 SUI for DEEP/SUI).
+    // On-chain prices must be exact multiples of the tick size.
+    const TICK_SIZE = 0.000001;
+    const bidPrice = Math.floor((midPrice * 0.3) / TICK_SIZE) * TICK_SIZE;
+    console.log(`Mid price: ${midPrice} SUI/DEEP — bidding at ${bidPrice}\n`);
+
     const setupTx = new Transaction();
 
     // Deposit SUI for bidding
     client.deepbook.balanceManager.depositIntoManager(balanceManagerKey, "SUI", 1)(setupTx);
 
-    // Place a limit BID far below market (~0.01 SUI) so it definitely rests
+    // Place a limit BID far below market so it definitely rests
     client.deepbook.deepBook.placeLimitOrder({
         poolKey: "DEEP_SUI",
         balanceManagerKey,
         clientOrderId: "42",
-        price: 0.01,
+        price: bidPrice,
         quantity: 10,
         isBid: true,
         orderType: OrderType.NO_RESTRICTION,
