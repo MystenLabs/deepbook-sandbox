@@ -189,7 +189,7 @@ Test files live in `sandbox/scripts/__tests__/**/*.integration.test.ts`. Vitest 
 The oracle service (`./sandbox/scripts/oracle-service/`) runs as a Docker container and provides automated price feed updates for localnet testing:
 
 - **Deployment**: Runs in Docker as part of the `localnet` profile, started automatically by `pnpm deploy-all`
-- **Purpose**: Updates Pyth price oracle contracts for SUI and DEEP every 10 seconds
+- **Purpose**: Updates Pyth price oracle contracts for SUI, DEEP, and USDC every 10 seconds
 - **Status endpoint**: `http://localhost:9010` — returns JSON with latest prices, update count, and errors
 - **Data Source**: Fetches historical price data from Pyth Network API (24h ago)
 - **Env vars** (set automatically by deploy-all):
@@ -197,9 +197,11 @@ The oracle service (`./sandbox/scripts/oracle-service/`) runs as a Docker contai
   - `PYTH_PACKAGE_ID`: Deployed pyth package address
   - `DEEP_PRICE_INFO_OBJECT_ID`: DEEP PriceInfoObject ID
   - `SUI_PRICE_INFO_OBJECT_ID`: SUI PriceInfoObject ID
+  - `USDC_PRICE_INFO_OBJECT_ID`: USDC PriceInfoObject ID
 - **Price Feeds**:
   - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
   - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
+  - USDC: `0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a`
 - **Files**:
   - `index.ts`: Main service loop + status HTTP server
   - `pyth-client.ts`: Pyth API client
@@ -211,21 +213,14 @@ See [./sandbox/scripts/oracle-service/README.md](./sandbox/scripts/oracle-servic
 
 ### Market Maker Configuration
 
-The market maker supports multiple pools via the `MM_POOLS` JSON env var. Each pool has its own tick/lot/min sizes, oracle references, deposit amounts, and fallback price. Shared grid parameters apply to all pools.
-
-**Multi-pool config** (set by `deploy-all`):
-
-- `MM_POOLS` - JSON array of pool configs (per-pool: poolId, coinTypes, tickSize, lotSize, minSize, orderSizeBase, fallbackMidPrice, deposit amounts, oracle IDs, decimals)
-
-**Shared grid parameters:**
+Environment variables for `pnpm market-maker`:
 
 - `MM_SPREAD_BPS` - Spread in basis points (default: 10 = 0.1%)
 - `MM_LEVELS_PER_SIDE` - Orders per side (default: 5)
+- `MM_ORDER_SIZE_BASE` - Order size in base asset units (default: 10_000_000 = 10 DEEP)
 - `MM_REBALANCE_INTERVAL_MS` - Rebalance interval (default: 10000)
 - `MM_HEALTH_CHECK_PORT` - Health server port (default: 3000)
 - `MM_METRICS_PORT` - Prometheus metrics port (default: 9090)
-
-**Backward compat:** If `MM_POOLS` is not set, falls back to legacy single-pool env vars (`POOL_ID`, `BASE_COIN_TYPE`, etc.).
 
 See `sandbox/scripts/market-maker/README.md` for full documentation.
 

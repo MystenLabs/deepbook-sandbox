@@ -3,6 +3,7 @@ import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
 import type { ParsedPriceData } from "./types";
 import { SUI_PRICE_FEED_ID, DEEP_PRICE_FEED_ID, USDC_PRICE_FEED_ID } from "./constants";
+import { formatPrice } from "./format-price";
 import { fromHex } from "@mysten/sui/utils";
 import log from "../utils/logger";
 
@@ -17,7 +18,7 @@ export class OracleUpdater {
     ) {}
 
     /**
-     * Updates both SUI and DEEP price feeds on-chain
+     * Updates SUI, DEEP, and USDC price feeds on-chain
      */
     async updatePriceFeeds(
         priceData: ParsedPriceData[],
@@ -72,7 +73,7 @@ export class OracleUpdater {
             }
 
             log.loopSuccess(`Updated price feeds (digest: ${result.digest})`);
-            this.logPriceData(suiData, deepData);
+            this.logPriceData(suiData, deepData, usdcData);
         } catch (error) {
             log.loopError("Failed to update price feeds", error);
             throw error;
@@ -163,14 +164,13 @@ export class OracleUpdater {
     /**
      * Logs price data in a readable format
      */
-    private logPriceData(suiData: ParsedPriceData, deepData: ParsedPriceData) {
-        const formatPrice = (price: string, expo: number) => {
-            const priceNum = Number.parseInt(price);
-            const formatted = priceNum * Math.pow(10, expo);
-            return formatted.toFixed(Math.abs(expo));
-        };
-
+    private logPriceData(
+        suiData: ParsedPriceData,
+        deepData: ParsedPriceData,
+        usdcData: ParsedPriceData,
+    ) {
         log.loopDetail(`SUI:  $${formatPrice(suiData.price.price, suiData.price.expo)}`);
         log.loopDetail(`DEEP: $${formatPrice(deepData.price.price, deepData.price.expo)}`);
+        log.loopDetail(`USDC: $${formatPrice(usdcData.price.price, usdcData.price.expo)}`);
     }
 }
