@@ -66,7 +66,7 @@ const MANIFEST_PATH = join(__dirname, "../../sandbox/deployments/localnet.json")
 const LOCALNET_URL = "http://127.0.0.1:9000";
 const FAUCET_URL = "http://127.0.0.1:9009";
 const BALANCE_MANAGER_KEY = "MANAGER_1";
-const SUI_ADDRESS = "0x0000000000000000000000000000000000000000000000000000000000000002";
+const SUI_ADDRESS = SUI_FRAMEWORK_ADDRESS;
 
 // ---------------------------------------------------------------------------
 // Manifest loading & ID extraction
