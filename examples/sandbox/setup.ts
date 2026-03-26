@@ -21,6 +21,7 @@ import type { ClientWithExtensions } from "@mysten/sui/client";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { Transaction } from "@mysten/sui/transactions";
+import { SUI_FRAMEWORK_ADDRESS } from "@mysten/sui/utils";
 
 // ---------------------------------------------------------------------------
 // Types
