@@ -62,6 +62,17 @@ deepbook-sandbox/
 │       │   ├── constants.ts       # Price feed IDs
 │       │   └── types.ts           # TypeScript types
 │       └── utils/         # Shared utilities
+├── examples/
+│   └── sandbox/           # SDK integration examples (@mysten/deepbook-v3)
+│       ├── package.json   # Isolated package (uses @mysten/sui@v2, NOT v1)
+│       ├── tsconfig.json
+│       ├── setup.ts       # Shared: manifest loader, client factory, faucet, BM lifecycle
+│       ├── check-order-book.ts   # Read-only: mid price + order book depth
+│       ├── swap-tokens.ts        # Direct wallet swap SUI→DEEP (no BalanceManager)
+│       ├── place-limit-order.ts  # Create BM, deposit, place resting limit bid
+│       ├── place-market-order.ts # Create BM, deposit, market buy against MM
+│       ├── query-user-orders.ts  # Place, query, cancel — full order lifecycle
+│       └── README.md
 └── external/
     └── deepbook/          # Git submodule - DeepBookV3 source
         ├── packages/      # Move smart contracts
@@ -229,3 +240,27 @@ See `sandbox/scripts/market-maker/README.md` for full documentation.
 - **Balance Manager**: Shared object holding all balances for an account (1 owner, up to 1000 traders)
 - **Pool**: Contains Book (order matching), State (user data, volumes, governance), and Vault (settlement)
 - **DEEP Token**: Required for trading fees; can be staked for reduced fees and governance participation
+
+## SDK Integration Examples
+
+`examples/sandbox/` contains runnable TypeScript examples using the `@mysten/deepbook-v3` SDK. These demonstrate how external developers integrate with DeepBook — the pattern real builders would follow.
+
+**Important:** These use `@mysten/sui@v2` (the SDK's peer dependency), which is incompatible with the sandbox's `@mysten/sui@v1`. The examples have their own `package.json` and `node_modules/` — never share code between `examples/` and `sandbox/scripts/`.
+
+```bash
+# Run examples (sandbox must be running first)
+cd examples/sandbox
+pnpm install
+pnpm check-order-book     # Read-only queries
+pnpm swap-tokens           # Direct wallet swap
+pnpm place-limit-order     # BalanceManager + limit order
+pnpm place-market-order    # Market order (needs MM running)
+pnpm query-user-orders     # Full order lifecycle
+```
+
+Key architecture decisions:
+
+- Uses `$extend` pattern with `SuiGrpcClient` (official Sui v2 SDK pattern)
+- Reads deployment manifest from `sandbox/deployments/localnet.json` (written by `pnpm deploy-all`)
+- Constructs `CoinMap`, `PoolMap`, and `DeepbookPackageIds` at runtime from the manifest
+- Fresh keypair per run, funded via sandbox faucet (port 9009) — avoids gas conflicts with MM
