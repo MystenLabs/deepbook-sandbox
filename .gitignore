@@ -154,6 +154,6 @@ target/
 .idea
 .venv/
 
-# Dev aux folders
+# User local folders
 docs/
 worktrees/
