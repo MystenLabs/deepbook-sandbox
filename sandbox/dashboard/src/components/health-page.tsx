@@ -1,10 +1,39 @@
-import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSuiClientQuery } from "@mysten/dapp-kit";
-import { Box, Activity, ArrowLeftRight, Droplets, RefreshCw, Server } from "lucide-react";
+import {
+    Box,
+    Activity,
+    ArrowLeftRight,
+    Droplets,
+    RefreshCw,
+    Server,
+    Play,
+    Square,
+    RotateCw,
+    Eye,
+    Download,
+    Trash2,
+    Save,
+    AlertCircle,
+    CheckCircle2,
+} from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 /* ------------------------------------------------------------------ */
 /*  Types (matching actual service responses)                         */
@@ -51,17 +80,324 @@ interface ServerStatusResponse {
     }[];
 }
 
+// Control API types
+interface ServiceInfo {
+    name: string;
+    status: "running" | "stopped" | "error" | "unknown";
+    uptime?: string;
+    ports?: string[];
+    image?: string;
+}
+
+interface ServiceListResponse {
+    services: ServiceInfo[];
+}
+
+interface LogsResponse {
+    logs: string;
+    service: string;
+    lines: number;
+}
+
+interface ConfigResponse {
+    content: string;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
 const REFETCH_INTERVAL = 10_000;
 
+// Get API token from environment variable (injected at build time)
+const getApiToken = () => {
+    return import.meta.env.VITE_CONTROL_API_TOKEN || "";
+};
+
+// API client
+const controlApi = {
+    async fetchServices(): Promise<ServiceListResponse> {
+        const response = await fetch("/api/control/services", {
+            headers: { Authorization: `Bearer ${getApiToken()}` },
+        });
+        if (!response.ok) throw new Error("Failed to fetch services");
+        return response.json();
+    },
+
+    async startService(serviceName: string): Promise<void> {
+        const response = await fetch(`/api/control/services/${serviceName}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${getApiToken()}` },
+        });
+        if (!response.ok) throw new Error("Failed to start service");
+    },
+
+    async stopService(serviceName: string): Promise<void> {
+        const response = await fetch(`/api/control/services/${serviceName}/stop`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${getApiToken()}` },
+        });
+        if (!response.ok) throw new Error("Failed to stop service");
+    },
+
+    async restartService(serviceName: string): Promise<void> {
+        const response = await fetch(`/api/control/services/${serviceName}/restart`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${getApiToken()}` },
+        });
+        if (!response.ok) throw new Error("Failed to restart service");
+    },
+
+    async fetchLogs(serviceName: string, lines: number): Promise<LogsResponse> {
+        const response = await fetch(`/api/control/services/${serviceName}/logs?lines=${lines}`, {
+            headers: { Authorization: `Bearer ${getApiToken()}` },
+        });
+        if (!response.ok) throw new Error("Failed to fetch logs");
+        return response.json();
+    },
+
+    async resetEnvironment(): Promise<void> {
+        const response = await fetch("/api/control/reset", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${getApiToken()}` },
+        });
+        if (!response.ok) throw new Error("Failed to reset environment");
+    },
+
+    async restartAllServices(): Promise<void> {
+        const response = await fetch("/api/control/services/restart-all", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${getApiToken()}` },
+        });
+        if (!response.ok) throw new Error("Failed to restart all services");
+    },
+
+    async fetchConfig(): Promise<ConfigResponse> {
+        const response = await fetch("/api/control/config", {
+            headers: { Authorization: `Bearer ${getApiToken()}` },
+        });
+        if (!response.ok) throw new Error("Failed to fetch config");
+        return response.json();
+    },
+
+    async updateConfig(content: string): Promise<void> {
+        const response = await fetch("/api/control/config", {
+            method: "PUT",
+            headers: {
+                Authorization: `Bearer ${getApiToken()}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ content }),
+        });
+        if (!response.ok) throw new Error("Failed to update config");
+    },
+};
+
+/* ------------------------------------------------------------------ */
+/*  ServiceControlButtons Component                                   */
+/* ------------------------------------------------------------------ */
+
+function ServiceControlButtons({ serviceName }: { serviceName: string }) {
+    const queryClient = useQueryClient();
+    const [actionError, setActionError] = useState<string | null>(null);
+    const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+    const [showLogsDialog, setShowLogsDialog] = useState(false);
+    const [logLines, setLogLines] = useState(100);
+
+    // Fetch service status
+    const { data: servicesData } = useQuery({
+        queryKey: ["services"],
+        queryFn: controlApi.fetchServices,
+        refetchInterval: 10000,
+    });
+
+    const service = servicesData?.services.find((s) => s.name === serviceName);
+
+    const startMutation = useMutation({
+        mutationFn: () => controlApi.startService(serviceName),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["services"] });
+            setActionSuccess(`Started ${serviceName}`);
+            setActionError(null);
+            setTimeout(() => setActionSuccess(null), 3000);
+        },
+        onError: (error: Error) => {
+            setActionError(`Failed to start: ${error.message}`);
+            setActionSuccess(null);
+        },
+    });
+
+    const stopMutation = useMutation({
+        mutationFn: () => controlApi.stopService(serviceName),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["services"] });
+            setActionSuccess(`Stopped ${serviceName}`);
+            setActionError(null);
+            setTimeout(() => setActionSuccess(null), 3000);
+        },
+        onError: (error: Error) => {
+            setActionError(`Failed to stop: ${error.message}`);
+            setActionSuccess(null);
+        },
+    });
+
+    const restartMutation = useMutation({
+        mutationFn: () => controlApi.restartService(serviceName),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["services"] });
+            setActionSuccess(`Restarted ${serviceName}`);
+            setActionError(null);
+            setTimeout(() => setActionSuccess(null), 3000);
+        },
+        onError: (error: Error) => {
+            setActionError(`Failed to restart: ${error.message}`);
+            setActionSuccess(null);
+        },
+    });
+
+    const { data: logsData, isLoading: logsLoading } = useQuery({
+        queryKey: ["logs", serviceName, logLines],
+        queryFn: () => controlApi.fetchLogs(serviceName, logLines),
+        enabled: showLogsDialog,
+        refetchInterval: showLogsDialog ? 5000 : false,
+    });
+
+    const downloadLogs = () => {
+        if (!logsData?.logs) return;
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const filename = `${serviceName}-logs-${timestamp}.txt`;
+        const blob = new Blob([logsData.logs], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <>
+            <div className="space-y-2 pt-2">
+                {actionSuccess && (
+                    <Alert className="bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
+                        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <AlertDescription className="text-green-800 dark:text-green-200">
+                            {actionSuccess}
+                        </AlertDescription>
+                    </Alert>
+                )}
+
+                {actionError && (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>{actionError}</AlertDescription>
+                    </Alert>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => startMutation.mutate()}
+                        disabled={service?.status === "running" || startMutation.isPending}
+                    >
+                        <Play className="mr-1 h-3 w-3" /> Start
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => stopMutation.mutate()}
+                        disabled={service?.status === "stopped" || stopMutation.isPending}
+                    >
+                        <Square className="mr-1 h-3 w-3" /> Stop
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => restartMutation.mutate()}
+                        disabled={restartMutation.isPending}
+                    >
+                        <RotateCw className="mr-1 h-3 w-3" /> Restart
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setShowLogsDialog(true)}>
+                        <Eye className="mr-1 h-3 w-3" /> View Logs
+                    </Button>
+                </div>
+            </div>
+
+            {/* Logs Dialog */}
+            <Dialog open={showLogsDialog} onOpenChange={setShowLogsDialog}>
+                <DialogContent className="max-w-4xl max-h-[80vh]">
+                    <DialogHeader>
+                        <DialogTitle>
+                            {serviceName} Logs
+                        </DialogTitle>
+                        <DialogDescription>
+                            Real-time logs (auto-refreshes every 5s)
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <Label htmlFor={`lines-${serviceName}`}>Lines:</Label>
+                            <Input
+                                id={`lines-${serviceName}`}
+                                type="number"
+                                value={logLines}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                    setLogLines(parseInt(e.target.value) || 100)
+                                }
+                                className="w-24"
+                                min={10}
+                                max={1000}
+                            />
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={downloadLogs}
+                                disabled={!logsData?.logs || logsLoading}
+                            >
+                                <Download className="mr-1 h-3 w-3" />
+                                Download
+                            </Button>
+                        </div>
+                        <div className="rounded-md bg-black p-3 font-mono text-xs text-green-400 overflow-auto max-h-96">
+                            {logsLoading ? (
+                                <div>Loading logs...</div>
+                            ) : logsData ? (
+                                <pre className="whitespace-pre-wrap">
+                                    {logsData.logs || "No logs available"}
+                                </pre>
+                            ) : null}
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowLogsDialog(false)}>
+                            Close
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
+    );
+}
+
 /* ------------------------------------------------------------------ */
 /*  HealthPage                                                        */
 /* ------------------------------------------------------------------ */
 
 export function HealthPage() {
+    const queryClient = useQueryClient();
+    const [showResetDialog, setShowResetDialog] = useState(false);
+    const [showConfigEditor, setShowConfigEditor] = useState(false);
+    const [resetError, setResetError] = useState<string | null>(null);
+    const [configError, setConfigError] = useState<string | null>(null);
+    const [restartAllSuccess, setRestartAllSuccess] = useState<string | null>(null);
+    const [restartAllError, setRestartAllError] = useState<string | null>(null);
+    const [configContent, setConfigContent] = useState("");
+
     const sui = useSuiClientQuery("getLatestCheckpointSequenceNumber", undefined, {
         refetchInterval: REFETCH_INTERVAL,
         retry: false,
@@ -122,14 +458,98 @@ export function HealthPage() {
         retry: false,
     });
 
+    const { data: configData } = useQuery({
+        queryKey: ["config"],
+        queryFn: controlApi.fetchConfig,
+        enabled: showConfigEditor,
+    });
+
+    const updateConfigMutation = useMutation({
+        mutationFn: (content: string) => controlApi.updateConfig(content),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["config"] });
+            setShowConfigEditor(false);
+            setConfigError(null);
+        },
+        onError: (error: Error) => {
+            setConfigError(`Failed to update config: ${error.message}`);
+        },
+    });
+
+    const resetMutation = useMutation({
+        mutationFn: controlApi.resetEnvironment,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["services"] });
+            setShowResetDialog(false);
+            setResetError(null);
+        },
+        onError: (error: Error) => {
+            setResetError(`Failed to reset environment: ${error.message}`);
+        },
+    });
+
+    const restartAllMutation = useMutation({
+        mutationFn: controlApi.restartAllServices,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["services"] });
+            setRestartAllSuccess("All services restarted successfully");
+            setRestartAllError(null);
+            setTimeout(() => setRestartAllSuccess(null), 3000);
+        },
+        onError: (error: Error) => {
+            setRestartAllError(`Failed to restart all services: ${error.message}`);
+            setRestartAllSuccess(null);
+        },
+    });
+
     return (
         <div className="space-y-4">
-            <div className="space-y-1">
-                <h1 className="text-lg font-semibold">Service Health</h1>
-                <p className="text-xs text-muted-foreground">
-                    Auto-refreshes every {REFETCH_INTERVAL / 1000}s
-                </p>
+            <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                    <h1 className="text-lg font-semibold">Service Health</h1>
+                    <p className="text-xs text-muted-foreground">
+                        Auto-refreshes every {REFETCH_INTERVAL / 1000}s
+                    </p>
+                </div>
+                <div className="flex gap-2">
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => restartAllMutation.mutate()}
+                        disabled={restartAllMutation.isPending}
+                    >
+                        <RotateCw className="mr-2 h-4 w-4" />
+                        {restartAllMutation.isPending ? "Restarting..." : "Restart All Services"}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setShowConfigEditor(true)}>
+                        <Save className="mr-2 h-4 w-4" /> Edit Config
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setShowResetDialog(true)}
+                    >
+                        <Trash2 className="mr-2 h-4 w-4" /> Reset Environment
+                    </Button>
+                </div>
             </div>
+
+            {restartAllSuccess && (
+                <Alert className="bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
+                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    <AlertDescription className="text-green-800 dark:text-green-200">
+                        {restartAllSuccess}
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {restartAllError && (
+                <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{restartAllError}</AlertDescription>
+                </Alert>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2">
                 {/* Sui Node */}
                 <GridCard>
@@ -220,6 +640,7 @@ export function HealthPage() {
                                 }
                             />
                         </MetricRow>
+                        <ServiceControlButtons serviceName="oracle-service" />
                     </CardContent>
                 </GridCard>
 
@@ -272,6 +693,7 @@ export function HealthPage() {
                                 value={mm.data ? formatUptime(mm.data.uptime) : undefined}
                             />
                         </MetricRow>
+                        <ServiceControlButtons serviceName="deepbook-market-maker" />
                     </CardContent>
                 </GridCard>
 
@@ -309,6 +731,7 @@ export function HealthPage() {
                                 }
                             />
                         </MetricRow>
+                        <ServiceControlButtons serviceName="deepbook-faucet" />
                     </CardContent>
                 </GridCard>
 
@@ -370,9 +793,104 @@ export function HealthPage() {
                                 value={server.data?.pipelines.length}
                             />
                         </MetricRow>
+                        <ServiceControlButtons serviceName="deepbook-server" />
                     </CardContent>
                 </GridCard>
             </div>
+
+            {/* Reset Environment Dialog */}
+            <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Reset Environment</DialogTitle>
+                        <DialogDescription>
+                            This will stop all services and remove all volumes. All data will be
+                            lost.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                            This action cannot be undone. All deployment data and volumes will be
+                            permanently deleted.
+                        </AlertDescription>
+                    </Alert>
+                    {resetError && (
+                        <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription>{resetError}</AlertDescription>
+                        </Alert>
+                    )}
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowResetDialog(false);
+                                setResetError(null);
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() => resetMutation.mutate()}
+                            disabled={resetMutation.isPending}
+                        >
+                            {resetMutation.isPending ? "Resetting..." : "Reset Environment"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Config Editor Dialog */}
+            <Dialog open={showConfigEditor} onOpenChange={setShowConfigEditor}>
+                <DialogContent className="max-w-3xl">
+                    <DialogHeader>
+                        <DialogTitle>Configuration Editor</DialogTitle>
+                        <DialogDescription>
+                            Edit the .env configuration file. Changes require service restart to
+                            take effect.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {configError && (
+                            <Alert variant="destructive">
+                                <AlertCircle className="h-4 w-4" />
+                                <AlertDescription>{configError}</AlertDescription>
+                            </Alert>
+                        )}
+                        <Textarea
+                            value={configContent || configData?.content || ""}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                                setConfigContent(e.target.value)
+                            }
+                            className="font-mono text-sm"
+                            rows={20}
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowConfigEditor(false);
+                                setConfigError(null);
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={() =>
+                                updateConfigMutation.mutate(
+                                    configContent || configData?.content || "",
+                                )
+                            }
+                            disabled={updateConfigMutation.isPending}
+                        >
+                            {updateConfigMutation.isPending ? "Saving..." : "Save Changes"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

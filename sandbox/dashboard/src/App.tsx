@@ -6,14 +6,12 @@ import { FaucetPage } from "@/components/faucet-page";
 import { HealthPage } from "@/components/health-page";
 import { MarketMakerPage } from "@/components/market-maker-page";
 import { DeploymentPage } from "@/components/deployment-page";
-import { ControlPage } from "@/components/control-page";
 
 const navLinks = [
     { to: "/", label: "Health" },
     { to: "/market-maker", label: "Market Maker" },
     { to: "/faucet", label: "Faucet" },
     { to: "/deployment", label: "Deployment" },
-    { to: "/control", label: "Control" },
 ] as const;
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -85,7 +83,6 @@ export default function App() {
                         }
                     />
                     <Route path="/deployment" element={<DeploymentPage />} />
-                    <Route path="/control" element={<ControlPage />} />
                 </Routes>
             </Layout>
         </BrowserRouter>
