@@ -148,10 +148,26 @@ export async function restartAllServices(projectName: string): Promise<void> {
 
 export async function resetEnvironment(projectName: string): Promise<void> {
     try {
-        // Stop all services (use longer timeout for cleanup)
+        // Get list of services first
+        const services = await listServices(projectName);
+        const serviceNames = services
+            .filter((s) => s.name !== "control-api" && s.name !== "dashboard" && s.name !== "sui-localnet")
+            .map((s) => s.name);
+
+        if (serviceNames.length === 0) {
+            return;
+        }
+
+        // Stop services (exclude control-api, dashboard, and sui-localnet)
         await execWithTimeout(
-            `docker-compose -p ${projectName} down -v`,
-            60000, // 60 seconds for stopping all services and removing volumes
+            `docker-compose -p ${projectName} stop ${serviceNames.join(" ")}`,
+            60000, // 60 seconds for stopping services
+        );
+
+        // Remove stopped containers and their volumes
+        await execWithTimeout(
+            `docker-compose -p ${projectName} rm -v -f ${serviceNames.join(" ")}`,
+            60000, // 60 seconds for removing containers and volumes
         );
     } catch (error) {
         console.error("Failed to reset environment:", error);
