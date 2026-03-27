@@ -463,9 +463,11 @@ export function ControlPage() {
                 <div>Loading services...</div>
             ) : servicesData ? (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {servicesData.services.map((service) => (
-                        <ServiceCard key={service.name} service={service} />
-                    ))}
+                    {servicesData.services
+                        .filter((service) => service.name !== "sui-localnet")
+                        .map((service) => (
+                            <ServiceCard key={service.name} service={service} />
+                        ))}
                 </div>
             ) : null}
 

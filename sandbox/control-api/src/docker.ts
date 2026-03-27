@@ -6,7 +6,6 @@ const execAsync = promisify(exec);
 
 // Allowlist of services that can be controlled
 const ALLOWED_SERVICES = [
-    "sui-localnet",
     "postgres",
     "deepbook-postgres",
     "deepbook-market-maker",
@@ -114,7 +113,7 @@ export async function restartAllServices(projectName: string): Promise<void> {
         // Get list of running services first
         const services = await listServices(projectName);
         const serviceNames = services
-            .filter((s) => s.name !== "control-api" && s.name !== "dashboard")
+            .filter((s) => s.name !== "control-api" && s.name !== "dashboard" && s.name !== "sui-localnet")
             .map((s) => s.name);
 
         if (serviceNames.length === 0) {
