@@ -332,9 +332,7 @@ function ServiceControlButtons({ serviceName }: { serviceName: string }) {
             <Dialog open={showLogsDialog} onOpenChange={setShowLogsDialog}>
                 <DialogContent className="max-w-4xl max-h-[80vh]">
                     <DialogHeader>
-                        <DialogTitle>
-                            {serviceName} Logs
-                        </DialogTitle>
+                        <DialogTitle>{serviceName} Logs</DialogTitle>
                         <DialogDescription>
                             Real-time logs (auto-refreshes every 5s)
                         </DialogDescription>
