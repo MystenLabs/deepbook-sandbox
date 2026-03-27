@@ -4,6 +4,21 @@ import type { ServiceInfo } from "./types.js";
 
 const execAsync = promisify(exec);
 
+// Default timeout for docker commands (30 seconds)
+const DEFAULT_TIMEOUT_MS = 30000;
+
+// Wrapper to add timeout to execAsync calls
+async function execWithTimeout(
+    command: string,
+    timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<{ stdout: string; stderr: string }> {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Command timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    return Promise.race([execAsync(command), timeoutPromise]);
+}
+
 // Allowlist of services that can be controlled
 const ALLOWED_SERVICES = [
     "postgres",
@@ -25,7 +40,7 @@ export function validateServiceName(serviceName: string): void {
 
 export async function listServices(projectName: string): Promise<ServiceInfo[]> {
     try {
-        const { stdout } = await execAsync(
+        const { stdout } = await execWithTimeout(
             `docker-compose -p ${projectName} ps --all --format json`,
         );
 
@@ -64,7 +79,7 @@ export async function listServices(projectName: string): Promise<ServiceInfo[]> 
 export async function startService(projectName: string, serviceName: string): Promise<void> {
     validateServiceName(serviceName);
     try {
-        await execAsync(`docker-compose -p ${projectName} start ${serviceName}`);
+        await execWithTimeout(`docker-compose -p ${projectName} start ${serviceName}`);
     } catch (error) {
         console.error(`Failed to start service ${serviceName}:`, error);
         throw new Error(`Failed to start service ${serviceName}`);
@@ -74,7 +89,7 @@ export async function startService(projectName: string, serviceName: string): Pr
 export async function stopService(projectName: string, serviceName: string): Promise<void> {
     validateServiceName(serviceName);
     try {
-        await execAsync(`docker-compose -p ${projectName} stop ${serviceName}`);
+        await execWithTimeout(`docker-compose -p ${projectName} stop ${serviceName}`);
     } catch (error) {
         console.error(`Failed to stop service ${serviceName}:`, error);
         throw new Error(`Failed to stop service ${serviceName}`);
@@ -84,7 +99,7 @@ export async function stopService(projectName: string, serviceName: string): Pro
 export async function restartService(projectName: string, serviceName: string): Promise<void> {
     validateServiceName(serviceName);
     try {
-        await execAsync(`docker-compose -p ${projectName} restart ${serviceName}`);
+        await execWithTimeout(`docker-compose -p ${projectName} restart ${serviceName}`);
     } catch (error) {
         console.error(`Failed to restart service ${serviceName}:`, error);
         throw new Error(`Failed to restart service ${serviceName}`);
@@ -98,7 +113,7 @@ export async function getServiceLogs(
 ): Promise<string> {
     validateServiceName(serviceName);
     try {
-        const { stdout } = await execAsync(
+        const { stdout } = await execWithTimeout(
             `docker-compose -p ${projectName} logs --tail ${lines} ${serviceName}`,
         );
         return stdout;
@@ -120,8 +135,11 @@ export async function restartAllServices(projectName: string): Promise<void> {
             return;
         }
 
-        // Restart all services at once
-        await execAsync(`docker-compose -p ${projectName} restart ${serviceNames.join(" ")}`);
+        // Restart all services at once (use longer timeout for multiple services)
+        await execWithTimeout(
+            `docker-compose -p ${projectName} restart ${serviceNames.join(" ")}`,
+            60000, // 60 seconds for restarting multiple services
+        );
     } catch (error) {
         console.error("Failed to restart all services:", error);
         throw new Error("Failed to restart all services");
@@ -130,8 +148,11 @@ export async function restartAllServices(projectName: string): Promise<void> {
 
 export async function resetEnvironment(projectName: string): Promise<void> {
     try {
-        // Stop all services
-        await execAsync(`docker-compose -p ${projectName} down -v`);
+        // Stop all services (use longer timeout for cleanup)
+        await execWithTimeout(
+            `docker-compose -p ${projectName} down -v`,
+            60000, // 60 seconds for stopping all services and removing volumes
+        );
     } catch (error) {
         console.error("Failed to reset environment:", error);
         throw new Error("Failed to reset environment");
