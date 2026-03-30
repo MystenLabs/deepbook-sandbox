@@ -6,8 +6,8 @@ const marketMakerConfigSchema = z.object({
     // rounding. With tickSize=1_000_000 and mid ~28_000_000, each level offset must
     // be >= 1_000_000, requiring levelSpacingBps >= ~360. Using 500 for safety.
     spreadBps: z.number().int().positive().default(500), // 5% spread
-    levelsPerSide: z.number().int().positive().max(50).default(5), // 5 orders each side
-    levelSpacingBps: z.number().int().positive().default(500), // 5% between levels
+    levelsPerSide: z.number().int().positive().max(50).default(30), // 30 orders each side
+    levelSpacingBps: z.number().int().positive().default(100), // 1% between levels
 
     // Timing
     rebalanceIntervalMs: z.number().int().positive().default(10_000), // 10 seconds
@@ -22,8 +22,8 @@ export type MarketMakerConfig = z.infer<typeof marketMakerConfigSchema>;
 export function loadConfig(overrides?: Partial<MarketMakerConfig>): MarketMakerConfig {
     const defaults = {
         spreadBps: 500,
-        levelsPerSide: 5,
-        levelSpacingBps: 500,
+        levelsPerSide: 30,
+        levelSpacingBps: 100,
         rebalanceIntervalMs: 10_000,
         healthCheckPort: 3000,
         metricsPort: 9090,
