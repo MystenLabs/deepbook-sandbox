@@ -600,7 +600,10 @@ export function HealthPage() {
                                 />
                             </MetricRow>
                             <MetricRow label="Errors">
-                                <MetricValue isLoading={oracle.isLoading} value={oracle.data?.errors} />
+                                <MetricValue
+                                    isLoading={oracle.isLoading}
+                                    value={oracle.data?.errors}
+                                />
                             </MetricRow>
                             <MetricRow label="Last Update">
                                 <MetricValue
@@ -703,7 +706,9 @@ export function HealthPage() {
                                 <MetricValue
                                     isLoading={faucet.isLoading}
                                     value={
-                                        faucet.data ? truncateAddress(faucet.data.deployer) : undefined
+                                        faucet.data
+                                            ? truncateAddress(faucet.data.deployer)
+                                            : undefined
                                     }
                                 />
                             </MetricRow>
@@ -743,7 +748,10 @@ export function HealthPage() {
                     <CardContent className="flex flex-col flex-1">
                         <div className="space-y-2 flex-1">
                             <MetricRow label="Status">
-                                <MetricValue isLoading={server.isLoading} value={server.data?.status} />
+                                <MetricValue
+                                    isLoading={server.isLoading}
+                                    value={server.data?.status}
+                                />
                             </MetricRow>
                             <MetricRow label="Onchain Checkpoint">
                                 <MetricValue
@@ -761,7 +769,9 @@ export function HealthPage() {
                                 <MetricValue
                                     isLoading={server.isLoading}
                                     value={
-                                        server.data ? `${server.data.max_time_lag_seconds}s` : undefined
+                                        server.data
+                                            ? `${server.data.max_time_lag_seconds}s`
+                                            : undefined
                                     }
                                 />
                             </MetricRow>
@@ -783,13 +793,15 @@ export function HealthPage() {
                     <DialogHeader>
                         <DialogTitle>Reset Environment</DialogTitle>
                         <DialogDescription>
-                            This will stop all services (except dashboard, control-api, and sui-localnet).
+                            This will stop all services (except dashboard, control-api, and
+                            sui-localnet).
                         </DialogDescription>
                     </DialogHeader>
                     <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
-                            This will stop all backend services. You can restart them individually using the service controls.
+                            This will stop all backend services. You can restart them individually
+                            using the service controls.
                         </AlertDescription>
                     </Alert>
                     {resetError && (

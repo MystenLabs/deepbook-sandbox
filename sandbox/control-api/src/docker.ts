@@ -134,11 +134,15 @@ export async function getServiceLogs(
     validateServiceName(serviceName);
     const actualServiceName = getServiceName(serviceName);
     const command = `docker-compose -p ${projectName} logs --tail ${lines} ${actualServiceName}`;
-    console.log(`[getServiceLogs] serviceName=${serviceName}, actualServiceName=${actualServiceName}`);
+    console.log(
+        `[getServiceLogs] serviceName=${serviceName}, actualServiceName=${actualServiceName}`,
+    );
     console.log(`[getServiceLogs] executing: ${command}`);
     try {
         const { stdout, stderr } = await execWithTimeout(command);
-        console.log(`[getServiceLogs] stdout length: ${stdout.length}, stderr length: ${stderr.length}`);
+        console.log(
+            `[getServiceLogs] stdout length: ${stdout.length}, stderr length: ${stderr.length}`,
+        );
         if (stderr) {
             console.log(`[getServiceLogs] stderr: ${stderr}`);
         }
