@@ -195,12 +195,6 @@ export async function resetEnvironment(projectName: string): Promise<void> {
             `docker-compose -p ${projectName} stop ${serviceNames.join(" ")}`,
             60000, // 60 seconds for stopping services
         );
-
-        // Remove stopped containers and their volumes
-        await execWithTimeout(
-            `docker-compose -p ${projectName} rm -v -f ${serviceNames.join(" ")}`,
-            60000, // 60 seconds for removing containers and volumes
-        );
     } catch (error) {
         console.error("Failed to reset environment:", error);
         throw new Error("Failed to reset environment");

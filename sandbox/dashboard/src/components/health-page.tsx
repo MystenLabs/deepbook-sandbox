@@ -773,15 +773,13 @@ export function HealthPage() {
                     <DialogHeader>
                         <DialogTitle>Reset Environment</DialogTitle>
                         <DialogDescription>
-                            This will stop all services and remove all volumes. All data will be
-                            lost.
+                            This will stop all services (except dashboard, control-api, and sui-localnet).
                         </DialogDescription>
                     </DialogHeader>
                     <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
-                            This action cannot be undone. All deployment data and volumes will be
-                            permanently deleted.
+                            This will stop all backend services. You can restart them individually using the service controls.
                         </AlertDescription>
                     </Alert>
                     {resetError && (
