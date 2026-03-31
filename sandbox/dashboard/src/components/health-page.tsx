@@ -463,9 +463,9 @@ export function HealthPage() {
         mutationFn: controlApi.restartAllServices,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["services"] });
-            setRestartAllSuccess("All services restarted successfully");
+            setRestartAllSuccess("Restart initiated. Services are starting up...");
             setRestartAllError(null);
-            setTimeout(() => setRestartAllSuccess(null), 3000);
+            setTimeout(() => setRestartAllSuccess(null), 5000);
         },
         onError: (error: Error) => {
             setRestartAllError(`Failed to restart all services: ${error.message}`);
