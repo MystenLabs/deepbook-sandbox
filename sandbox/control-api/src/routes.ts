@@ -7,12 +7,8 @@ import type {
     ServiceListResponse,
     ServiceActionResponse,
     LogsResponse,
-    ConfigResponse,
-    ConfigUpdateRequest,
     ResetResponse,
 } from "./types.js";
-import { readFile, writeFile } from "fs/promises";
-import { resolve } from "path";
 
 export function createRoutes(config: Config) {
     const app = new Hono();
@@ -232,80 +228,6 @@ export function createRoutes(config: Config) {
             return c.json(
                 {
                     error: error instanceof Error ? error.message : "Failed to reset environment",
-                },
-                500,
-            );
-        }
-    });
-
-    // Get .env config
-    app.get("/config", async (c) => {
-        try {
-            const envPath = resolve(process.cwd(), ".env");
-            const content = await readFile(envPath, "utf-8");
-
-            const response: ConfigResponse = { content };
-            return c.json(response);
-        } catch (error) {
-            logAudit({
-                action: "GET_CONFIG",
-                success: false,
-                message: error instanceof Error ? error.message : "Unknown error",
-            });
-            return c.json(
-                {
-                    error: error instanceof Error ? error.message : "Failed to read config",
-                },
-                500,
-            );
-        }
-    });
-
-    // Update .env config
-    const updateConfigSchema = z.object({
-        content: z.string().min(1, "Config content cannot be empty"),
-    });
-
-    app.put("/config", async (c) => {
-        try {
-            const body = await c.req.json();
-            const validated = updateConfigSchema.parse(body);
-
-            const envPath = resolve(process.cwd(), ".env");
-
-            // Create backup
-            const backupPath = resolve(process.cwd(), `.env.backup.${Date.now()}`);
-            const currentContent = await readFile(envPath, "utf-8");
-            await writeFile(backupPath, currentContent, "utf-8");
-
-            // Write new config
-            await writeFile(envPath, validated.content, "utf-8");
-
-            logAudit({
-                action: "UPDATE_CONFIG",
-                success: true,
-                message: `Backup created at ${backupPath}`,
-            });
-
-            return c.json({
-                success: true,
-                message: "Config updated successfully",
-                backup: backupPath,
-            });
-        } catch (error) {
-            logAudit({
-                action: "UPDATE_CONFIG",
-                success: false,
-                message: error instanceof Error ? error.message : "Unknown error",
-            });
-
-            if (error instanceof z.ZodError) {
-                return c.json({ error: "Invalid request", details: error.errors }, 400);
-            }
-
-            return c.json(
-                {
-                    error: error instanceof Error ? error.message : "Failed to update config",
                 },
                 500,
             );

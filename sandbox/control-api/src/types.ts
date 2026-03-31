@@ -22,14 +22,6 @@ export interface LogsResponse {
     lines: number;
 }
 
-export interface ConfigResponse {
-    content: string;
-}
-
-export interface ConfigUpdateRequest {
-    content: string;
-}
-
 export interface ResetResponse {
     success: boolean;
     message: string;

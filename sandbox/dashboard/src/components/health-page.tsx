@@ -14,7 +14,6 @@ import {
     Eye,
     Download,
     Trash2,
-    Save,
     AlertCircle,
     CheckCircle2,
 } from "lucide-react";
@@ -33,7 +32,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 
 /* ------------------------------------------------------------------ */
 /*  Types (matching actual service responses)                         */
@@ -97,10 +95,6 @@ interface LogsResponse {
     logs: string;
     service: string;
     lines: number;
-}
-
-interface ConfigResponse {
-    content: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -170,26 +164,6 @@ const controlApi = {
             headers: { Authorization: `Bearer ${getApiToken()}` },
         });
         if (!response.ok) throw new Error("Failed to restart all services");
-    },
-
-    async fetchConfig(): Promise<ConfigResponse> {
-        const response = await fetch("/api/control/config", {
-            headers: { Authorization: `Bearer ${getApiToken()}` },
-        });
-        if (!response.ok) throw new Error("Failed to fetch config");
-        return response.json();
-    },
-
-    async updateConfig(content: string): Promise<void> {
-        const response = await fetch("/api/control/config", {
-            method: "PUT",
-            headers: {
-                Authorization: `Bearer ${getApiToken()}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ content }),
-        });
-        if (!response.ok) throw new Error("Failed to update config");
     },
 };
 
@@ -399,12 +373,9 @@ function ServiceControlButtons({
 export function HealthPage() {
     const queryClient = useQueryClient();
     const [showResetDialog, setShowResetDialog] = useState(false);
-    const [showConfigEditor, setShowConfigEditor] = useState(false);
     const [resetError, setResetError] = useState<string | null>(null);
-    const [configError, setConfigError] = useState<string | null>(null);
     const [restartAllSuccess, setRestartAllSuccess] = useState<string | null>(null);
     const [restartAllError, setRestartAllError] = useState<string | null>(null);
-    const [configContent, setConfigContent] = useState("");
 
     const sui = useSuiClientQuery("getLatestCheckpointSequenceNumber", undefined, {
         refetchInterval: REFETCH_INTERVAL,
@@ -466,24 +437,6 @@ export function HealthPage() {
         retry: false,
     });
 
-    const { data: configData } = useQuery({
-        queryKey: ["config"],
-        queryFn: controlApi.fetchConfig,
-        enabled: showConfigEditor,
-    });
-
-    const updateConfigMutation = useMutation({
-        mutationFn: (content: string) => controlApi.updateConfig(content),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["config"] });
-            setShowConfigEditor(false);
-            setConfigError(null);
-        },
-        onError: (error: Error) => {
-            setConfigError(`Failed to update config: ${error.message}`);
-        },
-    });
-
     const resetMutation = useMutation({
         mutationFn: controlApi.resetEnvironment,
         onSuccess: () => {
@@ -528,9 +481,6 @@ export function HealthPage() {
                     >
                         <RotateCw className="mr-2 h-4 w-4" />
                         {restartAllMutation.isPending ? "Restarting..." : "Restart All Services"}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setShowConfigEditor(true)}>
-                        <Save className="mr-2 h-4 w-4" /> Edit Config
                     </Button>
                     <Button
                         variant="destructive"
@@ -856,56 +806,6 @@ export function HealthPage() {
                             disabled={resetMutation.isPending}
                         >
                             {resetMutation.isPending ? "Resetting..." : "Reset Environment"}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Config Editor Dialog */}
-            <Dialog open={showConfigEditor} onOpenChange={setShowConfigEditor}>
-                <DialogContent className="max-w-3xl">
-                    <DialogHeader>
-                        <DialogTitle>Configuration Editor</DialogTitle>
-                        <DialogDescription>
-                            Edit the .env configuration file. Changes require service restart to
-                            take effect.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        {configError && (
-                            <Alert variant="destructive">
-                                <AlertCircle className="h-4 w-4" />
-                                <AlertDescription>{configError}</AlertDescription>
-                            </Alert>
-                        )}
-                        <Textarea
-                            value={configContent || configData?.content || ""}
-                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                                setConfigContent(e.target.value)
-                            }
-                            className="font-mono text-sm"
-                            rows={20}
-                        />
-                    </div>
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowConfigEditor(false);
-                                setConfigError(null);
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={() =>
-                                updateConfigMutation.mutate(
-                                    configContent || configData?.content || "",
-                                )
-                            }
-                            disabled={updateConfigMutation.isPending}
-                        >
-                            {updateConfigMutation.isPending ? "Saving..." : "Save Changes"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
