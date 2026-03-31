@@ -136,7 +136,7 @@ async function main() {
 
         // Verify RPC is working
         try {
-            const chainId = await client.getChainIdentifier();
+            const { chainIdentifier: chainId } = await client.core.getChainIdentifier();
             log.success(`Connected to chain: ${chainId}`);
         } catch (error) {
             throw new Error(`Failed to connect to Sui RPC: ${error}`);
@@ -157,11 +157,11 @@ async function main() {
         if (network === "testnet") {
             const tokenResult = deployedPackages.get("token")!;
             await client.waitForTransaction({ digest: tokenResult.transactionDigest });
-            const tx = await client.getTransactionBlock({
+            const txResult = await client.getTransaction({
                 digest: tokenResult.transactionDigest,
-                options: {},
             });
-            firstCheckpoint = tx.checkpoint ?? undefined;
+            const txData = txResult.Transaction ?? txResult.FailedTransaction;
+            firstCheckpoint = txData?.epoch ?? undefined;
         }
         const envUpdates = getDeploymentEnv(deployedPackages, { firstCheckpoint });
         if (network === "localnet") {

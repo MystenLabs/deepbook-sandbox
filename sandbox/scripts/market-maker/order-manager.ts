@@ -1,4 +1,5 @@
-import type { SuiClient, SuiEvent } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
+import type { SuiClientTypes } from "@mysten/sui/client";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
 import { ORDER_TYPE, SELF_MATCHING, SUI_CLOCK_OBJECT_ID, explorerTxUrl } from "./types";
@@ -12,7 +13,7 @@ export class OrderManager {
     private clientOrderIdCounter = BigInt(Date.now()) * 1000n;
 
     constructor(
-        private client: SuiClient,
+        private client: SuiGrpcClient,
         private signer: Keypair,
         private packageId: string,
         private poolId: string,
@@ -69,26 +70,25 @@ export class OrderManager {
         const result = await this.client.signAndExecuteTransaction({
             transaction: tx,
             signer: this.signer,
-            options: {
-                showEffects: true,
-                showEvents: true,
-            },
+            include: { effects: true, events: true },
         });
 
-        if (result.effects?.status.status !== "success") {
+        if (result.$kind === "FailedTransaction") {
             throw new Error(
-                `Failed to place orders: ${result.effects?.status.error || "Unknown error"}`,
+                `Failed to place orders: ${result.FailedTransaction.status.error || "Unknown error"}`,
             );
         }
 
+        const txData = result.Transaction!;
+
         // Wait for the place transaction to finalize so object versions are updated
         await this.client.waitForTransaction({
-            digest: result.digest,
+            digest: txData.digest,
         });
 
         // Extract order IDs from events
-        const events = result.events || [];
-        const orderPlacedEvents = events.filter((e) => e.type.includes("::OrderPlaced"));
+        const events = txData.events || [];
+        const orderPlacedEvents = events.filter((e) => e.eventType.includes("::OrderPlaced"));
 
         let missingOrderIds = 0;
         for (let i = 0; i < levels.length; i++) {
@@ -121,7 +121,7 @@ export class OrderManager {
         });
 
         log.loopDetail(`Placed ${placedOrderIds.length} orders`);
-        log.loopDetail(explorerTxUrl(result.digest, this.network));
+        log.loopDetail(explorerTxUrl(txData.digest, this.network));
         return placedOrderIds;
     }
 
@@ -152,20 +152,20 @@ export class OrderManager {
         const result = await this.client.signAndExecuteTransaction({
             transaction: tx,
             signer: this.signer,
-            options: {
-                showEffects: true,
-            },
+            include: { effects: true },
         });
 
-        if (result.effects?.status.status !== "success") {
+        if (result.$kind === "FailedTransaction") {
             throw new Error(
-                `Failed to cancel orders: ${result.effects?.status.error || "Unknown error"}`,
+                `Failed to cancel orders: ${result.FailedTransaction.status.error || "Unknown error"}`,
             );
         }
 
+        const txData = result.Transaction!;
+
         // Wait for the cancel transaction to finalize so object versions are updated
         await this.client.waitForTransaction({
-            digest: result.digest,
+            digest: txData.digest,
         });
 
         const canceledCount = this.activeOrders.size;
@@ -178,8 +178,8 @@ export class OrderManager {
         });
 
         log.loopDetail(`Canceled ${canceledCount} orders`);
-        log.loopDetail(explorerTxUrl(result.digest, this.network));
-        return result.digest;
+        log.loopDetail(explorerTxUrl(txData.digest, this.network));
+        return txData.digest;
     }
 
     /**
@@ -201,8 +201,8 @@ export class OrderManager {
  * Extract order ID from OrderPlaced event.
  * The event structure may vary, so we try multiple field names.
  */
-function extractOrderIdFromEvent(event: SuiEvent): string | null {
-    const parsedJson = event.parsedJson as Record<string, unknown> | undefined;
+function extractOrderIdFromEvent(event: SuiClientTypes.Event): string | null {
+    const parsedJson = event.json as Record<string, unknown> | undefined | null;
     if (!parsedJson) return null;
 
     // Try common field names for order ID

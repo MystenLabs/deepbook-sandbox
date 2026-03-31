@@ -71,11 +71,11 @@ describe("OracleUpdater", () => {
     });
 
     describe("successful transaction", () => {
-        test("calls signAndExecuteTransaction with showEffects", async () => {
+        test("calls signAndExecuteTransaction with include effects", async () => {
             const client = createMockClient();
             client.signAndExecuteTransaction.mockResolvedValueOnce({
-                digest: "abc123",
-                effects: { status: { status: "success" } },
+                $kind: "Transaction",
+                Transaction: { digest: "abc123", status: { success: true, error: null } },
             });
 
             const updater = new OracleUpdater(client as any, createMockSigner() as any, "0xpyth");
@@ -85,7 +85,7 @@ describe("OracleUpdater", () => {
 
             expect(client.signAndExecuteTransaction).toHaveBeenCalledOnce();
             const callArgs = client.signAndExecuteTransaction.mock.calls[0][0];
-            expect(callArgs.options.showEffects).toBe(true);
+            expect(callArgs.include.effects).toBe(true);
         });
     });
 
@@ -93,8 +93,11 @@ describe("OracleUpdater", () => {
         test("throws on failed transaction status", async () => {
             const client = createMockClient();
             client.signAndExecuteTransaction.mockResolvedValueOnce({
-                digest: "abc123",
-                effects: { status: { status: "failure", error: "InsufficientGas" } },
+                $kind: "FailedTransaction",
+                FailedTransaction: {
+                    digest: "abc123",
+                    status: { success: false, error: "InsufficientGas" },
+                },
             });
 
             const updater = new OracleUpdater(client as any, createMockSigner() as any, "0xpyth");

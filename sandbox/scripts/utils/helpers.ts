@@ -1,4 +1,4 @@
-import type { SuiClient } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import { requestSuiFromFaucetV2 } from "@mysten/sui/faucet";
 import type { DeploymentResult } from "./deployer";
 import log from "./logger";
@@ -32,14 +32,14 @@ export async function requestFaucetWithRetry(
 
 /** Check balance first; only request faucet if below min. If we request and faucet fails, throw. */
 export async function ensureMinimumBalance(
-    client: SuiClient,
+    client: SuiGrpcClient,
     recipient: string,
     faucetHost: string,
     minSuiMist: bigint = ONE_SUI_MIST,
     maxFaucetRetries = 3,
 ): Promise<void> {
-    const { totalBalance } = await client.getBalance({ owner: recipient });
-    const balanceMist = BigInt(totalBalance);
+    const { balance } = await client.getBalance({ owner: recipient });
+    const balanceMist = BigInt(balance.balance);
     if (balanceMist >= minSuiMist) {
         log.success("Has sufficient balance (>= 1 SUI)");
         return;
@@ -47,7 +47,7 @@ export async function ensureMinimumBalance(
     await requestFaucetWithRetry(faucetHost, recipient, maxFaucetRetries);
     await new Promise((r) => setTimeout(r, 2000));
     const after = await client.getBalance({ owner: recipient });
-    log.success(`Has ${after.totalBalance} MIST balance`);
+    log.success(`Has ${after.balance.balance} MIST balance`);
 }
 
 /**

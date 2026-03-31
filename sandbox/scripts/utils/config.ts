@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { getFullnodeUrl, SuiClient } from "@mysten/sui/client";
+import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
 import { getFaucetHost } from "@mysten/sui/faucet";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
@@ -11,6 +11,11 @@ import { z } from "zod";
 export type Network = "testnet" | "localnet";
 
 const networkSchema = z.enum(["testnet", "localnet"]);
+
+const DEFAULT_RPC_URLS: Record<Network, string> = {
+    localnet: "http://127.0.0.1:9000",
+    testnet: "https://fullnode.testnet.sui.io:443",
+};
 
 const envSchema = z
     .object({
@@ -59,7 +64,8 @@ export class ConfigurationLoader {
 
     getRpcUrl(network?: Network): string {
         const cfg = this.getConfig();
-        return cfg.rpcUrl ?? getFullnodeUrl(network ?? this.getNetwork());
+        const n = network ?? this.getNetwork();
+        return cfg.rpcUrl ?? DEFAULT_RPC_URLS[n];
     }
 
     getFaucetUrl(network?: Network): string {
@@ -81,8 +87,9 @@ export function getFaucetUrl(network?: Network): string {
     return loader.getFaucetUrl(network);
 }
 
-export function getClient(network?: Network): SuiClient {
-    return new SuiClient({ url: getRpcUrl(network) });
+export function getClient(network?: Network): SuiGrpcClient {
+    const n = network ?? getNetwork();
+    return new SuiGrpcClient({ network: n, baseUrl: getRpcUrl(n) });
 }
 
 export function hasPrivateKey(): boolean {
@@ -94,8 +101,8 @@ export function getSigner(): Keypair {
     if (!privateKey) {
         throw new Error("PRIVATE_KEY is required but not set");
     }
-    const { schema, secretKey } = decodeSuiPrivateKey(privateKey);
-    switch (schema) {
+    const { scheme, secretKey } = decodeSuiPrivateKey(privateKey);
+    switch (scheme) {
         case "ED25519":
             return Ed25519Keypair.fromSecretKey(secretKey);
         case "Secp256k1":
@@ -103,6 +110,6 @@ export function getSigner(): Keypair {
         case "Secp256r1":
             return Secp256r1Keypair.fromSecretKey(secretKey);
         default:
-            throw new Error(`Unsupported key schema: ${schema}`);
+            throw new Error(`Unsupported key scheme: ${scheme}`);
     }
 }

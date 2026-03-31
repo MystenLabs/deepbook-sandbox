@@ -1,6 +1,5 @@
-import type { SuiClient } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
-import type { SuiObjectChangeCreated } from "@mysten/sui/client";
 import { Transaction } from "@mysten/sui/transactions";
 import { fromHex, toHex } from "@mysten/sui/utils";
 import type { DeploymentResult } from "./deployer";
@@ -60,7 +59,7 @@ function addPriceInfoToTx(
  * Uses official Pyth Network price feed identifiers.
  */
 export async function setupPythOracles(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     deployedPackages: Map<string, DeploymentResult>,
 ): Promise<PythOracleIds> {
@@ -105,43 +104,42 @@ export async function setupPythOracles(
     const result = await client.signAndExecuteTransaction({
         transaction: tx,
         signer,
-        options: {
-            showEffects: true,
-            showObjectChanges: true,
-        },
+        include: { effects: true, objectTypes: true },
     });
 
-    if (result.effects?.status.status !== "success") {
+    if (result.$kind === "FailedTransaction") {
         throw new Error(
-            `Failed to create pyth oracles: ${result.effects?.status.error ?? "Unknown error"}`,
+            `Failed to create pyth oracles: ${result.FailedTransaction.status.error ?? "Unknown error"}`,
         );
     }
 
-    const created = (result.objectChanges ?? []).filter(
-        (obj): obj is SuiObjectChangeCreated =>
-            obj.type === "created" &&
-            typeof obj.objectType === "string" &&
-            obj.objectType.includes("::price_info::PriceInfoObject"),
+    const objectTypes = result.Transaction!.objectTypes ?? {};
+    const changedObjects = result.Transaction!.effects?.changedObjects ?? [];
+
+    const created = changedObjects.filter(
+        (obj) =>
+            obj.idOperation === "Created" &&
+            (objectTypes[obj.objectId] ?? "").includes("::price_info::PriceInfoObject"),
     );
 
     if (created.length !== 3) {
         throw new Error(`Expected 3 PriceInfoObject created, got ${created.length}`);
     }
 
-    await client.waitForTransaction({ digest: result.digest });
+    await client.waitForTransaction({ digest: result.Transaction!.digest });
 
-    const priceObjects = await client.multiGetObjects({
-        ids: created.map((obj) => obj.objectId),
-        options: {
-            showContent: true,
-        },
+    const priceObjects = await client.getObjects({
+        objectIds: created.map((obj) => obj.objectId),
+        include: { json: true },
     });
 
     const feedIdToObjectId = new Map<string, string>();
-    for (const obj of priceObjects) {
-        const bytes: number[] = (obj.data?.content as any).fields.price_info.fields.price_feed
-            .fields.price_identifier.fields.bytes;
-        feedIdToObjectId.set("0x" + toHex(new Uint8Array(bytes)), obj.data!.objectId);
+    for (const obj of priceObjects.objects) {
+        if (obj instanceof Error) continue;
+        const json = obj.json as any;
+        const bytes: number[] = json?.price_info?.price_feed?.price_identifier?.bytes;
+        if (!bytes) continue;
+        feedIdToObjectId.set("0x" + toHex(new Uint8Array(bytes)), obj.objectId);
     }
 
     const ids: PythOracleIds = {

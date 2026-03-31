@@ -24,7 +24,7 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { SuiClient } from "@mysten/sui/client";
+import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 
 import { defaultSuiToolsImage } from "../utils/keygen";
@@ -254,9 +254,9 @@ describe("deploy-all E2E (subprocess)", () => {
         // Wait for tx to settle
         await new Promise((r) => setTimeout(r, 3_000));
 
-        const client = new SuiClient({ url: RPC_URL });
-        const { totalBalance } = await client.getBalance({ owner: freshAddress });
-        expect(BigInt(totalBalance)).toBeGreaterThan(0n);
+        const client = new SuiGrpcClient({ network: "localnet", baseUrl: RPC_URL });
+        const { balance } = await client.getBalance({ owner: freshAddress });
+        expect(BigInt(balance.balance)).toBeGreaterThan(0n);
     }, 30_000);
 
     // ----------------------------------------------------------------
@@ -325,14 +325,13 @@ describe("deploy-all E2E (subprocess)", () => {
         const poolId = parseEnvValue(envContent, "POOL_ID");
         expect(poolId, "POOL_ID not found in .env").toBeTruthy();
 
-        const client = new SuiClient({ url: RPC_URL });
-        const poolObj = await client.getObject({
-            id: poolId!,
-            options: { showType: true },
+        const client = new SuiGrpcClient({ network: "localnet", baseUrl: RPC_URL });
+        const { object: poolObj } = await client.getObject({
+            objectId: poolId!,
         });
 
-        expect(poolObj.data).toBeDefined();
-        expect(poolObj.data!.type).toContain("::pool::Pool<");
+        expect(poolObj).toBeDefined();
+        expect(poolObj.type).toContain("::pool::Pool<");
     }, 30_000);
 
     // ----------------------------------------------------------------
