@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSuiClientQuery } from "@mysten/dapp-kit";
 import {
@@ -183,6 +183,16 @@ function ServiceControlButtons({
     const [actionSuccess, setActionSuccess] = useState<string | null>(null);
     const [showLogsDialog, setShowLogsDialog] = useState(false);
     const [logLines, setLogLines] = useState(100);
+    const [debouncedLogLines, setDebouncedLogLines] = useState(100);
+
+    // Debounce logLines to avoid excessive API calls
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedLogLines(logLines);
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [logLines]);
 
     // Fetch service status
     const { data: servicesData } = useQuery({
@@ -236,8 +246,8 @@ function ServiceControlButtons({
     });
 
     const { data: logsData, isLoading: logsLoading } = useQuery({
-        queryKey: ["logs", serviceName, logLines],
-        queryFn: () => controlApi.fetchLogs(serviceName, logLines),
+        queryKey: ["logs", serviceName, debouncedLogLines],
+        queryFn: () => controlApi.fetchLogs(serviceName, debouncedLogLines),
         enabled: showLogsDialog,
         refetchInterval: showLogsDialog ? 5000 : false,
     });
