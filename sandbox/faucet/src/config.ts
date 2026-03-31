@@ -11,7 +11,7 @@ export type Network = "localnet" | "testnet";
 
 const NETWORK_DEFAULTS: Record<Network, { rpcUrl: string; suiFaucetUrl: string }> = {
     localnet: {
-        rpcUrl: "http://sui-localnet:9000",
+        rpcUrl: "http://sui-localnet:45516",
         suiFaucetUrl: "http://sui-localnet:9123",
     },
     testnet: {

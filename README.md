@@ -20,7 +20,7 @@ A one-command local sandbox for DeepBook V3. It spins up a private Sui localnet,
        |               |           |              |                 |
 +------v------+ +------v-----+ +--v--------+ +---v----------+ +---v--------------+
 | Sui Localnet| | Oracle     | |  Market   | |  DeepBook    | | DeepBook Server  |
-| :9000 RPC   | | Service    | |  Maker    | |  Faucet      | |   :9008 REST     |
+| :45516 RPC   | | Service    | |  Maker    | |  Faucet      | |   :9008 REST     |
 | :9123 Faucet| |  :9010     | |  :3001    | |  :9009       | |   API            |
 +------+------+ +------+-----+ +--+--------+ +---+----------+ +---+--------------+
        |               |           |              |                 |
@@ -82,7 +82,7 @@ When you see `DeepBook Sandbox Ready!`, everything is running:
 | Endpoint                     | URL                          |
 | ---------------------------- | ---------------------------- |
 | Dashboard                    | http://localhost:5173        |
-| Sui RPC                      | http://localhost:9000        |
+| Sui RPC                      | http://localhost:45516       |
 | Sui Faucet (native)          | http://localhost:9123        |
 | DeepBook Faucet (SUI + DEEP) | http://localhost:9009        |
 | DeepBook REST API            | http://localhost:9008        |
@@ -115,8 +115,8 @@ When you run `pnpm deploy-all`, here's the full sequence:
 
 1. **Env bootstrap** — If `SUI_TOOLS_IMAGE` is missing, it's auto-detected based on CPU architecture (`mysten/sui-tools:compat-arm64` for Apple Silicon, `mysten/sui-tools:compat` for Intel/AMD). If `PRIVATE_KEY` is missing, a placeholder keypair is generated so `docker-compose.yml` can parse its variable validation.
 2. **Docker compose up** — Starts `sui-localnet` and `postgres` containers. The Sui container generates a fresh Ed25519 keypair, copies the keystore to `deployments/.sui-keystore`, and launches the node with `--force-regenesis` and `--with-faucet`.
-3. **RPC polling** — The script polls `http://127.0.0.1:9000` every 2 seconds until the node responds (up to 60 attempts), then polls the faucet at port 9123.
-4. **Key import** — Reads the container's keypair from the shared keystore file, imports it into your host `sui` CLI with `sui keytool import`, creates a `localnet` environment pointing at `http://127.0.0.1:9000`, and switches to it.
+3. **RPC polling** — The script polls `http://127.0.0.1:45516` every 2 seconds until the node responds (up to 60 attempts), then polls the faucet at port 9123.
+4. **Key import** — Reads the container's keypair from the shared keystore file, imports it into your host `sui` CLI with `sui keytool import`, creates a `localnet` environment pointing at `http://127.0.0.1:45516`, and switches to it.
 5. **Faucet funding** — Requests SUI from the built-in faucet so the deployer has gas for publishing.
 6. **Move deployment** — Publishes six packages in dependency order: `token` (the DEEP coin), `deepbook` (the core order book), `pyth` (oracle contracts), `usdc` (stablecoin type), `deepbook_margin` (margin trading), and `margin_liquidation`. Each uses `sui client test-publish --build-env localnet`.
 7. **Env file update** — All package IDs, object IDs, and `FIRST_CHECKPOINT=0` are written to `sandbox/.env`.
@@ -140,13 +140,13 @@ The dashboard has four pages:
 
 Nginx proxies API requests to the sandbox services:
 
-| Path            | Target           | Service          |
-| --------------- | ---------------- | ---------------- |
-| `/api/sui`      | `localhost:9000` | Sui localnet RPC |
-| `/api/oracle`   | `localhost:9010` | Oracle service   |
-| `/api/mm`       | `localhost:3001` | Market maker     |
-| `/api/faucet`   | `localhost:9009` | Faucet           |
-| `/api/deepbook` | `localhost:9008` | DeepBook server  |
+| Path            | Target            | Service          |
+| --------------- | ----------------- | ---------------- |
+| `/api/sui`      | `localhost:45516` | Sui localnet RPC |
+| `/api/oracle`   | `localhost:9010`  | Oracle service   |
+| `/api/mm`       | `localhost:3001`  | Market maker     |
+| `/api/faucet`   | `localhost:9009`  | Faucet           |
+| `/api/deepbook` | `localhost:9008`  | DeepBook server  |
 
 ## 7. Building Your Own Contracts on DeepBook
 
@@ -328,9 +328,9 @@ bunx prettier-move -c *.move --write
 
 **Deploy takes a long time building Rust images** — The indexer and server are Rust services that compile from source by default. This is normal on first run (can take several minutes). You can skip the build with `pnpm deploy-all --quick` and download the pre-built images from Docker Hub.
 
-**Port conflicts** — Another process is using port 9000, 5432, or 9123. Stop the conflicting process or change ports in `docker-compose.yml`.
+**Port conflicts** — Another process is using port 45516, 5432, or 9123. Stop the conflicting process or change ports in `docker-compose.yml`.
 
-**Dashboard can't connect** — Make sure the sandbox is running (`docker compose ps`). The dashboard proxies requests to `localhost:9000` (RPC), `localhost:9009` (faucet), `localhost:9010` (oracle), `localhost:3001` (market maker), and `localhost:9008` (server).
+**Dashboard can't connect** — Make sure the sandbox is running (`docker compose ps`). The dashboard proxies requests to `localhost:45516` (RPC), `localhost:9009` (faucet), `localhost:9010` (oracle), `localhost:3001` (market maker), and `localhost:9008` (server).
 
 **Contract won't build: "unresolved dependency"** — You haven't run `pnpm deploy-all` yet. The `.external-packages/` directory (which your `Move.toml` references) is created by the deploy script. Run `pnpm deploy-all` first, then build your contract.
 
@@ -401,7 +401,7 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | Service            | Container Name          | Profile              | Ports (host:container) | Description                                        |
 | ------------------ | ----------------------- | -------------------- | ---------------------- | -------------------------------------------------- |
 | `postgres`         | `deepbook-postgres`     | (always)             | 5432:5432              | PostgreSQL 16 database for the indexer             |
-| `sui-localnet`     | `sui-localnet`          | `localnet`           | 9000:9000, 9123:9123   | Full Sui node with built-in faucet                 |
+| `sui-localnet`     | `sui-localnet`          | `localnet`           | 45516:45516, 9123:9123 | Full Sui node with built-in faucet                 |
 | `market-maker`     | `deepbook-market-maker` | `localnet`           | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools    |
 | `deepbook-indexer` | `deepbook-indexer`      | `remote`, `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres       |
 | `deepbook-server`  | `deepbook-server`       | `remote`, `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |

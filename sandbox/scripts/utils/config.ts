@@ -7,6 +7,7 @@ import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
 import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { z } from "zod";
+import { LOCALNET_RPC_PORT } from "./docker-compose";
 
 export type Network = "testnet" | "localnet";
 
@@ -59,7 +60,10 @@ export class ConfigurationLoader {
 
     getRpcUrl(network?: Network): string {
         const cfg = this.getConfig();
-        return cfg.rpcUrl ?? getFullnodeUrl(network ?? this.getNetwork());
+        if (cfg.rpcUrl) return cfg.rpcUrl;
+        const net = network ?? this.getNetwork();
+        if (net === "localnet") return `http://127.0.0.1:${LOCALNET_RPC_PORT}`;
+        return getFullnodeUrl(net);
     }
 
     getFaucetUrl(network?: Network): string {

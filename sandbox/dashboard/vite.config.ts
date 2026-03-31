@@ -32,7 +32,7 @@ export default defineConfig({
                 rewrite: (p) => p.replace(/^\/api\/faucet/, ""),
             },
             "/api/sui": {
-                target: "http://localhost:9000",
+                target: "http://localhost:45516",
                 changeOrigin: true,
                 rewrite: (p) => p.replace(/^\/api\/sui/, ""),
             },

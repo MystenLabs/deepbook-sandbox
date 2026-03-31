@@ -88,7 +88,7 @@ Services in the stack:
 | Service              | Profile              | Description                                        | Ports                         |
 | -------------------- | -------------------- | -------------------------------------------------- | ----------------------------- |
 | **PostgreSQL**       | (always)             | Database for the indexer                           | 5432                          |
-| **Sui Localnet**     | `localnet`           | Local Sui blockchain for testing                   | 9000 (RPC), 9123 (faucet)     |
+| **Sui Localnet**     | `localnet`           | Local Sui blockchain for testing                   | 45516 (RPC), 9123 (faucet)    |
 | **Market Maker**     | `localnet`           | Automated market maker for DEEP/SUI + SUI/USDC     | 3001 (health), 9091 (metrics) |
 | **DeepBook Indexer** | `remote`             | Indexes DeepBook events (testnet/mainnet only)     | 9184 (metrics)                |
 | **DeepBook Server**  | `remote`             | REST API for querying indexed data                 | 9008                          |
