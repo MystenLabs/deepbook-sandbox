@@ -197,7 +197,13 @@ const controlApi = {
 /*  ServiceControlButtons Component                                   */
 /* ------------------------------------------------------------------ */
 
-function ServiceControlButtons({ serviceName }: { serviceName: string }) {
+function ServiceControlButtons({
+    serviceName,
+    showOnlyLogs = false,
+}: {
+    serviceName: string;
+    showOnlyLogs?: boolean;
+}) {
     const queryClient = useQueryClient();
     const [actionError, setActionError] = useState<string | null>(null);
     const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -298,30 +304,34 @@ function ServiceControlButtons({ serviceName }: { serviceName: string }) {
                 )}
 
                 <div className="flex flex-wrap gap-2">
-                    <Button
-                        size="sm"
-                        variant="default"
-                        onClick={() => startMutation.mutate()}
-                        disabled={service?.status === "running" || startMutation.isPending}
-                    >
-                        <Play className="mr-1 h-3 w-3" /> Start
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => stopMutation.mutate()}
-                        disabled={service?.status === "stopped" || stopMutation.isPending}
-                    >
-                        <Square className="mr-1 h-3 w-3" /> Stop
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => restartMutation.mutate()}
-                        disabled={restartMutation.isPending}
-                    >
-                        <RotateCw className="mr-1 h-3 w-3" /> Restart
-                    </Button>
+                    {!showOnlyLogs && (
+                        <>
+                            <Button
+                                size="sm"
+                                variant="default"
+                                onClick={() => startMutation.mutate()}
+                                disabled={service?.status === "running" || startMutation.isPending}
+                            >
+                                <Play className="mr-1 h-3 w-3" /> Start
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => stopMutation.mutate()}
+                                disabled={service?.status === "stopped" || stopMutation.isPending}
+                            >
+                                <Square className="mr-1 h-3 w-3" /> Stop
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => restartMutation.mutate()}
+                                disabled={restartMutation.isPending}
+                            >
+                                <RotateCw className="mr-1 h-3 w-3" /> Restart
+                            </Button>
+                        </>
+                    )}
                     <Button size="sm" variant="outline" onClick={() => setShowLogsDialog(true)}>
                         <Eye className="mr-1 h-3 w-3" /> View Logs
                     </Button>
@@ -565,25 +575,28 @@ export function HealthPage() {
                             />
                         </div>
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                        <MetricRow label="Latest Checkpoint">
-                            <MetricValue isLoading={sui.isLoading} value={sui.data} />
-                        </MetricRow>
-                        <MetricRow label="Epoch">
-                            <MetricValue
-                                isLoading={suiState.isLoading}
-                                value={suiState.data?.epoch}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Gas Price">
-                            <MetricValue
-                                isLoading={gasPrice.isLoading}
-                                value={gasPrice.data ? `${gasPrice.data} MIST` : undefined}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Network">
-                            <MetricValue isLoading={false} value="localnet" />
-                        </MetricRow>
+                    <CardContent className="flex flex-col flex-1">
+                        <div className="space-y-2 flex-1">
+                            <MetricRow label="Latest Checkpoint">
+                                <MetricValue isLoading={sui.isLoading} value={sui.data} />
+                            </MetricRow>
+                            <MetricRow label="Epoch">
+                                <MetricValue
+                                    isLoading={suiState.isLoading}
+                                    value={suiState.data?.epoch}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Gas Price">
+                                <MetricValue
+                                    isLoading={gasPrice.isLoading}
+                                    value={gasPrice.data ? `${gasPrice.data} MIST` : undefined}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Network">
+                                <MetricValue isLoading={false} value="localnet" />
+                            </MetricRow>
+                        </div>
+                        <ServiceControlButtons serviceName="sui-localnet" showOnlyLogs={true} />
                     </CardContent>
                 </GridCard>
 
@@ -606,38 +619,40 @@ export function HealthPage() {
                             />
                         </div>
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                        <MetricRow label="SUI Price">
-                            <MetricValue
-                                isLoading={oracle.isLoading}
-                                value={oracle.data?.prices.sui}
-                            />
-                        </MetricRow>
-                        <MetricRow label="DEEP Price">
-                            <MetricValue
-                                isLoading={oracle.isLoading}
-                                value={oracle.data?.prices.deep}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Updates">
-                            <MetricValue
-                                isLoading={oracle.isLoading}
-                                value={oracle.data?.updates}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Errors">
-                            <MetricValue isLoading={oracle.isLoading} value={oracle.data?.errors} />
-                        </MetricRow>
-                        <MetricRow label="Last Update">
-                            <MetricValue
-                                isLoading={oracle.isLoading}
-                                value={
-                                    oracle.data?.lastUpdate
-                                        ? formatTimestamp(oracle.data.lastUpdate)
-                                        : undefined
-                                }
-                            />
-                        </MetricRow>
+                    <CardContent className="flex flex-col flex-1">
+                        <div className="space-y-2 flex-1">
+                            <MetricRow label="SUI Price">
+                                <MetricValue
+                                    isLoading={oracle.isLoading}
+                                    value={oracle.data?.prices.sui}
+                                />
+                            </MetricRow>
+                            <MetricRow label="DEEP Price">
+                                <MetricValue
+                                    isLoading={oracle.isLoading}
+                                    value={oracle.data?.prices.deep}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Updates">
+                                <MetricValue
+                                    isLoading={oracle.isLoading}
+                                    value={oracle.data?.updates}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Errors">
+                                <MetricValue isLoading={oracle.isLoading} value={oracle.data?.errors} />
+                            </MetricRow>
+                            <MetricRow label="Last Update">
+                                <MetricValue
+                                    isLoading={oracle.isLoading}
+                                    value={
+                                        oracle.data?.lastUpdate
+                                            ? formatTimestamp(oracle.data.lastUpdate)
+                                            : undefined
+                                    }
+                                />
+                            </MetricRow>
+                        </div>
                         <ServiceControlButtons serviceName="oracle-service" />
                     </CardContent>
                 </GridCard>
@@ -666,31 +681,33 @@ export function HealthPage() {
                             />
                         </div>
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                        <MetricRow label="Active Orders">
-                            <MetricValue
-                                isLoading={mm.isLoading}
-                                value={mm.data?.details.activeOrders}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Total Orders">
-                            <MetricValue
-                                isLoading={mm.isLoading}
-                                value={mm.data?.details.totalOrdersPlaced}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Rebalances">
-                            <MetricValue
-                                isLoading={mm.isLoading}
-                                value={mm.data?.details.totalRebalances}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Uptime">
-                            <MetricValue
-                                isLoading={mm.isLoading}
-                                value={mm.data ? formatUptime(mm.data.uptime) : undefined}
-                            />
-                        </MetricRow>
+                    <CardContent className="flex flex-col flex-1">
+                        <div className="space-y-2 flex-1">
+                            <MetricRow label="Active Orders">
+                                <MetricValue
+                                    isLoading={mm.isLoading}
+                                    value={mm.data?.details.activeOrders}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Total Orders">
+                                <MetricValue
+                                    isLoading={mm.isLoading}
+                                    value={mm.data?.details.totalOrdersPlaced}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Rebalances">
+                                <MetricValue
+                                    isLoading={mm.isLoading}
+                                    value={mm.data?.details.totalRebalances}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Uptime">
+                                <MetricValue
+                                    isLoading={mm.isLoading}
+                                    value={mm.data ? formatUptime(mm.data.uptime) : undefined}
+                                />
+                            </MetricRow>
+                        </div>
                         <ServiceControlButtons serviceName="deepbook-market-maker" />
                     </CardContent>
                 </GridCard>
@@ -714,21 +731,23 @@ export function HealthPage() {
                             />
                         </div>
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                        <MetricRow label="Network">
-                            <MetricValue
-                                isLoading={faucet.isLoading}
-                                value={faucet.data?.network}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Deployer">
-                            <MetricValue
-                                isLoading={faucet.isLoading}
-                                value={
-                                    faucet.data ? truncateAddress(faucet.data.deployer) : undefined
-                                }
-                            />
-                        </MetricRow>
+                    <CardContent className="flex flex-col flex-1">
+                        <div className="space-y-2 flex-1">
+                            <MetricRow label="Network">
+                                <MetricValue
+                                    isLoading={faucet.isLoading}
+                                    value={faucet.data?.network}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Deployer">
+                                <MetricValue
+                                    isLoading={faucet.isLoading}
+                                    value={
+                                        faucet.data ? truncateAddress(faucet.data.deployer) : undefined
+                                    }
+                                />
+                            </MetricRow>
+                        </div>
                         <ServiceControlButtons serviceName="deepbook-faucet" />
                     </CardContent>
                 </GridCard>
@@ -761,36 +780,38 @@ export function HealthPage() {
                             />
                         </div>
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                        <MetricRow label="Status">
-                            <MetricValue isLoading={server.isLoading} value={server.data?.status} />
-                        </MetricRow>
-                        <MetricRow label="Onchain Checkpoint">
-                            <MetricValue
-                                isLoading={server.isLoading}
-                                value={server.data?.latest_onchain_checkpoint}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Max Checkpoint Lag">
-                            <MetricValue
-                                isLoading={server.isLoading}
-                                value={server.data?.max_checkpoint_lag}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Max Time Lag">
-                            <MetricValue
-                                isLoading={server.isLoading}
-                                value={
-                                    server.data ? `${server.data.max_time_lag_seconds}s` : undefined
-                                }
-                            />
-                        </MetricRow>
-                        <MetricRow label="Pipelines">
-                            <MetricValue
-                                isLoading={server.isLoading}
-                                value={server.data?.pipelines.length}
-                            />
-                        </MetricRow>
+                    <CardContent className="flex flex-col flex-1">
+                        <div className="space-y-2 flex-1">
+                            <MetricRow label="Status">
+                                <MetricValue isLoading={server.isLoading} value={server.data?.status} />
+                            </MetricRow>
+                            <MetricRow label="Onchain Checkpoint">
+                                <MetricValue
+                                    isLoading={server.isLoading}
+                                    value={server.data?.latest_onchain_checkpoint}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Max Checkpoint Lag">
+                                <MetricValue
+                                    isLoading={server.isLoading}
+                                    value={server.data?.max_checkpoint_lag}
+                                />
+                            </MetricRow>
+                            <MetricRow label="Max Time Lag">
+                                <MetricValue
+                                    isLoading={server.isLoading}
+                                    value={
+                                        server.data ? `${server.data.max_time_lag_seconds}s` : undefined
+                                    }
+                                />
+                            </MetricRow>
+                            <MetricRow label="Pipelines">
+                                <MetricValue
+                                    isLoading={server.isLoading}
+                                    value={server.data?.pipelines.length}
+                                />
+                            </MetricRow>
+                        </div>
                         <ServiceControlButtons serviceName="deepbook-server" />
                     </CardContent>
                 </GridCard>
@@ -911,9 +932,9 @@ function RefreshButton({ isFetching, onRefresh }: { isFetching: boolean; onRefre
 
 function GridCard({ children }: { children: ReactNode }) {
     return (
-        <div className="dark border w-full rounded-md overflow-hidden border-zinc-900 bg-zinc-950 p-1 text-zinc-50">
-            <div className="size-full bg-[url(/svg/circle-ellipsis.svg)] bg-repeat bg-[length:30px_30px]">
-                <div className="size-full bg-gradient-to-tr from-zinc-950 via-zinc-950/80 to-zinc-900/10">
+        <div className="dark border w-full rounded-md overflow-hidden border-zinc-900 bg-zinc-950 p-1 text-zinc-50 flex flex-col">
+            <div className="size-full bg-[url(/svg/circle-ellipsis.svg)] bg-repeat bg-[length:30px_30px] flex flex-col flex-1">
+                <div className="size-full bg-gradient-to-tr from-zinc-950 via-zinc-950/80 to-zinc-900/10 flex flex-col flex-1">
                     {children}
                 </div>
             </div>

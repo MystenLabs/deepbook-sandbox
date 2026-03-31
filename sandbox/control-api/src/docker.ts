@@ -30,12 +30,29 @@ const ALLOWED_SERVICES = [
     "deepbook-indexer",
     "deepbook-server",
     "dashboard",
+    "sui-localnet",
 ];
+
+// Map container names to service names (docker-compose needs service names)
+const CONTAINER_TO_SERVICE_MAP: Record<string, string> = {
+    "deepbook-market-maker": "market-maker",
+    "deepbook-postgres": "postgres",
+    "deepbook-faucet": "deepbook-faucet",
+    "oracle-service": "oracle-service",
+    "deepbook-indexer": "deepbook-indexer",
+    "deepbook-server": "deepbook-server",
+    "deepbook-dashboard": "dashboard",
+    "sui-localnet": "sui-localnet",
+};
 
 export function validateServiceName(serviceName: string): void {
     if (!ALLOWED_SERVICES.includes(serviceName)) {
         throw new Error(`Service '${serviceName}' is not in the allowlist`);
     }
+}
+
+function getServiceName(nameOrContainer: string): string {
+    return CONTAINER_TO_SERVICE_MAP[nameOrContainer] || nameOrContainer;
 }
 
 export async function listServices(projectName: string): Promise<ServiceInfo[]> {
@@ -78,8 +95,9 @@ export async function listServices(projectName: string): Promise<ServiceInfo[]> 
 
 export async function startService(projectName: string, serviceName: string): Promise<void> {
     validateServiceName(serviceName);
+    const actualServiceName = getServiceName(serviceName);
     try {
-        await execWithTimeout(`docker-compose -p ${projectName} start ${serviceName}`);
+        await execWithTimeout(`docker-compose -p ${projectName} start ${actualServiceName}`);
     } catch (error) {
         console.error(`Failed to start service ${serviceName}:`, error);
         throw new Error(`Failed to start service ${serviceName}`);
@@ -88,8 +106,9 @@ export async function startService(projectName: string, serviceName: string): Pr
 
 export async function stopService(projectName: string, serviceName: string): Promise<void> {
     validateServiceName(serviceName);
+    const actualServiceName = getServiceName(serviceName);
     try {
-        await execWithTimeout(`docker-compose -p ${projectName} stop ${serviceName}`);
+        await execWithTimeout(`docker-compose -p ${projectName} stop ${actualServiceName}`);
     } catch (error) {
         console.error(`Failed to stop service ${serviceName}:`, error);
         throw new Error(`Failed to stop service ${serviceName}`);
@@ -98,8 +117,9 @@ export async function stopService(projectName: string, serviceName: string): Pro
 
 export async function restartService(projectName: string, serviceName: string): Promise<void> {
     validateServiceName(serviceName);
+    const actualServiceName = getServiceName(serviceName);
     try {
-        await execWithTimeout(`docker-compose -p ${projectName} restart ${serviceName}`);
+        await execWithTimeout(`docker-compose -p ${projectName} restart ${actualServiceName}`);
     } catch (error) {
         console.error(`Failed to restart service ${serviceName}:`, error);
         throw new Error(`Failed to restart service ${serviceName}`);
@@ -112,10 +132,16 @@ export async function getServiceLogs(
     lines: number = 100,
 ): Promise<string> {
     validateServiceName(serviceName);
+    const actualServiceName = getServiceName(serviceName);
+    const command = `docker-compose -p ${projectName} logs --tail ${lines} ${actualServiceName}`;
+    console.log(`[getServiceLogs] serviceName=${serviceName}, actualServiceName=${actualServiceName}`);
+    console.log(`[getServiceLogs] executing: ${command}`);
     try {
-        const { stdout } = await execWithTimeout(
-            `docker-compose -p ${projectName} logs --tail ${lines} ${serviceName}`,
-        );
+        const { stdout, stderr } = await execWithTimeout(command);
+        console.log(`[getServiceLogs] stdout length: ${stdout.length}, stderr length: ${stderr.length}`);
+        if (stderr) {
+            console.log(`[getServiceLogs] stderr: ${stderr}`);
+        }
         return stdout;
     } catch (error) {
         console.error(`Failed to get logs for ${serviceName}:`, error);
