@@ -272,31 +272,6 @@ export class MoveDeployer {
         const transactionDigest = parseDigestFromOutput(output);
         console.log(`[DEBUG] Transaction digest: ${transactionDigest}`);
 
-        // Parse package ID and created objects directly from test-publish output
-        // instead of querying via RPC (which can fail due to version mismatches or indexing delays)
-        const jsonStart = output.indexOf("{");
-        const json = JSON.parse(output.slice(jsonStart));
-
-        // Extract package ID from objectChanges
-        const objectChanges = json.objectChanges || [];
-        const published = objectChanges.find((c: { type: string }) => c.type === "published");
-        if (!published) {
-            throw new Error(
-                `Published package not found in test-publish output for ${packageName}`,
-            );
-        }
-        const packageId = published.packageId;
-        console.log(`[DEBUG] Package ID: ${packageId}`);
-
-        // Extract created objects
-        const createdObjects = objectChanges.filter((c: { type: string }) => c.type === "created");
-        console.log(`[DEBUG] Created ${createdObjects.length} objects`);
-
-        // Convert to SuiTransactionBlockResponse format for compatibility
-        const result = {
-            digest: transactionDigest,
-            objectChanges,
-        } as SuiTransactionBlockResponse;
         // Fetch the full transaction via SDK for reliable structured data
         await this.client.waitForTransaction({ digest: transactionDigest });
         const txResult = await this.client.getTransaction({
