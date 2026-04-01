@@ -1,4 +1,4 @@
-import type { SuiClient } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
 import type { ParsedPriceData } from "./types";
@@ -12,7 +12,7 @@ import log from "../utils/logger";
  */
 export class OracleUpdater {
     constructor(
-        private client: SuiClient,
+        private client: SuiGrpcClient,
         private signer: Keypair,
         private pythPackageId: string,
     ) {}
@@ -61,18 +61,16 @@ export class OracleUpdater {
             const result = await this.client.signAndExecuteTransaction({
                 transaction: tx,
                 signer: this.signer,
-                options: {
-                    showEffects: true,
-                },
+                include: { effects: true },
             });
 
-            if (result.effects?.status.status !== "success") {
+            if (result.$kind === "FailedTransaction") {
                 throw new Error(
-                    `Transaction failed: ${result.effects?.status.error ?? "Unknown error"}`,
+                    `Transaction failed: ${result.FailedTransaction.status.error ?? "Unknown error"}`,
                 );
             }
 
-            log.loopSuccess(`Updated price feeds (digest: ${result.digest})`);
+            log.loopSuccess(`Updated price feeds (digest: ${result.Transaction!.digest})`);
             this.logPriceData(suiData, deepData, usdcData);
         } catch (error) {
             log.loopError("Failed to update price feeds", error);

@@ -1,4 +1,4 @@
-import type { SuiClient } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import type { MarketMakerConfig } from "./config";
 import type { DeploymentManifest, PoolConfig } from "./types";
@@ -18,7 +18,7 @@ import { MetricsServer, updateMetrics, getMetrics } from "./metrics";
 import log from "../utils/logger";
 
 export interface MarketMakerContext {
-    client: SuiClient;
+    client: SuiGrpcClient;
     signer: Keypair;
     manifest: DeploymentManifest;
     config: MarketMakerConfig;
@@ -34,7 +34,7 @@ interface PoolState {
 }
 
 export class MarketMaker {
-    private client: SuiClient;
+    private client: SuiGrpcClient;
     private signer: Keypair;
     private config: MarketMakerConfig;
     private manifest: DeploymentManifest;

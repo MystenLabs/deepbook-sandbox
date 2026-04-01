@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { SuiClient } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { z } from "zod";
 import type { FaucetConfig } from "../config.js";
@@ -17,7 +17,7 @@ const bodySchema = z.object({
     amount: z.number().positive().int().optional(),
 });
 
-export function faucetRoutes(config: FaucetConfig, client: SuiClient, signer: Keypair): Hono {
+export function faucetRoutes(config: FaucetConfig, client: SuiGrpcClient, signer: Keypair): Hono {
     const app = new Hono();
 
     app.post("/faucet", async (c) => {
