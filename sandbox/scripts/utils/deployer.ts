@@ -5,12 +5,7 @@ const execFileAsync = promisify(execFile);
 import { readFileSync, writeFileSync, cpSync, rmSync, mkdirSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import type {
-    SuiClient,
-    SuiObjectChangeCreated,
-    SuiObjectChangePublished,
-    SuiTransactionBlockResponse,
-} from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import type { Network } from "./config";
 import log from "./logger";
@@ -63,11 +58,15 @@ function needsMovePatch(name: string): boolean {
     return (PACKAGES_NEED_MOVE_PATCH as readonly string[]).includes(name);
 }
 
+export interface CreatedObject {
+    objectId: string;
+    objectType: string;
+}
+
 export interface DeploymentResult {
     packageId: string;
-    createdObjects: SuiObjectChangeCreated[];
+    createdObjects: CreatedObject[];
     transactionDigest: string;
-    result: SuiTransactionBlockResponse;
 }
 
 export interface PackageInfo {
@@ -102,7 +101,7 @@ export class MoveDeployer {
     private sandboxRoot: string;
 
     constructor(
-        private client: SuiClient,
+        private client: SuiGrpcClient,
         private signer: Keypair,
         private network: Network,
     ) {
@@ -298,14 +297,42 @@ export class MoveDeployer {
             digest: transactionDigest,
             objectChanges,
         } as SuiTransactionBlockResponse;
+        // Fetch the full transaction via SDK for reliable structured data
+        await this.client.waitForTransaction({ digest: transactionDigest });
+        const txResult = await this.client.getTransaction({
+            digest: transactionDigest,
+            include: { effects: true, objectTypes: true },
+        });
+
+        const tx = txResult.Transaction ?? txResult.FailedTransaction;
+        if (!tx || txResult.$kind === "FailedTransaction") {
+            throw new Error(`Transaction ${transactionDigest} failed`);
+        }
+
+        const objectTypes = tx.objectTypes ?? {};
+        const changedObjects = tx.effects?.changedObjects ?? [];
+
+        // Published packages produce a PackageWrite output with an UpgradeCap created
+        const publishedObj = changedObjects.find((obj) => obj.outputState === "PackageWrite");
+        if (!publishedObj) {
+            throw new Error(`Published package not found in transaction ${transactionDigest}`);
+        }
+        const packageId = publishedObj.objectId;
+
+        const createdObjects: CreatedObject[] = changedObjects
+            .filter((obj) => obj.idOperation === "Created" && obj.outputState !== "PackageWrite")
+            .map((obj) => ({
+                objectId: obj.objectId,
+                objectType: objectTypes[obj.objectId] ?? "",
+            }));
 
         log.success(`${packageName} deployed: ${packageId}`);
 
-        return { packageId, createdObjects, transactionDigest, result };
+        return { packageId, createdObjects, transactionDigest };
     }
 
     async deployAll(): Promise<Map<string, DeploymentResult>> {
-        const chainId = await this.client.getChainIdentifier();
+        const { chainIdentifier: chainId } = await this.client.core.getChainIdentifier();
         const sandboxRoot = getSandboxRoot();
         const stagingDir = stageExternalPackages();
         log.success(`Staged external packages in ${path.relative(sandboxRoot, stagingDir)}/`);

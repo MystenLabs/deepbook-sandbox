@@ -1,10 +1,9 @@
-import type { SuiClient } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction, type TransactionResult } from "@mysten/sui/transactions";
-import type { SuiObjectChangeCreated } from "@mysten/sui/client";
-import type { DeploymentResult } from "./deployer";
+import type { CreatedObject, DeploymentResult } from "./deployer";
 import log from "./logger";
-import { fromHex, SUI_CLOCK_OBJECT_ID } from "@mysten/sui/utils";
+import { fromHex, normalizeStructTag, SUI_CLOCK_OBJECT_ID } from "@mysten/sui/utils";
 import { bcs } from "@mysten/sui/bcs";
 import { SUI_PRICE_FEED_ID, USDC_PRICE_FEED_ID } from "../oracle-service/constants";
 
@@ -112,7 +111,7 @@ export interface SeedMarginPoolsResult {
 
 export class PoolCreator {
     constructor(
-        private client: SuiClient,
+        private client: SuiGrpcClient,
         private signer: Keypair,
         private faucetUrl: string,
     ) {}
@@ -220,34 +219,40 @@ export class PoolCreator {
         const result = await this.client.signAndExecuteTransaction({
             transaction: tx,
             signer: this.signer,
-            options: {
-                showEffects: true,
-                showObjectChanges: true,
-                showEvents: true,
-            },
+            include: { effects: true, objectTypes: true, events: true },
         });
 
-        // Check for errors
-        if (result.effects?.status.status !== "success") {
+        if (result.$kind === "FailedTransaction") {
             throw new Error(
-                `Failed to create pool: ${result.effects?.status.error || "Unknown error"}`,
+                `Failed to create pool: ${result.FailedTransaction.status.error || "Unknown error"}`,
             );
         }
 
+        const objectTypes = result.Transaction!.objectTypes ?? {};
+        const changedObjects = result.Transaction!.effects?.changedObjects ?? [];
+
         // Extract all created Pool objects
-        const poolObjects = (result.objectChanges ?? []).filter(
-            (obj): obj is SuiObjectChangeCreated =>
-                obj.type === "created" && obj.objectType.includes("::pool::Pool<"),
-        );
+        const poolObjects = changedObjects
+            .filter(
+                (obj) =>
+                    obj.idOperation === "Created" &&
+                    (objectTypes[obj.objectId] ?? "").includes("::pool::Pool<"),
+            )
+            .map((obj) => ({
+                objectId: obj.objectId,
+                objectType: objectTypes[obj.objectId] ?? "",
+            }));
 
         if (poolObjects.length === 0) {
             throw new Error("No pool objects found in transaction result");
         }
 
-        // Build a pair-keyed map by matching type arguments to known coin types
-        const deepType = `${tokenPkg!.packageId}::deep::DEEP`;
-        const usdcType = `${usdcPkg!.packageId}::usdc::USDC`;
-        const suiType = "0x2::sui::SUI";
+        // Build a pair-keyed map by matching type arguments to known coin types.
+        // gRPC returns fully-expanded addresses in type strings, so we must
+        // normalise our reference types to match (e.g. "0x2::…" → "0x0000…0002::…").
+        const deepType = normalizeStructTag(`${tokenPkg!.packageId}::deep::DEEP`);
+        const usdcType = normalizeStructTag(`${usdcPkg!.packageId}::usdc::USDC`);
+        const suiType = normalizeStructTag("0x2::sui::SUI");
 
         const pairDefs: Array<{ key: string; base: string; quote: string }> = [
             { key: "DEEP_SUI", base: deepType, quote: suiType },
@@ -269,7 +274,7 @@ export class PoolCreator {
             }
         }
 
-        await this.client.waitForTransaction({ digest: result.digest });
+        await this.client.waitForTransaction({ digest: result.Transaction!.digest });
 
         return {
             pools,
@@ -305,8 +310,8 @@ export class PoolCreator {
         log.detail(`MarginRegistry: ${registry.objectId}`);
         log.detail(`MarginAdminCap: ${adminCap.objectId}`);
 
-        const usdcType = `${usdcPkg.packageId}::usdc::USDC`;
-        const suiType = "0x2::sui::SUI";
+        const usdcType = normalizeStructTag(`${usdcPkg.packageId}::usdc::USDC`);
+        const suiType = normalizeStructTag("0x2::sui::SUI");
 
         log.detail("Finalizing USDC currency registration...");
         const usdcCurrencyId = await this.finalizeCurrencyRegistration(
@@ -391,24 +396,29 @@ export class PoolCreator {
         const result = await this.client.signAndExecuteTransaction({
             transaction: tx,
             signer: this.signer,
-            options: {
-                showEffects: true,
-                showObjectChanges: true,
-                showEvents: true,
-            },
+            include: { effects: true, objectTypes: true, events: true },
         });
 
-        if (result.effects?.status.status !== "success") {
+        if (result.$kind === "FailedTransaction") {
             throw new Error(
-                `Failed to create margin pools: ${result.effects?.status.error || "Unknown error"}`,
+                `Failed to create margin pools: ${result.FailedTransaction.status.error || "Unknown error"}`,
             );
         }
 
+        const objectTypes = result.Transaction!.objectTypes ?? {};
+        const changedObjects = result.Transaction!.effects?.changedObjects ?? [];
+
         // Extract all MarginPool objects and key them by coin type
-        const marginPoolObjects = (result.objectChanges ?? []).filter(
-            (obj): obj is SuiObjectChangeCreated =>
-                obj.type === "created" && obj.objectType.includes("::margin_pool::MarginPool<"),
-        );
+        const marginPoolObjects = changedObjects
+            .filter(
+                (obj) =>
+                    obj.idOperation === "Created" &&
+                    (objectTypes[obj.objectId] ?? "").includes("::margin_pool::MarginPool<"),
+            )
+            .map((obj) => ({
+                objectId: obj.objectId,
+                objectType: objectTypes[obj.objectId] ?? "",
+            }));
 
         const marginPools: Record<string, string> = {};
         for (const obj of marginPoolObjects) {
@@ -427,7 +437,7 @@ export class PoolCreator {
 
         log.success("SUI/USDC pool registered and enabled for margin trading");
 
-        await this.client.waitForTransaction({ digest: result.digest });
+        await this.client.waitForTransaction({ digest: result.Transaction!.digest });
 
         return {
             marginPools,
@@ -449,20 +459,20 @@ export class PoolCreator {
             );
         }
 
-        const usdcType = `${usdcPkg.packageId}::usdc::USDC`;
-        const suiType = "0x2::sui::SUI";
+        const usdcType = normalizeStructTag(`${usdcPkg.packageId}::usdc::USDC`);
+        const suiType = normalizeStructTag("0x2::sui::SUI");
         const signerAddress = this.signer.getPublicKey().toSuiAddress();
 
         const usdcSeedAmount = BigInt(MARGIN_SEED_USDC) * BigInt(USDC_ASSET_DEFAULTS.scalar);
         const suiSeedAmount = BigInt(MARGIN_SEED_SUI) * BigInt(SUI_ASSET_DEFAULTS.scalar);
 
         // Fetch deployer's USDC coins for merge/split
-        const usdcCoins = await this.client.getCoins({
+        const usdcCoins = await this.client.listCoins({
             owner: signerAddress,
             coinType: usdcType,
         });
 
-        if (usdcCoins.data.length === 0) {
+        if (usdcCoins.objects.length === 0) {
             throw new Error(`No USDC coins found for ${signerAddress}`);
         }
 
@@ -476,7 +486,7 @@ export class PoolCreator {
         });
 
         // 2. Prepare USDC coin (merge if fragmented, then split seed amount)
-        const usdcCoinIds = usdcCoins.data.map((c) => c.coinObjectId);
+        const usdcCoinIds = usdcCoins.objects.map((c) => c.objectId);
         let usdcCoin;
         if (usdcCoinIds.length === 1) {
             usdcCoin = tx.splitCoins(tx.object(usdcCoinIds[0]), [tx.pure.u64(usdcSeedAmount)]);
@@ -531,33 +541,34 @@ export class PoolCreator {
         const result = await this.client.signAndExecuteTransaction({
             transaction: tx,
             signer: this.signer,
-            options: {
-                showEffects: true,
-                showObjectChanges: true,
-            },
+            include: { effects: true, objectTypes: true },
         });
 
-        if (result.effects?.status.status !== "success") {
+        if (result.$kind === "FailedTransaction") {
             throw new Error(
-                `Failed to seed margin pools: ${result.effects?.status.error || "Unknown error"}`,
+                `Failed to seed margin pools: ${result.FailedTransaction.status.error || "Unknown error"}`,
             );
         }
 
+        const objectTypes = result.Transaction!.objectTypes ?? {};
+        const changedObjects = result.Transaction!.effects?.changedObjects ?? [];
+
         // Extract SupplierCap from created objects
-        const supplierCapObj = result.objectChanges?.find(
-            (obj): obj is SuiObjectChangeCreated =>
-                obj.type === "created" && obj.objectType.includes("::margin_pool::SupplierCap"),
+        const supplierCapObj = changedObjects.find(
+            (obj) =>
+                obj.idOperation === "Created" &&
+                (objectTypes[obj.objectId] ?? "").includes("::margin_pool::SupplierCap"),
         );
 
         if (!supplierCapObj) {
             throw new Error("SupplierCap object not found in transaction result");
         }
 
-        await this.client.waitForTransaction({ digest: result.digest });
+        await this.client.waitForTransaction({ digest: result.Transaction!.digest });
 
         return {
             supplierCapId: supplierCapObj.objectId,
-            transactionDigest: result.digest,
+            transactionDigest: result.Transaction!.digest,
         };
     }
 
@@ -579,20 +590,23 @@ export class PoolCreator {
         const result = await this.client.signAndExecuteTransaction({
             transaction: tx,
             signer: this.signer,
-            options: { showEffects: true, showObjectChanges: true },
+            include: { effects: true, objectTypes: true },
         });
 
-        if (result.effects?.status.status !== "success") {
+        if (result.$kind === "FailedTransaction") {
             throw new Error(
-                `Failed to finalize registration for ${coinType}: ${result.effects?.status.error || "Unknown error"}`,
+                `Failed to finalize registration for ${coinType}: ${result.FailedTransaction.status.error || "Unknown error"}`,
             );
         }
 
-        await this.client.waitForTransaction({ digest: result.digest });
+        await this.client.waitForTransaction({ digest: result.Transaction!.digest });
 
-        const currency = result.objectChanges?.find(
-            (obj): obj is SuiObjectChangeCreated =>
-                obj.type === "created" && obj.objectType.includes("Currency"),
+        const objectTypes = result.Transaction!.objectTypes ?? {};
+        const changedObjects = result.Transaction!.effects?.changedObjects ?? [];
+        const currency = changedObjects.find(
+            (obj) =>
+                obj.idOperation === "Created" &&
+                (objectTypes[obj.objectId] ?? "").includes("Currency"),
         );
 
         if (!currency) {
@@ -603,7 +617,7 @@ export class PoolCreator {
     }
 
     private async migrateLegacyMetadata(coinType: string): Promise<string> {
-        const coinMetadata = await this.client.getCoinMetadata({ coinType });
+        const { coinMetadata } = await this.client.getCoinMetadata({ coinType });
         if (!coinMetadata) {
             throw new Error(`Coin metadata not found for ${coinType}`);
         }
@@ -613,26 +627,29 @@ export class PoolCreator {
         tx.moveCall({
             target: "0x2::coin_registry::migrate_legacy_metadata",
             typeArguments: [coinType],
-            arguments: [tx.object("0xc"), tx.object(coinMetadata.id)],
+            arguments: [tx.object("0xc"), tx.object(coinMetadata.id!)],
         });
 
         const result = await this.client.signAndExecuteTransaction({
             transaction: tx,
             signer: this.signer,
-            options: { showEffects: true, showObjectChanges: true },
+            include: { effects: true, objectTypes: true },
         });
 
-        if (result.effects?.status.status !== "success") {
+        if (result.$kind === "FailedTransaction") {
             throw new Error(
-                `Failed to migrate legacy metadata for ${coinType}: ${result.effects?.status.error || "Unknown error"}`,
+                `Failed to migrate legacy metadata for ${coinType}: ${result.FailedTransaction.status.error || "Unknown error"}`,
             );
         }
 
-        await this.client.waitForTransaction({ digest: result.digest });
+        await this.client.waitForTransaction({ digest: result.Transaction!.digest });
 
-        const currency = result.objectChanges?.find(
-            (obj): obj is SuiObjectChangeCreated =>
-                obj.type === "created" && obj.objectType.includes("Currency"),
+        const objectTypes = result.Transaction!.objectTypes ?? {};
+        const changedObjects = result.Transaction!.effects?.changedObjects ?? [];
+        const currency = changedObjects.find(
+            (obj) =>
+                obj.idOperation === "Created" &&
+                (objectTypes[obj.objectId] ?? "").includes("Currency"),
         );
 
         if (!currency) {
@@ -755,9 +772,9 @@ export class PoolCreator {
     }
 
     private findObjectByType(
-        objects: SuiObjectChangeCreated[],
+        objects: CreatedObject[],
         typeName: string,
-    ): SuiObjectChangeCreated | undefined {
+    ): CreatedObject | undefined {
         return objects.find((obj) => {
             const type = (obj.objectType ?? "").replace(/\s*│\s*$/g, "").trim();
             return type.endsWith(`::${typeName}`);

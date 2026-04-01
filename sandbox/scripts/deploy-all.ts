@@ -21,14 +21,14 @@ import {
 } from "./utils/docker-compose";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
-import { updateEnvFile } from "./utils/env";
+import { updateEnvFile, validateEnvFile } from "./utils/env";
 import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
 import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
 import { serializePoolConfigs, type PoolConfig } from "./market-maker/types";
 import { Keypair } from "@mysten/sui/cryptography";
-import log from "./utils/logger";
+import log, { c } from "./utils/logger";
 
 async function main() {
     const quick = process.argv.includes("--quick");
@@ -38,6 +38,28 @@ async function main() {
     log.banner(` DeepBook sandbox [${network}] deployment`);
     if (quick)
         log.info("Quick mode: skipping indexer and server image builds (using pre-built images)");
+
+    // Validate .env before doing anything else.
+    // On localnet, PRIVATE_KEY is auto-generated if missing, so we only
+    // enforce the other required keys. Non-localnet requires everything.
+    const envCheck = validateEnvFile(sandboxRoot);
+    if (!envCheck.valid) {
+        const missing =
+            network === "localnet"
+                ? envCheck.missing.filter((k) => k !== "PRIVATE_KEY")
+                : envCheck.missing;
+
+        if (!envCheck.fileExists && network === "localnet") {
+            log.info("No .env found — will create one during setup");
+        } else if (missing.length > 0) {
+            throw new Error(
+                `sandbox/.env is missing required keys: ${missing.join(", ")}. ` +
+                    (envCheck.fileExists
+                        ? "Your .env file exists but is incomplete — fix it before deploying."
+                        : `Create a .env with the required keys before deploying to ${network}.`),
+            );
+        }
+    }
 
     try {
         // On localnet, ensure .env has the minimum variables docker compose
@@ -127,7 +149,7 @@ async function main() {
 
         // Verify RPC is working
         try {
-            const chainId = await client.getChainIdentifier();
+            const { chainIdentifier: chainId } = await client.core.getChainIdentifier();
             log.success(`Connected to chain: ${chainId}`);
         } catch (error) {
             throw new Error(`Failed to connect to Sui RPC: ${error}`);
@@ -148,11 +170,11 @@ async function main() {
         if (network === "testnet") {
             const tokenResult = deployedPackages.get("token")!;
             await client.waitForTransaction({ digest: tokenResult.transactionDigest });
-            const tx = await client.getTransactionBlock({
+            const txResult = await client.getTransaction({
                 digest: tokenResult.transactionDigest,
-                options: {},
             });
-            firstCheckpoint = tx.checkpoint ?? undefined;
+            const txData = txResult.Transaction ?? txResult.FailedTransaction;
+            firstCheckpoint = txData?.epoch ?? undefined;
         }
         const envUpdates = getDeploymentEnv(deployedPackages, { firstCheckpoint });
         if (network === "localnet") {
@@ -350,6 +372,18 @@ async function main() {
         }
 
         log.summary("DeepBook Sandbox Ready!", summaryEntries);
+
+        if (network === "localnet" && !hasUserKey) {
+            const line = c.yellow("!".repeat(60));
+            console.log(line);
+            console.log(c.yellow(c.bold("  A NEW WALLET WAS AUTO-GENERATED FOR THIS DEPLOYMENT")));
+            console.log(c.yellow(`  Address: ${signerAddress}`));
+            console.log(c.yellow("  The private key has been saved to sandbox/.env"));
+            console.log(c.yellow("  Back it up if you want to reuse this wallet."));
+            console.log(line);
+            console.log();
+        }
+
         log.warn("The Deepbook Sandbox is running. To stop it run: pnpm down");
     } catch (error) {
         log.fail("Deployment failed");

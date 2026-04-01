@@ -1,0 +1,21 @@
+{
+    "name": "deepbook-sandbox-examples",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "check-order-book": "tsx check-order-book.ts",
+        "swap-tokens": "tsx swap-tokens.ts",
+        "place-limit-order": "tsx place-limit-order.ts",
+        "place-market-order": "tsx place-market-order.ts",
+        "query-user-orders": "tsx query-user-orders.ts"
+    },
+    "dependencies": {
+        "@mysten/deepbook-v3": "^1.1.5",
+        "@mysten/sui": "^2.5.1"
+    },
+    "devDependencies": {
+        "@types/node": "^20.19.37",
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.3"
+    }
+}

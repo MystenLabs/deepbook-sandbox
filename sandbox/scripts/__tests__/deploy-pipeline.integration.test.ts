@@ -25,7 +25,7 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { SuiClient } from "@mysten/sui/client";
+import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import type { Keypair } from "@mysten/sui/cryptography";
 
@@ -88,7 +88,7 @@ function cleanupLocalnet(cwd: string): void {
 
 describe("deploy-all pipeline (localnet)", () => {
     // Shared mutable state — populated by successive tests
-    let client: SuiClient;
+    let client: SuiGrpcClient;
     let signer: Keypair;
     let signerAddress: string;
     let deployedPackages: Map<string, DeploymentResult>;
@@ -100,7 +100,7 @@ describe("deploy-all pipeline (localnet)", () => {
     let exitHandler: (() => void) | undefined;
 
     beforeAll(async () => {
-        client = new SuiClient({ url: RPC_URL });
+        client = new SuiGrpcClient({ network: "localnet", baseUrl: RPC_URL });
 
         // ── Route all env file I/O to .env.test (keeps user's .env untouched) ──
         process.env.SANDBOX_ENV_FILE = ENV_FILE;
@@ -175,8 +175,8 @@ describe("deploy-all pipeline (localnet)", () => {
     test("funds deployer", async () => {
         await ensureMinimumBalance(client, signerAddress, FAUCET_HOST);
 
-        const { totalBalance } = await client.getBalance({ owner: signerAddress });
-        expect(BigInt(totalBalance)).toBeGreaterThanOrEqual(BigInt(1_000_000_000));
+        const { balance } = await client.getBalance({ owner: signerAddress });
+        expect(BigInt(balance.balance)).toBeGreaterThanOrEqual(BigInt(1_000_000_000));
     }, 60_000);
 
     // ----------------------------------------------------------------
@@ -302,8 +302,8 @@ describe("deploy-all pipeline (localnet)", () => {
 
         // Objects should exist on-chain
         for (const id of ids) {
-            const obj = await client.getObject({ id });
-            expect(obj.data, `PriceInfoObject ${id} not found`).toBeDefined();
+            const { object } = await client.getObject({ objectId: id });
+            expect(object, `PriceInfoObject ${id} not found`).toBeDefined();
         }
     }, 60_000);
 
@@ -323,24 +323,22 @@ describe("deploy-all pipeline (localnet)", () => {
         expectValidSuiId(pools.DEEP_SUI.poolId);
         expect(pools.DEEP_SUI.baseCoinType).toContain("::deep::DEEP");
 
-        const deepSuiObj = await client.getObject({
-            id: pools.DEEP_SUI.poolId,
-            options: { showType: true },
+        const { object: deepSuiObj } = await client.getObject({
+            objectId: pools.DEEP_SUI.poolId,
         });
-        expect(deepSuiObj.data).toBeDefined();
-        expect(deepSuiObj.data!.type).toContain("::pool::Pool<");
+        expect(deepSuiObj).toBeDefined();
+        expect(deepSuiObj.type).toContain("::pool::Pool<");
 
         // SUI/USDC pool
         expect(pools.SUI_USDC).toBeDefined();
         expectValidSuiId(pools.SUI_USDC.poolId);
         expect(pools.SUI_USDC.quoteCoinType).toContain("::usdc::USDC");
 
-        const suiUsdcObj = await client.getObject({
-            id: pools.SUI_USDC.poolId,
-            options: { showType: true },
+        const { object: suiUsdcObj } = await client.getObject({
+            objectId: pools.SUI_USDC.poolId,
         });
-        expect(suiUsdcObj.data).toBeDefined();
-        expect(suiUsdcObj.data!.type).toContain("::pool::Pool<");
+        expect(suiUsdcObj).toBeDefined();
+        expect(suiUsdcObj.type).toContain("::pool::Pool<");
     }, 120_000);
 
     // ----------------------------------------------------------------
@@ -429,8 +427,8 @@ describe("deploy-all pipeline (localnet)", () => {
         // Wait for tx to settle
         await new Promise((r) => setTimeout(r, 3_000));
 
-        const { totalBalance } = await client.getBalance({ owner: freshAddress });
-        expect(BigInt(totalBalance)).toBeGreaterThan(0n);
+        const { balance } = await client.getBalance({ owner: freshAddress });
+        expect(BigInt(balance.balance)).toBeGreaterThan(0n);
     }, 30_000);
 
     // ----------------------------------------------------------------

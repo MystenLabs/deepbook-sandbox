@@ -1,10 +1,10 @@
-import http from "http";
 import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { getClient, getNetwork } from "../utils/config";
 import { PythClient } from "./pyth-client";
 import { OracleUpdater } from "./oracle-updater";
-import type { OracleConfig, ParsedPriceData } from "./types";
+import { createInitialStatus, createStatusServer, updateStatus } from "./status-server";
+import type { OracleConfig } from "./types";
 import { DEEP_PRICE_FEED_ID, SUI_PRICE_FEED_ID, USDC_PRICE_FEED_ID } from "./constants";
 import log from "../utils/logger";
 
@@ -13,11 +13,11 @@ import log from "../utils/logger";
  *
  * This service:
  * 1. Fetches historical price data from Pyth Network API every 10 seconds
- * 2. Updates the SUI and DEEP PriceInfoObjects on-chain
+ * 2. Updates the SUI, DEEP, and USDC PriceInfoObjects on-chain
  * 3. Exposes a health/status endpoint on port 9010
  *
  * Required env vars:
- *   PYTH_PACKAGE_ID, DEEP_PRICE_INFO_OBJECT_ID, SUI_PRICE_INFO_OBJECT_ID
+ *   PYTH_PACKAGE_ID, DEEP_PRICE_INFO_OBJECT_ID, SUI_PRICE_INFO_OBJECT_ID, USDC_PRICE_INFO_OBJECT_ID
  */
 
 const STATUS_PORT = 9010;
@@ -37,76 +37,6 @@ function requireEnv(name: string): string {
     const value = process.env[name];
     if (!value) throw new Error(`Missing required env var: ${name}`);
     return value;
-}
-
-/** Shared state for the status endpoint */
-const status = {
-    updateCount: 0,
-    errorCount: 0,
-    lastUpdateTime: null as string | null,
-    lastSuiPrice: null as string | null,
-    lastDeepPrice: null as string | null,
-    lastUsdcPrice: null as string | null,
-};
-
-function formatPrice(price: string, expo: number): string {
-    const priceNum = Number.parseInt(price);
-    const formatted = priceNum * Math.pow(10, expo);
-    return formatted.toFixed(Math.abs(expo));
-}
-
-function updateStatus(
-    suiData: ParsedPriceData,
-    deepData: ParsedPriceData,
-    usdcData: ParsedPriceData,
-) {
-    status.lastUpdateTime = new Date().toISOString();
-    status.lastSuiPrice = formatPrice(suiData.price.price, suiData.price.expo);
-    status.lastDeepPrice = formatPrice(deepData.price.price, deepData.price.expo);
-    status.lastUsdcPrice = formatPrice(usdcData.price.price, usdcData.price.expo);
-}
-
-function startStatusServer() {
-    const server = http.createServer((req, res) => {
-        const path = req.url?.split("?")[0] ?? "";
-        const isStatusPath = path === "/" || path === "/status";
-
-        if (!isStatusPath) {
-            res.writeHead(404, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "Not Found" }, null, 2));
-            return;
-        }
-        if (req.method !== "GET") {
-            res.writeHead(405, {
-                "Content-Type": "application/json",
-                Allow: "GET",
-            });
-            res.end(JSON.stringify({ error: "Method Not Allowed" }, null, 2));
-            return;
-        }
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-            JSON.stringify(
-                {
-                    status: "ok",
-                    updates: status.updateCount,
-                    errors: status.errorCount,
-                    lastUpdate: status.lastUpdateTime,
-                    prices: {
-                        sui: status.lastSuiPrice ? `$${status.lastSuiPrice}` : null,
-                        deep: status.lastDeepPrice ? `$${status.lastDeepPrice}` : null,
-                        usdc: status.lastUsdcPrice ? `$${status.lastUsdcPrice}` : null,
-                    },
-                },
-                null,
-                2,
-            ),
-        );
-    });
-    server.listen(STATUS_PORT, () => {
-        log.success(`Status endpoint: http://localhost:${STATUS_PORT}`);
-    });
 }
 
 async function main() {
@@ -142,14 +72,15 @@ async function main() {
 
     // Test connection
     try {
-        const chainId = await client.getChainIdentifier();
+        const { chainIdentifier: chainId } = await client.core.getChainIdentifier();
         log.success(`Connected to chain: ${chainId}`);
     } catch (error) {
         throw new Error(`Failed to connect to Sui RPC: ${error}`);
     }
 
     // Start status/health endpoint
-    startStatusServer();
+    const status = createInitialStatus();
+    createStatusServer(STATUS_PORT, status);
 
     log.phase("Starting price feed updates");
 
@@ -161,7 +92,7 @@ async function main() {
             // Fetch price data from Pyth
             const priceUpdate = await pythClient.fetchPriceUpdates();
 
-            // Find SUI and DEEP data for status tracking
+            // Find SUI, DEEP, and USDC data for status tracking
             const suiData = priceUpdate.parsed.find((p) => p.id === SUI_PRICE_FEED_ID.slice(2));
             const deepData = priceUpdate.parsed.find((p) => p.id === DEEP_PRICE_FEED_ID.slice(2));
             const usdcData = priceUpdate.parsed.find((p) => p.id === USDC_PRICE_FEED_ID.slice(2));
@@ -174,7 +105,7 @@ async function main() {
             });
 
             status.updateCount++;
-            if (suiData && deepData && usdcData) updateStatus(suiData, deepData, usdcData);
+            if (suiData && deepData && usdcData) updateStatus(status, suiData, deepData, usdcData);
 
             const elapsed = Date.now() - startTime;
             log.loopSuccess(

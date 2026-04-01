@@ -1,4 +1,4 @@
-import type { SuiClient } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import { Transaction } from "@mysten/sui/transactions";
 import type { PoolConfig } from "./types";
 import log from "../utils/logger";
@@ -44,33 +44,34 @@ function parsePriceFromBcs(bytes: number[]): { magnitude: bigint; exponent: bigi
  * Read a single Pyth price from an on-chain PriceInfoObject via devInspectTransactionBlock.
  */
 async function readOnChainPrice(
-    client: SuiClient,
+    client: SuiGrpcClient,
     pythPackageId: string,
     priceInfoObjectId: string,
     sender: string,
 ): Promise<{ magnitude: bigint; exponent: bigint }> {
     const tx = new Transaction();
+    tx.setSender(sender);
     tx.moveCall({
         target: `${pythPackageId}::pyth::get_price_unsafe`,
         arguments: [tx.object(priceInfoObjectId)],
     });
 
-    const result = await client.devInspectTransactionBlock({
-        transactionBlock: tx,
-        sender,
+    const result = await client.simulateTransaction({
+        transaction: tx,
+        checksEnabled: false,
+        include: { commandResults: true },
     });
 
-    if (result.effects.status.status !== "success") {
-        throw new Error(`devInspect failed: ${result.effects.status.error ?? "unknown"}`);
+    if (result.$kind === "FailedTransaction") {
+        throw new Error(`Simulation failed: ${result.FailedTransaction.status.error ?? "unknown"}`);
     }
 
-    const returnValues = result.results?.[0]?.returnValues;
-    if (!returnValues || returnValues.length === 0) {
+    const bcsBytes = result.commandResults?.[0]?.returnValues?.[0]?.bcs;
+    if (!bcsBytes || bcsBytes.length === 0) {
         throw new Error("No return values from get_price_unsafe");
     }
 
-    const [bytes] = returnValues[0];
-    return parsePriceFromBcs(bytes);
+    return parsePriceFromBcs(Array.from(bcsBytes));
 }
 
 /**
@@ -82,7 +83,7 @@ async function readOnChainPrice(
  * @returns mid price as bigint in quote asset's decimal format, or null if read fails
  */
 export async function fetchOracleMidPrice(
-    client: SuiClient,
+    client: SuiGrpcClient,
     pool: PoolConfig,
     pythPackageId: string,
     sender: string,
