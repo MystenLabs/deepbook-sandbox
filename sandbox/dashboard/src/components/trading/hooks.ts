@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PoolKey, CoinKey, OrderDetail } from "./types";
 
@@ -21,35 +21,41 @@ async function tradingPost<T>(path: string, body: unknown): Promise<T> {
 
 /* ------------------------------------------------------------------ */
 /*  useBalanceManager — BM lifecycle (create, deposit, withdraw)       */
+/*  Source of truth: on-chain query via GET /trading/balance-manager    */
 /* ------------------------------------------------------------------ */
 
-const BM_STORAGE_KEY = "trading-bm-id";
-
 export function useBalanceManager() {
-    const [balanceManagerId, setBalanceManagerId] = useState<string | null>(() =>
-        localStorage.getItem(BM_STORAGE_KEY),
-    );
     const queryClient = useQueryClient();
 
+    const bmQuery = useQuery<string | null>({
+        queryKey: ["balance-manager-id"],
+        queryFn: async () => {
+            const res = await fetch(`${TRADING_API}/balance-manager`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            return data.balanceManagerId ?? null;
+        },
+        refetchInterval: 10_000,
+    });
+
+    const balanceManagerId = bmQuery.data ?? null;
     const isSetup = !!balanceManagerId;
 
-    const invalidateBalances = useMemo(
-        () => () => {
-            queryClient.invalidateQueries({ queryKey: ["bm-balances", balanceManagerId] });
-            queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
-        },
-        [queryClient, balanceManagerId],
-    );
+    const invalidateAll = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: ["balance-manager-id"] });
+        queryClient.invalidateQueries({ queryKey: ["bm-balances", balanceManagerId] });
+        queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
+    }, [queryClient, balanceManagerId]);
 
-    const create = useCallback(async () => {
+    const create = useCallback(async (): Promise<{ balanceManagerId: string; digest: string }> => {
         const result = await tradingPost<{ balanceManagerId: string; digest: string }>(
             "/create-balance-manager",
             {},
         );
-        localStorage.setItem(BM_STORAGE_KEY, result.balanceManagerId);
-        setBalanceManagerId(result.balanceManagerId);
-        return result.balanceManagerId;
-    }, []);
+        // Invalidate so the on-chain query picks up the new BM
+        await queryClient.invalidateQueries({ queryKey: ["balance-manager-id"] });
+        return result;
+    }, [queryClient]);
 
     const deposit = useCallback(
         async (coin: CoinKey, amount: number) => {
@@ -59,10 +65,10 @@ export function useBalanceManager() {
                 coin,
                 amount,
             });
-            invalidateBalances();
+            invalidateAll();
             return result.digest;
         },
-        [balanceManagerId, invalidateBalances],
+        [balanceManagerId, invalidateAll],
     );
 
     const withdraw = useCallback(
@@ -73,13 +79,13 @@ export function useBalanceManager() {
                 coin,
                 amount,
             });
-            invalidateBalances();
+            invalidateAll();
             return result.digest;
         },
-        [balanceManagerId, invalidateBalances],
+        [balanceManagerId, invalidateAll],
     );
 
-    return { balanceManagerId, isSetup, create, deposit, withdraw };
+    return { balanceManagerId, isSetup, isLoading: bmQuery.isLoading, create, deposit, withdraw };
 }
 
 /* ------------------------------------------------------------------ */

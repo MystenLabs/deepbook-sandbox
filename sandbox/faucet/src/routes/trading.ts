@@ -126,6 +126,33 @@ export function tradingRoutes(client: SuiClient, signer: Keypair): Hono {
         return pool;
     }
 
+    // GET /trading/balance-manager — find deployer's BM on-chain
+    app.get("/balance-manager", async (c) => {
+        try {
+            const manifest = getManifest();
+            const signerAddress = signer.getPublicKey().toSuiAddress();
+            const bmType = `${manifest.deepbookPackageId}::balance_manager::BalanceManager`;
+
+            const response = await client.getOwnedObjects({
+                owner: signerAddress,
+                filter: { StructType: bmType },
+                options: { showType: true },
+            });
+
+            const bmId =
+                response.data.length > 0 && response.data[0].data
+                    ? response.data[0].data.objectId
+                    : null;
+
+            return c.json({ success: true, balanceManagerId: bmId });
+        } catch (err) {
+            return c.json(
+                { success: false, error: err instanceof Error ? err.message : "Failed" },
+                500,
+            );
+        }
+    });
+
     // GET /trading/balances/:balanceManagerId
     app.get("/balances/:balanceManagerId", async (c) => {
         try {

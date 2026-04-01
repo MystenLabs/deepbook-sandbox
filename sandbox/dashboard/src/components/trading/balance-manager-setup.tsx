@@ -10,7 +10,7 @@ interface BalanceManagerSetupProps {
     balanceManagerId: string | null;
     balances?: Record<string, string>;
     walletBalances?: Record<string, string>;
-    onCreate: () => Promise<string>;
+    onCreate: () => Promise<{ balanceManagerId: string; digest: string }>;
     onDeposit: (coin: CoinKey, amount: number) => Promise<string>;
     onWithdraw: (coin: CoinKey, amount: number) => Promise<string>;
 }
@@ -49,8 +49,11 @@ export function BalanceManagerSetup({
         setCreating(true);
         setError(null);
         try {
-            const bmId = await onCreate();
-            setSuccess(`Balance Manager created: ${bmId.slice(0, 12)}...`);
+            const result = await onCreate();
+            setSuccess({
+                message: `Balance Manager created: ${result.balanceManagerId.slice(0, 12)}...`,
+                digest: result.digest,
+            });
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to create Balance Manager");
         } finally {
