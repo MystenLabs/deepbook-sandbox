@@ -6,10 +6,12 @@ import { FaucetPage } from "@/components/faucet-page";
 import { HealthPage } from "@/components/health-page";
 import { MarketMakerPage } from "@/components/market-maker-page";
 import { DeploymentPage } from "@/components/deployment-page";
+import { TradingPage } from "@/components/trading";
 
 const navLinks = [
     { to: "/", label: "Health" },
     { to: "/market-maker", label: "Market Maker" },
+    { to: "/trading", label: "Trading" },
     { to: "/faucet", label: "Faucet" },
     { to: "/deployment", label: "Deployment" },
 ] as const;
@@ -74,6 +76,14 @@ export default function App() {
                 <Routes>
                     <Route path="/" element={<HealthPage />} />
                     <Route path="/market-maker" element={<MarketMakerPage />} />
+                    <Route
+                        path="/trading"
+                        element={
+                            <RequireWallet>
+                                <TradingPage />
+                            </RequireWallet>
+                        }
+                    />
                     <Route
                         path="/faucet"
                         element={
