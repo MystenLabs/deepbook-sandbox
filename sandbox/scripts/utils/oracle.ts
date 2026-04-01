@@ -1,7 +1,7 @@
 import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
-import { fromHex, toHex } from "@mysten/sui/utils";
+import { fromBase64, fromHex, toHex } from "@mysten/sui/utils";
 import type { DeploymentResult } from "./deployer";
 import {
     SUI_PRICE_FEED_ID,
@@ -137,9 +137,9 @@ export async function setupPythOracles(
     for (const obj of priceObjects.objects) {
         if (obj instanceof Error) continue;
         const json = obj.json as any;
-        const bytes: number[] = json?.price_info?.price_feed?.price_identifier?.bytes;
-        if (!bytes) continue;
-        feedIdToObjectId.set("0x" + toHex(new Uint8Array(bytes)), obj.objectId);
+        const bytesB64: string | undefined = json?.price_info?.price_feed?.price_identifier?.bytes;
+        if (!bytesB64) continue;
+        feedIdToObjectId.set("0x" + toHex(fromBase64(bytesB64)), obj.objectId);
     }
 
     const ids: PythOracleIds = {

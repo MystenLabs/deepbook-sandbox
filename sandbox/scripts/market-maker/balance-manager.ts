@@ -1,6 +1,7 @@
 import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
+import { normalizeStructTag } from "@mysten/sui/utils";
 
 export interface BalanceManagerInfo {
     balanceManagerId: string;
@@ -82,7 +83,7 @@ export class BalanceManagerService {
         const tx = new Transaction();
 
         // For SUI, we need to handle gas coin specially
-        const isSui = coinType === "0x2::sui::SUI";
+        const isSui = normalizeStructTag(coinType) === normalizeStructTag("0x2::sui::SUI");
 
         let coinToDeposit;
         if (isSui) {

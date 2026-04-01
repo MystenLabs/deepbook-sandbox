@@ -3,7 +3,7 @@ import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction, type TransactionResult } from "@mysten/sui/transactions";
 import type { CreatedObject, DeploymentResult } from "./deployer";
 import log from "./logger";
-import { fromHex, SUI_CLOCK_OBJECT_ID } from "@mysten/sui/utils";
+import { fromHex, normalizeStructTag, SUI_CLOCK_OBJECT_ID } from "@mysten/sui/utils";
 import { bcs } from "@mysten/sui/bcs";
 import { SUI_PRICE_FEED_ID, USDC_PRICE_FEED_ID } from "../oracle-service/constants";
 
@@ -247,10 +247,12 @@ export class PoolCreator {
             throw new Error("No pool objects found in transaction result");
         }
 
-        // Build a pair-keyed map by matching type arguments to known coin types
-        const deepType = `${tokenPkg!.packageId}::deep::DEEP`;
-        const usdcType = `${usdcPkg!.packageId}::usdc::USDC`;
-        const suiType = "0x2::sui::SUI";
+        // Build a pair-keyed map by matching type arguments to known coin types.
+        // gRPC returns fully-expanded addresses in type strings, so we must
+        // normalise our reference types to match (e.g. "0x2::…" → "0x0000…0002::…").
+        const deepType = normalizeStructTag(`${tokenPkg!.packageId}::deep::DEEP`);
+        const usdcType = normalizeStructTag(`${usdcPkg!.packageId}::usdc::USDC`);
+        const suiType = normalizeStructTag("0x2::sui::SUI");
 
         const pairDefs: Array<{ key: string; base: string; quote: string }> = [
             { key: "DEEP_SUI", base: deepType, quote: suiType },
@@ -308,8 +310,8 @@ export class PoolCreator {
         log.detail(`MarginRegistry: ${registry.objectId}`);
         log.detail(`MarginAdminCap: ${adminCap.objectId}`);
 
-        const usdcType = `${usdcPkg.packageId}::usdc::USDC`;
-        const suiType = "0x2::sui::SUI";
+        const usdcType = normalizeStructTag(`${usdcPkg.packageId}::usdc::USDC`);
+        const suiType = normalizeStructTag("0x2::sui::SUI");
 
         log.detail("Finalizing USDC currency registration...");
         const usdcCurrencyId = await this.finalizeCurrencyRegistration(
@@ -457,8 +459,8 @@ export class PoolCreator {
             );
         }
 
-        const usdcType = `${usdcPkg.packageId}::usdc::USDC`;
-        const suiType = "0x2::sui::SUI";
+        const usdcType = normalizeStructTag(`${usdcPkg.packageId}::usdc::USDC`);
+        const suiType = normalizeStructTag("0x2::sui::SUI");
         const signerAddress = this.signer.getPublicKey().toSuiAddress();
 
         const usdcSeedAmount = BigInt(MARGIN_SEED_USDC) * BigInt(USDC_ASSET_DEFAULTS.scalar);
