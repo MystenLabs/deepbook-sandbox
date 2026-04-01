@@ -1,9 +1,15 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { ArrowLeftRight, RefreshCw } from "lucide-react";
+import { ArrowLeftRight, Info, RefreshCw } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+    Tooltip as InfoTooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -41,6 +47,13 @@ interface ChartRow {
     bid: number | null;
     ask: number | null;
     mid: number | null;
+}
+
+interface PoolDetails {
+    midPrice: string;
+    tickSize: string;
+    lotSize: string;
+    minSize: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -81,6 +94,21 @@ function PairIcons({ pair }: { pair: string }) {
 /*  MarketMakerPage                                                    */
 /* ------------------------------------------------------------------ */
 
+function usePoolDetails(poolKey: string) {
+    return useQuery<PoolDetails>({
+        queryKey: ["pool-details", poolKey],
+        queryFn: async () => {
+            const r = await fetch(`/api/faucet/trading/pool-details/${poolKey}`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const data = await r.json();
+            if (!data.success) throw new Error(data.error);
+            return data as PoolDetails;
+        },
+        refetchInterval: 5_000,
+        retry: false,
+    });
+}
+
 export function MarketMakerPage() {
     const [selectedPool, setSelectedPool] = useState(0);
 
@@ -110,6 +138,9 @@ export function MarketMakerPage() {
     const pool = pools[selectedPool] ?? pools[0];
     const chartData = buildChartData(pool);
     const midPrice = pool?.midPrice;
+
+    const poolKey = pool?.pair?.replace("/", "_") ?? "DEEP_SUI";
+    const poolDetails = usePoolDetails(poolKey);
 
     return (
         <div className="space-y-4">
@@ -207,33 +238,101 @@ export function MarketMakerPage() {
                 </CardContent>
             </CardWithPlus>
 
+            {/* Pool Details */}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <StatCard
+                    label="On-chain Mid Price"
+                    isLoading={poolDetails.isLoading}
+                    tooltip="Midpoint between best bid and best ask on the pool's order book"
+                >
+                    {poolDetails.data ? parseFloat(poolDetails.data.midPrice).toFixed(6) : "—"}
+                </StatCard>
+                <StatCard
+                    label="Tick Size"
+                    isLoading={poolDetails.isLoading}
+                    tooltip="Smallest allowed price increment for orders"
+                >
+                    {poolDetails.data?.tickSize ?? "—"}
+                </StatCard>
+                <StatCard
+                    label="Lot Size"
+                    isLoading={poolDetails.isLoading}
+                    tooltip="Smallest allowed quantity increment for orders"
+                >
+                    {poolDetails.data?.lotSize ?? "—"}
+                </StatCard>
+                <StatCard
+                    label="Min Size"
+                    isLoading={poolDetails.isLoading}
+                    tooltip="Minimum order quantity allowed on this pool"
+                >
+                    {poolDetails.data?.minSize ?? "—"}
+                </StatCard>
+            </div>
+
             {/* Config & Stats */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <StatCard label="Mid Price" isLoading={orders.isLoading}>
+                <StatCard
+                    label="Mid Price"
+                    isLoading={orders.isLoading}
+                    tooltip="Market maker's calculated mid price from oracle feeds"
+                >
                     {midPrice != null ? midPrice.toFixed(6) : "—"}
                 </StatCard>
-                <StatCard label="Active Orders" isLoading={orders.isLoading}>
+                <StatCard
+                    label="Active Orders"
+                    isLoading={orders.isLoading}
+                    tooltip="Number of resting orders placed by the market maker"
+                >
                     {pool?.orders.length ?? "—"}
                 </StatCard>
-                <StatCard label="Spread" isLoading={orders.isLoading}>
+                <StatCard
+                    label="Spread"
+                    isLoading={orders.isLoading}
+                    tooltip="Price gap between best bid and ask, in basis points"
+                >
                     {orders.data ? `${orders.data.config.spreadBps} bps` : "—"}
                 </StatCard>
-                <StatCard label="Levels / Side" isLoading={orders.isLoading}>
+                <StatCard
+                    label="Levels / Side"
+                    isLoading={orders.isLoading}
+                    tooltip="Number of price levels maintained on each side of the book"
+                >
                     {orders.data?.config.levelsPerSide ?? "—"}
                 </StatCard>
-                <StatCard label="Level Spacing" isLoading={orders.isLoading}>
+                <StatCard
+                    label="Level Spacing"
+                    isLoading={orders.isLoading}
+                    tooltip="Price gap between consecutive levels, in basis points"
+                >
                     {orders.data ? `${orders.data.config.levelSpacingBps} bps` : "—"}
                 </StatCard>
-                <StatCard label="Pools" isLoading={orders.isLoading}>
+                <StatCard
+                    label="Pools"
+                    isLoading={orders.isLoading}
+                    tooltip="Number of trading pools the market maker is active on"
+                >
                     {pools.length || "—"}
                 </StatCard>
-                <StatCard label="Oracle SUI" isLoading={oracle.isLoading}>
+                <StatCard
+                    label="Oracle SUI"
+                    isLoading={oracle.isLoading}
+                    tooltip="SUI/USD price from Pyth Network oracle"
+                >
                     {oracle.data?.prices.sui ?? "—"}
                 </StatCard>
-                <StatCard label="Oracle DEEP" isLoading={oracle.isLoading}>
+                <StatCard
+                    label="Oracle DEEP"
+                    isLoading={oracle.isLoading}
+                    tooltip="DEEP/USD price from Pyth Network oracle"
+                >
                     {oracle.data?.prices.deep ?? "—"}
                 </StatCard>
-                <StatCard label="Oracle USDC" isLoading={oracle.isLoading}>
+                <StatCard
+                    label="Oracle USDC"
+                    isLoading={oracle.isLoading}
+                    tooltip="USDC/USD price from Pyth Network oracle"
+                >
                     {oracle.data?.prices.usdc ?? "—"}
                 </StatCard>
             </div>
@@ -303,16 +402,32 @@ function CardWithPlus({ children }: { children: ReactNode }) {
 function StatCard({
     label,
     isLoading,
+    tooltip,
     children,
 }: {
     label: string;
     isLoading: boolean;
+    tooltip?: string;
     children: ReactNode;
 }) {
     return (
         <CardWithPlus>
             <CardContent className="py-4">
-                <div className="text-xs text-zinc-500">{label}</div>
+                <div className="flex items-center gap-1 text-xs text-zinc-500">
+                    {label}
+                    {tooltip && (
+                        <TooltipProvider delayDuration={200}>
+                            <InfoTooltip>
+                                <TooltipTrigger asChild>
+                                    <Info className="h-3 w-3 cursor-help text-zinc-600" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>{tooltip}</p>
+                                </TooltipContent>
+                            </InfoTooltip>
+                        </TooltipProvider>
+                    )}
+                </div>
                 {isLoading ? (
                     <Skeleton className="mt-1 h-6 w-24 bg-zinc-800" />
                 ) : (
