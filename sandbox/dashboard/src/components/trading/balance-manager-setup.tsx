@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Wallet, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
+import { Wallet, ArrowDownToLine, ArrowUpFromLine, ExternalLink, Loader2 } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CoinIcon } from "./coin-icon";
 import type { CoinKey } from "./types";
 
 interface BalanceManagerSetupProps {
     isSetup: boolean;
     balanceManagerId: string | null;
     balances?: Record<string, string>;
+    walletBalances?: Record<string, string>;
     onCreate: () => Promise<string>;
     onDeposit: (coin: CoinKey, amount: number) => Promise<string>;
     onWithdraw: (coin: CoinKey, amount: number) => Promise<string>;
@@ -15,10 +17,20 @@ interface BalanceManagerSetupProps {
 
 const COINS: CoinKey[] = ["SUI", "DEEP"];
 
+function truncate(addr: string): string {
+    if (addr.length <= 16) return addr;
+    return `${addr.slice(0, 10)}...${addr.slice(-6)}`;
+}
+
+function explorerUrl(objectId: string): string {
+    return `https://explorer.polymedia.app/object/${objectId}?network=local`;
+}
+
 export function BalanceManagerSetup({
     isSetup,
     balanceManagerId,
     balances,
+    walletBalances,
     onCreate,
     onDeposit,
     onWithdraw,
@@ -26,9 +38,12 @@ export function BalanceManagerSetup({
     const [creating, setCreating] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
+    const [success, setSuccess] = useState<{ message: string; digest: string } | null>(null);
     const [coin, setCoin] = useState<CoinKey>("SUI");
-    const [amount, setAmount] = useState("1");
+    const [amount, setAmount] = useState("");
+
+    const walletBalance = parseFloat(walletBalances?.[coin] ?? "0");
+    const bmBalance = parseFloat(balances?.[coin] ?? "0");
 
     const handleCreate = async () => {
         setCreating(true);
@@ -49,17 +64,30 @@ export function BalanceManagerSetup({
             setError("Enter a valid amount");
             return;
         }
+
+        // Client-side balance validation
+        if (action === "deposit" && amt > walletBalance) {
+            setError(`Insufficient wallet balance. You have ${walletBalance} ${coin}`);
+            return;
+        }
+        if (action === "withdraw" && amt > bmBalance) {
+            setError(`Insufficient Balance Manager funds. You have ${bmBalance} ${coin}`);
+            return;
+        }
+
         setLoading(true);
         setError(null);
         setSuccess(null);
         try {
+            let digest: string;
             if (action === "deposit") {
-                await onDeposit(coin, amt);
-                setSuccess(`Deposited ${amt} ${coin}`);
+                digest = await onDeposit(coin, amt);
+                setSuccess({ message: `Deposited ${amt} ${coin}`, digest });
             } else {
-                await onWithdraw(coin, amt);
-                setSuccess(`Withdrew ${amt} ${coin}`);
+                digest = await onWithdraw(coin, amt);
+                setSuccess({ message: `Withdrew ${amt} ${coin}`, digest });
             }
+            setAmount("");
         } catch (err) {
             setError(err instanceof Error ? err.message : `${action} failed`);
         } finally {
@@ -97,22 +125,36 @@ export function BalanceManagerSetup({
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-                <p className="text-xs text-zinc-500">
-                    {balanceManagerId?.slice(0, 16)}...{balanceManagerId?.slice(-8)}
-                </p>
+                {/* BM ID with explorer link */}
+                <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-xs text-zinc-500">
+                        {balanceManagerId ? truncate(balanceManagerId) : ""}
+                    </span>
+                    {balanceManagerId && (
+                        <a
+                            href={explorerUrl(balanceManagerId)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded p-0.5 text-zinc-500 transition-colors hover:text-zinc-200"
+                        >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                    )}
+                </div>
 
-                {/* BM Balances */}
+                {/* BM Balances with coin icons */}
                 {balances && (
                     <div className="rounded-md bg-zinc-900/60 px-3 py-2.5">
                         <p className="text-[11px] uppercase tracking-wider text-zinc-600 mb-1.5">
                             Balance Manager Funds
                         </p>
                         <div className="flex gap-5">
-                            {Object.entries(balances).map(([c, amt]) => (
-                                <div key={c} className="text-sm">
-                                    <span className="text-zinc-500">{c}: </span>
+                            {COINS.map((c) => (
+                                <div key={c} className="flex items-center gap-1.5 text-sm">
+                                    <CoinIcon coin={c} />
+                                    <span className="text-zinc-400">{c}</span>
                                     <span className="font-mono text-zinc-200">
-                                        {parseFloat(amt).toLocaleString("en-US", {
+                                        {parseFloat(balances[c] ?? "0").toLocaleString("en-US", {
                                             maximumFractionDigits: 4,
                                         })}
                                     </span>
@@ -124,49 +166,80 @@ export function BalanceManagerSetup({
 
                 {/* Deposit / Withdraw controls */}
                 <div className="flex gap-2">
-                    <select
-                        value={coin}
-                        onChange={(e) => setCoin(e.target.value as CoinKey)}
-                        className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200"
-                    >
-                        {COINS.map((c) => (
-                            <option key={c} value={c}>
-                                {c}
-                            </option>
-                        ))}
-                    </select>
+                    <div className="flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-2">
+                        <CoinIcon coin={coin} />
+                        <select
+                            value={coin}
+                            onChange={(e) => {
+                                setCoin(e.target.value as CoinKey);
+                                setAmount("");
+                                setError(null);
+                            }}
+                            className="bg-transparent py-2 text-sm text-zinc-200 outline-none"
+                        >
+                            {COINS.map((c) => (
+                                <option key={c} value={c}>
+                                    {c}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                     <input
                         type="number"
                         value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
+                        onChange={(e) => {
+                            setAmount(e.target.value);
+                            setError(null);
+                        }}
                         placeholder="Amount"
                         min="0"
-                        step="0.1"
-                        className="flex-1 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        step="any"
+                        className="flex-1 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
                     <Button
                         onClick={() => handleAction("deposit")}
                         disabled={loading}
                         size="sm"
-                        className="gap-1"
+                        className="gap-1 min-w-[90px]"
                     >
-                        <ArrowDownToLine className="h-3.5 w-3.5" />
-                        {loading ? "..." : "Deposit"}
+                        {loading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <ArrowDownToLine className="h-3.5 w-3.5" />
+                        )}
+                        Deposit
                     </Button>
                     <Button
                         onClick={() => handleAction("withdraw")}
                         disabled={loading}
                         size="sm"
                         variant="outline"
-                        className="gap-1 border-zinc-800 text-zinc-300 hover:text-zinc-100"
+                        className="gap-1 min-w-[100px] border-zinc-800 text-zinc-300 hover:text-zinc-100"
                     >
-                        <ArrowUpFromLine className="h-3.5 w-3.5" />
-                        {loading ? "..." : "Withdraw"}
+                        {loading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <ArrowUpFromLine className="h-3.5 w-3.5" />
+                        )}
+                        Withdraw
                     </Button>
                 </div>
 
                 {error && <p className="text-xs text-red-400">{error}</p>}
-                {success && <p className="text-xs text-emerald-400">{success}</p>}
+                {success && (
+                    <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                        {success.message}
+                        <a
+                            href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
+                        >
+                            View tx
+                            <ExternalLink className="h-3 w-3" />
+                        </a>
+                    </p>
+                )}
             </CardContent>
         </div>
     );

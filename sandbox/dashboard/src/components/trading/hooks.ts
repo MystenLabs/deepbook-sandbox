@@ -20,7 +20,7 @@ async function tradingPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 /* ------------------------------------------------------------------ */
-/*  useBalanceManager — BM lifecycle (create, deposit)                 */
+/*  useBalanceManager — BM lifecycle (create, deposit, withdraw)       */
 /* ------------------------------------------------------------------ */
 
 const BM_STORAGE_KEY = "trading-bm-id";
@@ -34,7 +34,10 @@ export function useBalanceManager() {
     const isSetup = !!balanceManagerId;
 
     const invalidateBalances = useMemo(
-        () => () => queryClient.invalidateQueries({ queryKey: ["bm-balances", balanceManagerId] }),
+        () => () => {
+            queryClient.invalidateQueries({ queryKey: ["bm-balances", balanceManagerId] });
+            queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
+        },
         [queryClient, balanceManagerId],
     );
 

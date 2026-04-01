@@ -1,5 +1,8 @@
 import { useBalanceManager, useWalletBalances, useBmBalances } from "./hooks";
 import { BalanceManagerSetup } from "./balance-manager-setup";
+import { CoinIcon } from "./coin-icon";
+
+const DISPLAY_COINS = ["SUI", "DEEP"];
 
 export function TradingPage() {
     const bm = useBalanceManager();
@@ -14,26 +17,27 @@ export function TradingPage() {
                 <p className="text-xs text-muted-foreground pb-2">DEEP / SUI pool</p>
             </div>
 
-            {/* Wallet balances */}
+            {/* Wallet balance */}
             {walletBalances.data && (
                 <div className="border w-full rounded-md overflow-hidden dark:border-zinc-900 bg-zinc-950 px-4 py-3">
-                    <div>
-                        <p className="text-xs text-zinc-500 mb-1">
-                            Wallet: {walletBalances.data.address.slice(0, 10)}...
-                            {walletBalances.data.address.slice(-6)}
-                        </p>
-                        <div className="flex gap-4">
-                            {Object.entries(walletBalances.data.balances).map(([coin, amount]) => (
-                                <div key={coin} className="text-sm">
-                                    <span className="text-zinc-500">{coin}: </span>
+                    <p className="text-[11px] uppercase tracking-wider text-zinc-600 mb-2">
+                        Your Balance
+                    </p>
+                    <div className="flex gap-5">
+                        {DISPLAY_COINS.map((coin) => {
+                            const amount = walletBalances.data!.balances[coin] ?? "0";
+                            return (
+                                <div key={coin} className="flex items-center gap-1.5 text-sm">
+                                    <CoinIcon coin={coin} />
+                                    <span className="text-zinc-400">{coin}</span>
                                     <span className="font-mono text-zinc-200">
                                         {parseFloat(amount).toLocaleString("en-US", {
                                             maximumFractionDigits: 4,
                                         })}
                                     </span>
                                 </div>
-                            ))}
-                        </div>
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -43,6 +47,7 @@ export function TradingPage() {
                 isSetup={bm.isSetup}
                 balanceManagerId={bm.balanceManagerId}
                 balances={bmBalances.data}
+                walletBalances={walletBalances.data?.balances}
                 onCreate={bm.create}
                 onDeposit={bm.deposit}
                 onWithdraw={bm.withdraw}
