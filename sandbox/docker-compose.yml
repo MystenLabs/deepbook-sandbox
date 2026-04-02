@@ -132,8 +132,8 @@ services:
       DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID:-}
       SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID:-}
       MM_SPREAD_BPS: ${MM_SPREAD_BPS:-10}
-      MM_LEVELS_PER_SIDE: ${MM_LEVELS_PER_SIDE:-5}
-      MM_LEVEL_SPACING_BPS: ${MM_LEVEL_SPACING_BPS:-}
+      MM_LEVELS_PER_SIDE: ${MM_LEVELS_PER_SIDE:-30}
+      MM_LEVEL_SPACING_BPS: ${MM_LEVEL_SPACING_BPS:-100}
       MM_REBALANCE_INTERVAL_MS: ${MM_REBALANCE_INTERVAL_MS:-10000}
       MM_HEALTH_CHECK_PORT: ${MM_HEALTH_CHECK_PORT:-3000}
       MM_METRICS_PORT: ${MM_METRICS_PORT:-9090}
@@ -163,7 +163,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: ${INDEXER_IMAGE:-mysten/deepbookv3-sandbox-indexer:794efb1c54ee5cc4f0f367233a4e70818aa0defb-arm64}
+    image: ${INDEXER_IMAGE:-mysten/deepbookv3-sandbox-indexer:46d846e5eea615e0eac94bd801b3e82adbe5cf01-arm64}
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-sandbox/Dockerfile
@@ -208,7 +208,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: ${SERVER_IMAGE:-mysten/deepbookv3-server:794efb1c54ee5cc4f0f367233a4e70818aa0defb-arm64}
+    image: ${SERVER_IMAGE:-mysten/deepbookv3-server:46d846e5eea615e0eac94bd801b3e82adbe5cf01-arm64}
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-server/Dockerfile
