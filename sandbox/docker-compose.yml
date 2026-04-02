@@ -163,7 +163,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: ${INDEXER_IMAGE:-mysten/deepbookv3-sandbox-indexer:794efb1c54ee5cc4f0f367233a4e70818aa0defb-arm64}
+    image: ${INDEXER_IMAGE:-mysten/deepbookv3-sandbox-indexer:46d846e5eea615e0eac94bd801b3e82adbe5cf01-arm64}
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-sandbox/Dockerfile
@@ -208,7 +208,7 @@ services:
     profiles:
       - remote
       - localnet
-    image: ${SERVER_IMAGE:-mysten/deepbookv3-server:794efb1c54ee5cc4f0f367233a4e70818aa0defb-arm64}
+    image: ${SERVER_IMAGE:-mysten/deepbookv3-server:46d846e5eea615e0eac94bd801b3e82adbe5cf01-arm64}
     build:
       context: ../external/deepbook
       dockerfile: docker/deepbook-server/Dockerfile
