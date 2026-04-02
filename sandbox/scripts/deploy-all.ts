@@ -298,7 +298,7 @@ async function main() {
                     orderSizeBase: 10_000_000n, // 10 DEEP per order
                     fallbackMidPrice: 100_000_000n, // 0.1 SUI
                     baseDepositAmount: 1_000_000_000n, // 1000 DEEP
-                    quoteDepositAmount: 10_000_000_000n, // 10 SUI
+                    quoteDepositAmount: 100_000_000_000n, // 100 SUI
                     baseDecimals: 6,
                     quoteDecimals: 9,
                 },
@@ -313,8 +313,8 @@ async function main() {
                     minSize: 1_000_000_000n, // 1 SUI
                     orderSizeBase: 1_000_000_000n, // 1 SUI per order
                     fallbackMidPrice: 3_500_000n, // 3.5 USDC
-                    baseDepositAmount: 10_000_000_000n, // 10 SUI
-                    quoteDepositAmount: 100_000_000n, // 100 USDC
+                    baseDepositAmount: 100_000_000_000n, // 100 SUI
+                    quoteDepositAmount: 500_000_000n, // 500 USDC
                     baseDecimals: 9,
                     quoteDecimals: 6,
                 },
