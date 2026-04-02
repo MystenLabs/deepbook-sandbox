@@ -72,7 +72,7 @@ async function main() {
 
     // Test connection
     try {
-        const chainId = await client.getChainIdentifier();
+        const { chainIdentifier: chainId } = await client.core.getChainIdentifier();
         log.success(`Connected to chain: ${chainId}`);
     } catch (error) {
         throw new Error(`Failed to connect to Sui RPC: ${error}`);

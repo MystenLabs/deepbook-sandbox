@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { SuiClient } from "@mysten/sui/client";
+import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { Secp256k1Keypair } from "@mysten/sui/keypairs/secp256k1";
@@ -54,8 +54,8 @@ export function loadConfig(): FaucetConfig {
 }
 
 export function getSigner(privateKey: string): Keypair {
-    const { schema, secretKey } = decodeSuiPrivateKey(privateKey);
-    switch (schema) {
+    const { scheme, secretKey } = decodeSuiPrivateKey(privateKey);
+    switch (scheme) {
         case "ED25519":
             return Ed25519Keypair.fromSecretKey(secretKey);
         case "Secp256k1":
@@ -63,10 +63,10 @@ export function getSigner(privateKey: string): Keypair {
         case "Secp256r1":
             return Secp256r1Keypair.fromSecretKey(secretKey);
         default:
-            throw new Error(`Unsupported key schema: ${schema}`);
+            throw new Error(`Unsupported key scheme: ${scheme}`);
     }
 }
 
-export function getClient(rpcUrl: string): SuiClient {
-    return new SuiClient({ url: rpcUrl });
+export function getClient(rpcUrl: string): SuiGrpcClient {
+    return new SuiGrpcClient({ network: "custom", baseUrl: rpcUrl });
 }

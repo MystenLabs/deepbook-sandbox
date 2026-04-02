@@ -1,4 +1,4 @@
-import type { SuiClient } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction, coinWithBalance } from "@mysten/sui/transactions";
 
@@ -6,7 +6,7 @@ import { Transaction, coinWithBalance } from "@mysten/sui/transactions";
 let signing = false;
 
 export async function requestDeep(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     deepType: string,
     recipient: string,
@@ -31,19 +31,20 @@ export async function requestDeep(
         const result = await client.signAndExecuteTransaction({
             transaction: tx,
             signer,
-            options: { showEffects: true },
+            include: { effects: true },
         });
 
-        if (result.effects?.status.status !== "success") {
+        if (result.$kind === "FailedTransaction") {
             return {
                 success: false,
-                error: `Transaction failed: ${result.effects?.status.error ?? "unknown error"}`,
+                error: `Transaction failed: ${result.FailedTransaction.status.error ?? "unknown error"}`,
             };
         }
 
-        await client.waitForTransaction({ digest: result.digest });
+        const digest = result.Transaction!.digest;
+        await client.waitForTransaction({ digest });
 
-        return { success: true, digest: result.digest };
+        return { success: true, digest };
     } finally {
         signing = false;
     }
