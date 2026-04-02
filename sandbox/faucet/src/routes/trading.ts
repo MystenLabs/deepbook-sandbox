@@ -1,5 +1,3 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 import { Hono } from "hono";
 import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
@@ -13,22 +11,41 @@ import {
     placeMarketOrder,
     cancelOrder,
     cancelAllOrders,
+    getOpenOrders,
 } from "../services/trading.js";
+import {
+    getOrCreateClient,
+    recreateClient,
+    getDeepbookPackageId,
+    getCoinTypes,
+    getCoinScalar,
+    loadFaucetBmId,
+    saveFaucetBmId,
+    type SandboxClient,
+} from "../services/deepbook-client.js";
 
-const DECIMALS: Record<string, number> = { SUI: 9, DEEP: 6, USDC: 6 };
+/* ------------------------------------------------------------------ */
+/*  Validation schemas                                                 */
+/* ------------------------------------------------------------------ */
 
 const suiAddress = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "Invalid Sui address");
-
-const createBmSchema = z.object({});
+const coinKey = z.enum(["SUI", "DEEP", "USDC"]);
+const poolKeyEnum = z.enum(["DEEP_SUI", "SUI_USDC"]);
 
 const depositSchema = z.object({
     balanceManagerId: suiAddress,
-    coin: z.enum(["SUI", "DEEP", "USDC"]),
+    coin: coinKey,
+    amount: z.number().positive(),
+});
+
+const withdrawSchema = z.object({
+    balanceManagerId: suiAddress,
+    coin: coinKey,
     amount: z.number().positive(),
 });
 
 const limitOrderSchema = z.object({
-    poolKey: z.enum(["DEEP_SUI", "SUI_USDC"]),
+    poolKey: poolKeyEnum,
     balanceManagerId: suiAddress,
     price: z.number().positive(),
     quantity: z.number().positive(),
@@ -36,110 +53,44 @@ const limitOrderSchema = z.object({
 });
 
 const marketOrderSchema = z.object({
-    poolKey: z.enum(["DEEP_SUI", "SUI_USDC"]),
+    poolKey: poolKeyEnum,
     balanceManagerId: suiAddress,
     quantity: z.number().positive(),
     isBid: z.boolean(),
 });
 
 const cancelOrderSchema = z.object({
-    poolKey: z.enum(["DEEP_SUI", "SUI_USDC"]),
+    poolKey: poolKeyEnum,
     balanceManagerId: suiAddress,
     orderId: z.string().min(1),
 });
 
 const cancelAllSchema = z.object({
-    poolKey: z.enum(["DEEP_SUI", "SUI_USDC"]),
+    poolKey: poolKeyEnum,
     balanceManagerId: suiAddress,
 });
 
-const withdrawSchema = z.object({
-    balanceManagerId: suiAddress,
-    coin: z.enum(["SUI", "DEEP", "USDC"]),
-    amount: z.number().positive(),
-});
+/* ------------------------------------------------------------------ */
+/*  Routes                                                             */
+/* ------------------------------------------------------------------ */
 
-interface PoolInfo {
-    poolId: string;
-    baseCoinType: string;
-    quoteCoinType: string;
-}
-
-interface ManifestData {
-    deepbookPackageId: string;
-    pools: Record<string, PoolInfo>;
-    coinTypes: Record<string, string>;
-}
-
-function loadManifestSync(): ManifestData | null {
-    try {
-        const dir = "/app/deployments";
-        const files = readdirSync(dir)
-            .filter((f) => f.endsWith(".json"))
-            .sort();
-        if (files.length === 0) return null;
-        const raw = JSON.parse(readFileSync(join(dir, files[files.length - 1]), "utf-8"));
-
-        const pools: Record<string, PoolInfo> = {};
-        for (const [key, val] of Object.entries(raw.pools || {})) {
-            const p = val as { poolId: string; baseCoinType: string; quoteCoinType: string };
-            pools[key] = {
-                poolId: p.poolId,
-                baseCoinType: p.baseCoinType,
-                quoteCoinType: p.quoteCoinType,
-            };
-        }
-
-        // Build coin type lookup from pool info
-        const coinTypes: Record<string, string> = {
-            SUI: "0x2::sui::SUI",
-        };
-        if (pools.DEEP_SUI) {
-            coinTypes.DEEP = pools.DEEP_SUI.baseCoinType;
-        }
-        if (pools.SUI_USDC) {
-            coinTypes.USDC = pools.SUI_USDC.quoteCoinType;
-        }
-
-        return {
-            deepbookPackageId: raw.packages?.deepbook?.packageId,
-            pools,
-            coinTypes,
-        };
-    } catch {
-        return null;
-    }
-}
-
-export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
+export function tradingRoutes(baseClient: SuiGrpcClient, signer: Keypair): Hono {
     const app = new Hono();
 
-    function getManifest(): ManifestData {
-        const m = loadManifestSync();
-        if (!m) throw new Error("Deployment manifest not found");
-        return m;
+    // Lazy SDK client — initialized on first request when the manifest is available
+    let dbClient: SandboxClient | null = null;
+
+    async function getClient(): Promise<SandboxClient> {
+        if (!dbClient) {
+            dbClient = await getOrCreateClient(baseClient, signer);
+        }
+        return dbClient;
     }
 
-    function getPool(manifest: ManifestData, poolKey: string): PoolInfo {
-        const pool = manifest.pools[poolKey];
-        if (!pool) throw new Error(`Pool ${poolKey} not found in manifest`);
-        return pool;
-    }
-
-    // GET /trading/balance-manager — find deployer's BM on-chain
+    // GET /trading/balance-manager — return the faucet's dedicated BM
     app.get("/balance-manager", async (c) => {
         try {
-            const manifest = getManifest();
-            const signerAddress = signer.getPublicKey().toSuiAddress();
-            const bmType = `${manifest.deepbookPackageId}::balance_manager::BalanceManager`;
-
-            const response = await client.listOwnedObjects({
-                owner: signerAddress,
-                type: bmType,
-            });
-
-            const bmId = response.objects.length > 0 ? response.objects[0].objectId : null;
-
+            const bmId = loadFaucetBmId();
             return c.json({ success: true, balanceManagerId: bmId });
         } catch (err) {
             return c.json(
@@ -149,23 +100,15 @@ export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
         }
     });
 
-    // GET /trading/balances/:balanceManagerId
+    // GET /trading/balances/:balanceManagerId — BM balances via SDK
     app.get("/balances/:balanceManagerId", async (c) => {
         try {
-            const balanceManagerId = c.req.param("balanceManagerId");
-            const manifest = getManifest();
-
+            const client = await getClient();
             const results: Record<string, string> = {};
-            for (const [coin, coinType] of Object.entries(manifest.coinTypes)) {
-                const balance = await getBalance(
-                    client,
-                    signer,
-                    manifest.deepbookPackageId,
-                    balanceManagerId,
-                    coinType,
-                );
-                const decimals = DECIMALS[coin] ?? 6;
-                results[coin] = (Number(balance) / 10 ** decimals).toString();
+
+            for (const coin of ["SUI", "DEEP", "USDC"]) {
+                const balance = await getBalance(client, signer, coin);
+                results[coin] = String(balance);
             }
 
             return c.json({ success: true, balances: results });
@@ -181,13 +124,22 @@ export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
     app.get("/wallet-balances", async (c) => {
         try {
             const signerAddress = signer.getPublicKey().toSuiAddress();
-            const manifest = getManifest();
-
             const results: Record<string, string> = {};
-            for (const [coin, coinType] of Object.entries(manifest.coinTypes)) {
-                const resp = await client.getBalance({ owner: signerAddress, coinType });
-                const decimals = DECIMALS[coin] ?? 6;
-                results[coin] = (Number(resp.balance.balance) / 10 ** decimals).toString();
+
+            // Try to get coin types from the manifest (may not be ready yet)
+            let coinTypes: Record<string, string>;
+            try {
+                await getClient(); // ensure manifest is loaded
+                coinTypes = getCoinTypes();
+            } catch {
+                // Manifest not ready — just return SUI balance
+                coinTypes = { SUI: "0x2::sui::SUI" };
+            }
+
+            for (const [coin, coinType] of Object.entries(coinTypes)) {
+                const resp = await baseClient.getBalance({ owner: signerAddress, coinType });
+                const scalar = getCoinScalar(coin);
+                results[coin] = String(Number(resp.balance.balance) / scalar);
             }
 
             return c.json({ success: true, address: signerAddress, balances: results });
@@ -199,28 +151,13 @@ export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
         }
     });
 
-    // POST /trading/withdraw
-    app.post("/withdraw", async (c) => {
+    // GET /trading/orders/:poolKey — open order details
+    app.get("/orders/:poolKey", async (c) => {
         try {
-            const body = await c.req.json();
-            const parsed = withdrawSchema.parse(body);
-            const manifest = getManifest();
-
-            const coinType = manifest.coinTypes[parsed.coin];
-            if (!coinType) throw new Error(`Unknown coin: ${parsed.coin}`);
-
-            const decimals = DECIMALS[parsed.coin] ?? 6;
-            const amountBase = BigInt(Math.floor(parsed.amount * 10 ** decimals));
-
-            const result = await withdraw(
-                client,
-                signer,
-                manifest.deepbookPackageId,
-                parsed.balanceManagerId,
-                coinType,
-                amountBase,
-            );
-            return c.json({ success: true, ...result });
+            const pk = poolKeyEnum.parse(c.req.param("poolKey"));
+            const client = await getClient();
+            const orders = await getOpenOrders(client, pk);
+            return c.json({ success: true, orders });
         } catch (err) {
             return c.json(
                 { success: false, error: err instanceof Error ? err.message : "Failed" },
@@ -232,8 +169,15 @@ export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
     // POST /trading/create-balance-manager
     app.post("/create-balance-manager", async (c) => {
         try {
-            const manifest = getManifest();
-            const result = await createBalanceManager(client, signer, manifest.deepbookPackageId);
+            const client = await getClient();
+            const result = await createBalanceManager(client, signer);
+
+            // Persist BM ID so it survives container restarts
+            saveFaucetBmId(result.balanceManagerId);
+
+            // Re-create the SDK client with the new BM registered
+            dbClient = recreateClient(baseClient, signer, result.balanceManagerId);
+
             return c.json({ success: true, ...result });
         } catch (err) {
             return c.json(
@@ -243,27 +187,14 @@ export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
         }
     });
 
-    // POST /trading/deposit
+    // POST /trading/deposit — amount in human units (SDK handles decimals)
     app.post("/deposit", async (c) => {
         try {
             const body = await c.req.json();
             const parsed = depositSchema.parse(body);
-            const manifest = getManifest();
+            const client = await getClient();
 
-            const coinType = manifest.coinTypes[parsed.coin];
-            if (!coinType) throw new Error(`Unknown coin: ${parsed.coin}`);
-
-            const decimals = DECIMALS[parsed.coin] ?? 6;
-            const amountBase = BigInt(Math.floor(parsed.amount * 10 ** decimals));
-
-            const result = await deposit(
-                client,
-                signer,
-                manifest.deepbookPackageId,
-                parsed.balanceManagerId,
-                coinType,
-                amountBase,
-            );
+            const result = await deposit(client, signer, parsed.coin, parsed.amount);
             return c.json({ success: true, ...result });
         } catch (err) {
             return c.json(
@@ -273,35 +204,34 @@ export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
         }
     });
 
-    // POST /trading/limit-order
+    // POST /trading/withdraw — amount in human units
+    app.post("/withdraw", async (c) => {
+        try {
+            const body = await c.req.json();
+            const parsed = withdrawSchema.parse(body);
+            const client = await getClient();
+
+            const result = await withdraw(client, signer, parsed.coin, parsed.amount);
+            return c.json({ success: true, ...result });
+        } catch (err) {
+            return c.json(
+                { success: false, error: err instanceof Error ? err.message : "Failed" },
+                500,
+            );
+        }
+    });
+
+    // POST /trading/limit-order — price & quantity in human units
     app.post("/limit-order", async (c) => {
         try {
             const body = await c.req.json();
             const parsed = limitOrderSchema.parse(body);
-            const manifest = getManifest();
-            const pool = getPool(manifest, parsed.poolKey);
+            const client = await getClient();
 
-            // Determine decimals for price and quantity conversion
-            const baseDecimals = parsed.poolKey === "DEEP_SUI" ? DECIMALS.DEEP : DECIMALS.SUI;
-            const quoteDecimals = parsed.poolKey === "DEEP_SUI" ? DECIMALS.SUI : DECIMALS.USDC;
-
-            // Price is in quote per base units, quantity is in base units
-            // DeepBook stores price as (price * 10^quoteDecimals / 10^baseDecimals) scaled
-            // But the pool::place_limit_order expects raw price in quote atomic units per base atomic unit
-            // scaled by FLOAT_SCALING (1e9)
-            const FLOAT_SCALING = 1_000_000_000n;
-            const priceRaw =
-                (BigInt(Math.floor(parsed.price * 10 ** quoteDecimals)) * FLOAT_SCALING) /
-                BigInt(10 ** quoteDecimals);
-            const quantityRaw = BigInt(Math.floor(parsed.quantity * 10 ** baseDecimals));
-
-            const result = await placeLimitOrder(client, signer, manifest.deepbookPackageId, {
-                poolId: pool.poolId,
-                balanceManagerId: parsed.balanceManagerId,
-                baseType: pool.baseCoinType,
-                quoteType: pool.quoteCoinType,
-                price: priceRaw,
-                quantity: quantityRaw,
+            const result = await placeLimitOrder(client, signer, {
+                poolKey: parsed.poolKey,
+                price: parsed.price,
+                quantity: parsed.quantity,
                 isBid: parsed.isBid,
             });
             return c.json({ success: true, ...result });
@@ -313,23 +243,16 @@ export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
         }
     });
 
-    // POST /trading/market-order
+    // POST /trading/market-order — quantity in human units
     app.post("/market-order", async (c) => {
         try {
             const body = await c.req.json();
             const parsed = marketOrderSchema.parse(body);
-            const manifest = getManifest();
-            const pool = getPool(manifest, parsed.poolKey);
+            const client = await getClient();
 
-            const baseDecimals = parsed.poolKey === "DEEP_SUI" ? DECIMALS.DEEP : DECIMALS.SUI;
-            const quantityRaw = BigInt(Math.floor(parsed.quantity * 10 ** baseDecimals));
-
-            const result = await placeMarketOrder(client, signer, manifest.deepbookPackageId, {
-                poolId: pool.poolId,
-                balanceManagerId: parsed.balanceManagerId,
-                baseType: pool.baseCoinType,
-                quoteType: pool.quoteCoinType,
-                quantity: quantityRaw,
+            const result = await placeMarketOrder(client, signer, {
+                poolKey: parsed.poolKey,
+                quantity: parsed.quantity,
                 isBid: parsed.isBid,
             });
             return c.json({ success: true, ...result });
@@ -346,16 +269,9 @@ export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
         try {
             const body = await c.req.json();
             const parsed = cancelOrderSchema.parse(body);
-            const manifest = getManifest();
-            const pool = getPool(manifest, parsed.poolKey);
+            const client = await getClient();
 
-            const result = await cancelOrder(client, signer, manifest.deepbookPackageId, {
-                poolId: pool.poolId,
-                balanceManagerId: parsed.balanceManagerId,
-                baseType: pool.baseCoinType,
-                quoteType: pool.quoteCoinType,
-                orderId: parsed.orderId,
-            });
+            const result = await cancelOrder(client, signer, parsed.poolKey, parsed.orderId);
             return c.json({ success: true, ...result });
         } catch (err) {
             return c.json(
@@ -370,15 +286,9 @@ export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
         try {
             const body = await c.req.json();
             const parsed = cancelAllSchema.parse(body);
-            const manifest = getManifest();
-            const pool = getPool(manifest, parsed.poolKey);
+            const client = await getClient();
 
-            const result = await cancelAllOrders(client, signer, manifest.deepbookPackageId, {
-                poolId: pool.poolId,
-                balanceManagerId: parsed.balanceManagerId,
-                baseType: pool.baseCoinType,
-                quoteType: pool.quoteCoinType,
-            });
+            const result = await cancelAllOrders(client, signer, parsed.poolKey);
             return c.json({ success: true, ...result });
         } catch (err) {
             return c.json(

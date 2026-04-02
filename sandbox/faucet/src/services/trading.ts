@@ -1,31 +1,20 @@
 /**
- * Server-side trading service.
+ * Server-side trading service using the @mysten/deepbook-v3 SDK.
  *
  * Signs transactions with the deployer key — no wallet extension needed.
- * Adapts patterns from sandbox/scripts/market-maker/balance-manager.ts
- * and sandbox/scripts/market-maker/order-manager.ts.
+ * The SDK handles decimal conversion, coin management, and proof generation.
  */
 
-import type { SuiGrpcClient } from "@mysten/sui/grpc";
+import { OrderType, SelfMatchingOptions } from "@mysten/deepbook-v3";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
+import type { SandboxClient } from "./deepbook-client.js";
+import { BALANCE_MANAGER_KEY, getCoinScalar } from "./deepbook-client.js";
 
-const SUI_CLOCK_OBJECT_ID = "0x6";
+/* ------------------------------------------------------------------ */
+/*  Concurrency lock (same pattern as deep-faucet.ts)                  */
+/* ------------------------------------------------------------------ */
 
-const ORDER_TYPE = {
-    NO_RESTRICTION: 0,
-    IMMEDIATE_OR_CANCEL: 1,
-    FILL_OR_KILL: 2,
-    POST_ONLY: 3,
-} as const;
-
-const SELF_MATCHING = {
-    ALLOWED: 0,
-    CANCEL_TAKER: 1,
-    CANCEL_MAKER: 2,
-} as const;
-
-// Simple concurrency lock (same pattern as deep-faucet.ts)
 let signing = false;
 
 async function withLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -39,22 +28,16 @@ async function withLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Helpers — sign, check status, extract digest                       */
+/*  Sign + execute helper                                              */
 /* ------------------------------------------------------------------ */
 
-async function signAndExec(
-    client: SuiGrpcClient,
-    signer: Keypair,
-    tx: Transaction,
-    extra?: { events?: boolean; objectTypes?: boolean },
-) {
-    const result = await client.signAndExecuteTransaction({
+async function signAndExec(client: SandboxClient, signer: Keypair, tx: Transaction) {
+    const result = await client.core.signAndExecuteTransaction({
         transaction: tx,
         signer,
         include: {
             effects: true as const,
-            events: (extra?.events ?? false) as true,
-            objectTypes: (extra?.objectTypes ?? false) as true,
+            objectTypes: true as const,
         },
     });
 
@@ -64,7 +47,7 @@ async function signAndExec(
     }
 
     const digest = result.Transaction!.digest;
-    await client.waitForTransaction({ digest });
+    await client.core.waitForTransaction({ digest });
 
     return result.Transaction!;
 }
@@ -74,21 +57,14 @@ async function signAndExec(
 /* ------------------------------------------------------------------ */
 
 export async function createBalanceManager(
-    client: SuiGrpcClient,
+    client: SandboxClient,
     signer: Keypair,
-    packageId: string,
 ): Promise<{ balanceManagerId: string; digest: string }> {
     return withLock(async () => {
         const tx = new Transaction();
+        client.deepbook.balanceManager.createAndShareBalanceManager()(tx);
 
-        const bm = tx.moveCall({
-            target: `${packageId}::balance_manager::new`,
-            arguments: [],
-        });
-
-        tx.transferObjects([bm], signer.getPublicKey().toSuiAddress());
-
-        const txResult = await signAndExec(client, signer, tx, { objectTypes: true });
+        const txResult = await signAndExec(client, signer, tx);
 
         const objectTypes = txResult.objectTypes ?? {};
         const changedObjects = txResult.effects!.changedObjects;
@@ -106,48 +82,39 @@ export async function createBalanceManager(
     });
 }
 
+/* ------------------------------------------------------------------ */
+/*  Deposit / Withdraw                                                 */
+/* ------------------------------------------------------------------ */
+
 export async function deposit(
-    client: SuiGrpcClient,
+    client: SandboxClient,
     signer: Keypair,
-    packageId: string,
-    balanceManagerId: string,
-    coinType: string,
-    amount: bigint,
+    coinKey: string,
+    amount: number,
 ): Promise<{ digest: string }> {
     return withLock(async () => {
-        const signerAddress = signer.getPublicKey().toSuiAddress();
-        const isSui = coinType === "0x2::sui::SUI";
-
         const tx = new Transaction();
+        client.deepbook.balanceManager.depositIntoManager(BALANCE_MANAGER_KEY, coinKey, amount)(tx);
 
-        let coinToDeposit;
-        if (isSui) {
-            coinToDeposit = tx.splitCoins(tx.gas, [tx.pure.u64(amount)]);
-        } else {
-            const coins = await client.listCoins({ owner: signerAddress, coinType });
-            if (coins.objects.length === 0) throw new Error(`No ${coinType} coins available`);
+        const txResult = await signAndExec(client, signer, tx);
+        return { digest: txResult.digest };
+    });
+}
 
-            const coinIds = coins.objects.map((c) => c.objectId);
-            if (coinIds.length === 1) {
-                coinToDeposit = tx.splitCoins(tx.object(coinIds[0]), [tx.pure.u64(amount)]);
-            } else {
-                const [first, ...rest] = coinIds;
-                const primaryCoin = tx.object(first);
-                if (rest.length > 0) {
-                    tx.mergeCoins(
-                        primaryCoin,
-                        rest.map((id) => tx.object(id)),
-                    );
-                }
-                coinToDeposit = tx.splitCoins(primaryCoin, [tx.pure.u64(amount)]);
-            }
-        }
-
-        tx.moveCall({
-            target: `${packageId}::balance_manager::deposit`,
-            typeArguments: [coinType],
-            arguments: [tx.object(balanceManagerId), coinToDeposit],
-        });
+export async function withdraw(
+    client: SandboxClient,
+    signer: Keypair,
+    coinKey: string,
+    amount: number,
+): Promise<{ digest: string }> {
+    return withLock(async () => {
+        const tx = new Transaction();
+        client.deepbook.balanceManager.withdrawFromManager(
+            BALANCE_MANAGER_KEY,
+            coinKey,
+            amount,
+            signer.getPublicKey().toSuiAddress(),
+        )(tx);
 
         const txResult = await signAndExec(client, signer, tx);
         return { digest: txResult.digest };
@@ -159,97 +126,54 @@ export async function deposit(
 /* ------------------------------------------------------------------ */
 
 export async function placeLimitOrder(
-    client: SuiGrpcClient,
+    client: SandboxClient,
     signer: Keypair,
-    packageId: string,
     params: {
-        poolId: string;
-        balanceManagerId: string;
-        baseType: string;
-        quoteType: string;
-        price: bigint;
-        quantity: bigint;
+        poolKey: string;
+        price: number;
+        quantity: number;
         isBid: boolean;
     },
 ): Promise<{ digest: string; orderId: string | null }> {
     return withLock(async () => {
         const tx = new Transaction();
+        client.deepbook.deepBook.placeLimitOrder({
+            poolKey: params.poolKey,
+            balanceManagerKey: BALANCE_MANAGER_KEY,
+            clientOrderId: String(Date.now()),
+            price: params.price,
+            quantity: params.quantity,
+            isBid: params.isBid,
+            orderType: OrderType.NO_RESTRICTION,
+            selfMatchingOption: SelfMatchingOptions.SELF_MATCHING_ALLOWED,
+            payWithDeep: false,
+        })(tx);
 
-        const tradeProof = tx.moveCall({
-            target: `${packageId}::balance_manager::generate_proof_as_owner`,
-            arguments: [tx.object(params.balanceManagerId)],
-        });
-
-        const expireTimestamp = BigInt("18446744073709551615");
-        const clientOrderId = BigInt(Date.now());
-
-        tx.moveCall({
-            target: `${packageId}::pool::place_limit_order`,
-            typeArguments: [params.baseType, params.quoteType],
-            arguments: [
-                tx.object(params.poolId),
-                tx.object(params.balanceManagerId),
-                tradeProof,
-                tx.pure.u64(clientOrderId),
-                tx.pure.u8(ORDER_TYPE.NO_RESTRICTION),
-                tx.pure.u8(SELF_MATCHING.ALLOWED),
-                tx.pure.u64(params.price),
-                tx.pure.u64(params.quantity),
-                tx.pure.bool(params.isBid),
-                tx.pure.bool(false), // pay_with_deep
-                tx.pure.u64(expireTimestamp),
-                tx.object(SUI_CLOCK_OBJECT_ID),
-            ],
-        });
-
-        const txResult = await signAndExec(client, signer, tx, { events: true });
-
-        const orderId = extractOrderIdFromEvent(
-            (txResult.events || []).find((e) => e.eventType.includes("::OrderPlaced")),
-        );
-
-        return { digest: txResult.digest, orderId };
+        const txResult = await signAndExec(client, signer, tx);
+        return { digest: txResult.digest, orderId: null };
     });
 }
 
 export async function placeMarketOrder(
-    client: SuiGrpcClient,
+    client: SandboxClient,
     signer: Keypair,
-    packageId: string,
     params: {
-        poolId: string;
-        balanceManagerId: string;
-        baseType: string;
-        quoteType: string;
-        quantity: bigint;
+        poolKey: string;
+        quantity: number;
         isBid: boolean;
     },
 ): Promise<{ digest: string }> {
     return withLock(async () => {
         const tx = new Transaction();
-
-        const tradeProof = tx.moveCall({
-            target: `${packageId}::balance_manager::generate_proof_as_owner`,
-            arguments: [tx.object(params.balanceManagerId)],
-        });
-
-        const clientOrderId = BigInt(Date.now());
-
-        tx.moveCall({
-            target: `${packageId}::pool::place_market_order`,
-            typeArguments: [params.baseType, params.quoteType],
-            arguments: [
-                tx.object(params.poolId),
-                tx.object(params.balanceManagerId),
-                tradeProof,
-                tx.pure.u64(clientOrderId),
-                tx.pure.u8(SELF_MATCHING.ALLOWED),
-                tx.pure.u64(params.quantity),
-                tx.pure.bool(params.isBid),
-                tx.pure.bool(false), // pay_with_deep
-                tx.object(SUI_CLOCK_OBJECT_ID),
-            ],
-        });
+        client.deepbook.deepBook.placeMarketOrder({
+            poolKey: params.poolKey,
+            balanceManagerKey: BALANCE_MANAGER_KEY,
+            clientOrderId: String(Date.now()),
+            quantity: params.quantity,
+            isBid: params.isBid,
+            selfMatchingOption: SelfMatchingOptions.SELF_MATCHING_ALLOWED,
+            payWithDeep: false,
+        })(tx);
 
         const txResult = await signAndExec(client, signer, tx);
         return { digest: txResult.digest };
@@ -261,36 +185,14 @@ export async function placeMarketOrder(
 /* ------------------------------------------------------------------ */
 
 export async function cancelOrder(
-    client: SuiGrpcClient,
+    client: SandboxClient,
     signer: Keypair,
-    packageId: string,
-    params: {
-        poolId: string;
-        balanceManagerId: string;
-        baseType: string;
-        quoteType: string;
-        orderId: string;
-    },
+    poolKey: string,
+    orderId: string,
 ): Promise<{ digest: string }> {
     return withLock(async () => {
         const tx = new Transaction();
-
-        const tradeProof = tx.moveCall({
-            target: `${packageId}::balance_manager::generate_proof_as_owner`,
-            arguments: [tx.object(params.balanceManagerId)],
-        });
-
-        tx.moveCall({
-            target: `${packageId}::pool::cancel_order`,
-            typeArguments: [params.baseType, params.quoteType],
-            arguments: [
-                tx.object(params.poolId),
-                tx.object(params.balanceManagerId),
-                tradeProof,
-                tx.pure.u128(params.orderId),
-                tx.object(SUI_CLOCK_OBJECT_ID),
-            ],
-        });
+        client.deepbook.deepBook.cancelOrder(poolKey, BALANCE_MANAGER_KEY, orderId)(tx);
 
         const txResult = await signAndExec(client, signer, tx);
         return { digest: txResult.digest };
@@ -298,34 +200,13 @@ export async function cancelOrder(
 }
 
 export async function cancelAllOrders(
-    client: SuiGrpcClient,
+    client: SandboxClient,
     signer: Keypair,
-    packageId: string,
-    params: {
-        poolId: string;
-        balanceManagerId: string;
-        baseType: string;
-        quoteType: string;
-    },
+    poolKey: string,
 ): Promise<{ digest: string }> {
     return withLock(async () => {
         const tx = new Transaction();
-
-        const tradeProof = tx.moveCall({
-            target: `${packageId}::balance_manager::generate_proof_as_owner`,
-            arguments: [tx.object(params.balanceManagerId)],
-        });
-
-        tx.moveCall({
-            target: `${packageId}::pool::cancel_all_orders`,
-            typeArguments: [params.baseType, params.quoteType],
-            arguments: [
-                tx.object(params.poolId),
-                tx.object(params.balanceManagerId),
-                tradeProof,
-                tx.object(SUI_CLOCK_OBJECT_ID),
-            ],
-        });
+        client.deepbook.deepBook.cancelAllOrders(poolKey, BALANCE_MANAGER_KEY)(tx);
 
         const txResult = await signAndExec(client, signer, tx);
         return { digest: txResult.digest };
@@ -333,86 +214,75 @@ export async function cancelAllOrders(
 }
 
 /* ------------------------------------------------------------------ */
-/*  Withdraw                                                           */
-/* ------------------------------------------------------------------ */
-
-export async function withdraw(
-    client: SuiGrpcClient,
-    signer: Keypair,
-    packageId: string,
-    balanceManagerId: string,
-    coinType: string,
-    amount: bigint,
-): Promise<{ digest: string }> {
-    return withLock(async () => {
-        const signerAddress = signer.getPublicKey().toSuiAddress();
-        const tx = new Transaction();
-
-        const coin = tx.moveCall({
-            target: `${packageId}::balance_manager::withdraw`,
-            typeArguments: [coinType],
-            arguments: [tx.object(balanceManagerId), tx.pure.u64(amount)],
-        });
-
-        tx.transferObjects([coin], signerAddress);
-
-        const txResult = await signAndExec(client, signer, tx);
-        return { digest: txResult.digest };
-    });
-}
-
-/* ------------------------------------------------------------------ */
-/*  Balance query (read-only, no signing needed)                       */
+/*  Read-only queries (no signing, no lock)                            */
 /* ------------------------------------------------------------------ */
 
 export async function getBalance(
-    client: SuiGrpcClient,
+    client: SandboxClient,
     signer: Keypair,
-    packageId: string,
-    balanceManagerId: string,
-    coinType: string,
-): Promise<bigint> {
+    coinKey: string,
+): Promise<number> {
+    try {
+        // SDK's checkManagerBalance works for shared BalanceManagers
+        const { balance } = await client.deepbook.checkManagerBalance(BALANCE_MANAGER_KEY, coinKey);
+        return balance;
+    } catch {
+        // Fallback: set sender explicitly for owned BalanceManagers
+        return getBalanceWithSender(client, signer, coinKey);
+    }
+}
+
+async function getBalanceWithSender(
+    client: SandboxClient,
+    signer: Keypair,
+    coinKey: string,
+): Promise<number> {
     const tx = new Transaction();
     tx.setSender(signer.getPublicKey().toSuiAddress());
-    tx.moveCall({
-        target: `${packageId}::balance_manager::balance`,
-        typeArguments: [coinType],
-        arguments: [tx.object(balanceManagerId)],
-    });
 
-    const result = await client.simulateTransaction({
+    // Use the SDK to build the balance query move call
+    client.deepbook.balanceManager.checkManagerBalance(BALANCE_MANAGER_KEY, coinKey)(tx);
+
+    const result = await client.core.simulateTransaction({
         transaction: tx,
         include: { effects: true, commandResults: true },
     });
 
-    if (result.$kind === "FailedTransaction") return 0n;
+    if (result.$kind === "FailedTransaction") return 0;
 
     const returnValues = result.commandResults?.[0]?.returnValues;
-    if (!returnValues || returnValues.length === 0) return 0n;
+    if (!returnValues || returnValues.length === 0) return 0;
 
     const bytes = returnValues[0].bcs;
+    // Parse u64 little-endian
     let value = 0n;
     for (let i = 0; i < 8; i++) {
         value |= BigInt(bytes[i]) << BigInt(i * 8);
     }
-    return value;
+
+    const scalar = getCoinScalar(coinKey);
+    return Number(value) / scalar;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
+export async function getOpenOrders(client: SandboxClient, poolKey: string) {
+    try {
+        const raw = await client.deepbook.getAccountOrderDetails(poolKey, BALANCE_MANAGER_KEY);
 
-function extractOrderIdFromEvent(
-    event: { json?: Record<string, unknown> | null } | undefined,
-): string | null {
-    if (!event?.json) return null;
-
-    for (const field of ["order_id", "orderId", "id"]) {
-        if (field in event.json) {
-            const value = event.json[field];
-            if (typeof value === "string") return value;
-            if (typeof value === "bigint" || typeof value === "number") return String(value);
-        }
+        // Enrich with is_bid and price by decoding the on-chain order ID
+        return raw.map((order) => {
+            try {
+                const decoded = client.deepbook.decodeOrderId(BigInt(order.order_id));
+                return {
+                    ...order,
+                    is_bid: decoded.isBid,
+                    price: String(decoded.price),
+                };
+            } catch {
+                return order;
+            }
+        });
+    } catch {
+        // Fallback for owned BMs: SDK doesn't set sender for simulate.
+        return [];
     }
-    return null;
 }

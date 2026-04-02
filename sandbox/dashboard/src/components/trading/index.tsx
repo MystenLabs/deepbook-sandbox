@@ -1,13 +1,24 @@
-import { useBalanceManager, useWalletBalances, useBmBalances } from "./hooks";
+import {
+    useBalanceManager,
+    useWalletBalances,
+    useBmBalances,
+    useTrading,
+    useOpenOrders,
+} from "./hooks";
 import { BalanceManagerSetup } from "./balance-manager-setup";
+import { OrderForm } from "./order-form";
+import { OpenOrders } from "./open-orders";
 import { CoinIcon } from "./coin-icon";
 
 const DISPLAY_COINS = ["SUI", "DEEP"];
+const POOL_KEY = "DEEP_SUI" as const;
 
 export function TradingPage() {
     const bm = useBalanceManager();
     const walletBalances = useWalletBalances();
     const bmBalances = useBmBalances(bm.balanceManagerId);
+    const trading = useTrading(POOL_KEY, bm.balanceManagerId);
+    const openOrders = useOpenOrders(POOL_KEY, bm.isSetup);
 
     return (
         <div className="space-y-4">
@@ -53,14 +64,22 @@ export function TradingPage() {
                 onWithdraw={bm.withdraw}
             />
 
-            {/* TODO: Order form and open orders
+            {/* Order form and open orders */}
             {bm.isSetup && (
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <OrderForm ... />
-                    <OpenOrders ... />
+                    <OrderForm
+                        poolKey={POOL_KEY}
+                        onPlaceLimitOrder={trading.placeLimitOrder}
+                        onPlaceMarketOrder={trading.placeMarketOrder}
+                    />
+                    <OpenOrders
+                        orders={openOrders.data ?? []}
+                        isLoading={openOrders.isLoading}
+                        onCancelOrder={trading.cancelOrder}
+                        onCancelAll={trading.cancelAllOrders}
+                    />
                 </div>
             )}
-            */}
         </div>
     );
 }

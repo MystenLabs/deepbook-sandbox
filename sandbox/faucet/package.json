@@ -11,6 +11,7 @@
     },
     "dependencies": {
         "@hono/node-server": "^1.13.0",
+        "@mysten/deepbook-v3": "^1.1.5",
         "@mysten/sui": "^2.5.0",
         "dotenv": "^17.2.3",
         "hono": "^4.6.0",

@@ -128,12 +128,14 @@ export function useBmBalances(balanceManagerId: string | null) {
 /* ------------------------------------------------------------------ */
 
 export function useOpenOrders(poolKey: PoolKey, isSetup: boolean) {
-    // For now, open orders are not queryable via the faucet API
-    // (would need a read-only endpoint). Return empty array.
-    // TODO: Add GET /trading/orders/:poolKey/:balanceManagerId endpoint
     return useQuery<OrderDetail[]>({
         queryKey: ["open-orders", poolKey],
-        queryFn: async () => [],
+        queryFn: async () => {
+            const res = await fetch(`${TRADING_API}/orders/${poolKey}`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            return data.orders;
+        },
         enabled: isSetup,
         refetchInterval: 5_000,
     });
@@ -149,6 +151,7 @@ export function useTrading(poolKey: PoolKey, balanceManagerId: string | null) {
     const invalidateAll = useCallback(() => {
         queryClient.invalidateQueries({ queryKey: ["open-orders", poolKey] });
         queryClient.invalidateQueries({ queryKey: ["bm-balances", balanceManagerId] });
+        queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
     }, [queryClient, poolKey, balanceManagerId]);
 
     const placeLimitOrder = useCallback(

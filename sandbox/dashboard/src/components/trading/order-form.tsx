@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ListOrdered } from "lucide-react";
+import { ListOrdered, ExternalLink } from "lucide-react";
 import type { PoolKey } from "./types";
 
 type OrderTab = "limit" | "market";
@@ -28,7 +28,7 @@ export function OrderForm({ poolKey, onPlaceLimitOrder, onPlaceMarketOrder }: Or
     const [quantity, setQuantity] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
+    const [success, setSuccess] = useState<{ message: string; digest: string } | null>(null);
 
     const pair = PAIR_LABELS[poolKey];
 
@@ -51,7 +51,7 @@ export function OrderForm({ poolKey, onPlaceLimitOrder, onPlaceMarketOrder }: Or
             setSubmitting(true);
             try {
                 const digest = await onPlaceLimitOrder({ price: p, quantity: qty, isBid });
-                setSuccess(`Order placed: ${digest.slice(0, 12)}...`);
+                setSuccess({ message: "Order placed", digest });
                 setPrice("");
                 setQuantity("");
             } catch (err) {
@@ -63,7 +63,7 @@ export function OrderForm({ poolKey, onPlaceLimitOrder, onPlaceMarketOrder }: Or
             setSubmitting(true);
             try {
                 const digest = await onPlaceMarketOrder({ quantity: qty, isBid });
-                setSuccess(`Order executed: ${digest.slice(0, 12)}...`);
+                setSuccess({ message: "Order executed", digest });
                 setQuantity("");
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Order failed");
@@ -178,7 +178,20 @@ export function OrderForm({ poolKey, onPlaceLimitOrder, onPlaceMarketOrder }: Or
                 </Button>
 
                 {error && <p className="text-xs text-red-400">{error}</p>}
-                {success && <p className="text-xs text-emerald-400">{success}</p>}
+                {success && (
+                    <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                        {success.message}
+                        <a
+                            href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
+                        >
+                            View tx
+                            <ExternalLink className="h-3 w-3" />
+                        </a>
+                    </p>
+                )}
             </CardContent>
         </div>
     );
