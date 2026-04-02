@@ -6,7 +6,7 @@
  * and sandbox/scripts/market-maker/order-manager.ts.
  */
 
-import type { SuiClient, SuiObjectChangeCreated, SuiEvent } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
 
@@ -39,11 +39,42 @@ async function withLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Helpers — sign, check status, extract digest                       */
+/* ------------------------------------------------------------------ */
+
+async function signAndExec(
+    client: SuiGrpcClient,
+    signer: Keypair,
+    tx: Transaction,
+    extra?: { events?: boolean; objectTypes?: boolean },
+) {
+    const result = await client.signAndExecuteTransaction({
+        transaction: tx,
+        signer,
+        include: {
+            effects: true as const,
+            events: (extra?.events ?? false) as true,
+            objectTypes: (extra?.objectTypes ?? false) as true,
+        },
+    });
+
+    if (result.$kind === "FailedTransaction") {
+        const err = result.FailedTransaction.status.error;
+        throw new Error(err ? err.message : "Transaction failed");
+    }
+
+    const digest = result.Transaction!.digest;
+    await client.waitForTransaction({ digest });
+
+    return result.Transaction!;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Balance Manager                                                    */
 /* ------------------------------------------------------------------ */
 
 export async function createBalanceManager(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     packageId: string,
 ): Promise<{ balanceManagerId: string; digest: string }> {
@@ -57,32 +88,26 @@ export async function createBalanceManager(
 
         tx.transferObjects([bm], signer.getPublicKey().toSuiAddress());
 
-        const result = await client.signAndExecuteTransaction({
-            transaction: tx,
-            signer,
-            options: { showEffects: true, showObjectChanges: true },
-        });
+        const txResult = await signAndExec(client, signer, tx, { objectTypes: true });
 
-        if (result.effects?.status.status !== "success") {
-            throw new Error(result.effects?.status.error || "Transaction failed");
-        }
+        const objectTypes = txResult.objectTypes ?? {};
+        const changedObjects = txResult.effects!.changedObjects;
 
-        await client.waitForTransaction({ digest: result.digest });
-
-        const bmCreated = result.objectChanges?.find(
-            (obj): obj is SuiObjectChangeCreated =>
-                obj.type === "created" &&
-                obj.objectType.includes("::balance_manager::BalanceManager"),
+        const bmCreated = changedObjects.find(
+            (obj) =>
+                obj.idOperation === "Created" &&
+                obj.outputState !== "PackageWrite" &&
+                (objectTypes[obj.objectId] ?? "").includes("::balance_manager::BalanceManager"),
         );
 
         if (!bmCreated) throw new Error("BalanceManager not found in transaction result");
 
-        return { balanceManagerId: bmCreated.objectId, digest: result.digest };
+        return { balanceManagerId: bmCreated.objectId, digest: txResult.digest };
     });
 }
 
 export async function deposit(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     packageId: string,
     balanceManagerId: string,
@@ -99,10 +124,10 @@ export async function deposit(
         if (isSui) {
             coinToDeposit = tx.splitCoins(tx.gas, [tx.pure.u64(amount)]);
         } else {
-            const coins = await client.getCoins({ owner: signerAddress, coinType });
-            if (coins.data.length === 0) throw new Error(`No ${coinType} coins available`);
+            const coins = await client.listCoins({ owner: signerAddress, coinType });
+            if (coins.objects.length === 0) throw new Error(`No ${coinType} coins available`);
 
-            const coinIds = coins.data.map((c) => c.coinObjectId);
+            const coinIds = coins.objects.map((c) => c.objectId);
             if (coinIds.length === 1) {
                 coinToDeposit = tx.splitCoins(tx.object(coinIds[0]), [tx.pure.u64(amount)]);
             } else {
@@ -124,18 +149,8 @@ export async function deposit(
             arguments: [tx.object(balanceManagerId), coinToDeposit],
         });
 
-        const result = await client.signAndExecuteTransaction({
-            transaction: tx,
-            signer,
-            options: { showEffects: true },
-        });
-
-        if (result.effects?.status.status !== "success") {
-            throw new Error(result.effects?.status.error || "Deposit failed");
-        }
-
-        await client.waitForTransaction({ digest: result.digest });
-        return { digest: result.digest };
+        const txResult = await signAndExec(client, signer, tx);
+        return { digest: txResult.digest };
     });
 }
 
@@ -144,7 +159,7 @@ export async function deposit(
 /* ------------------------------------------------------------------ */
 
 export async function placeLimitOrder(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     packageId: string,
     params: {
@@ -187,28 +202,18 @@ export async function placeLimitOrder(
             ],
         });
 
-        const result = await client.signAndExecuteTransaction({
-            transaction: tx,
-            signer,
-            options: { showEffects: true, showEvents: true },
-        });
-
-        if (result.effects?.status.status !== "success") {
-            throw new Error(result.effects?.status.error || "Order placement failed");
-        }
-
-        await client.waitForTransaction({ digest: result.digest });
+        const txResult = await signAndExec(client, signer, tx, { events: true });
 
         const orderId = extractOrderIdFromEvent(
-            (result.events || []).find((e) => e.type.includes("::OrderPlaced")),
+            (txResult.events || []).find((e) => e.eventType.includes("::OrderPlaced")),
         );
 
-        return { digest: result.digest, orderId };
+        return { digest: txResult.digest, orderId };
     });
 }
 
 export async function placeMarketOrder(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     packageId: string,
     params: {
@@ -246,18 +251,8 @@ export async function placeMarketOrder(
             ],
         });
 
-        const result = await client.signAndExecuteTransaction({
-            transaction: tx,
-            signer,
-            options: { showEffects: true },
-        });
-
-        if (result.effects?.status.status !== "success") {
-            throw new Error(result.effects?.status.error || "Market order failed");
-        }
-
-        await client.waitForTransaction({ digest: result.digest });
-        return { digest: result.digest };
+        const txResult = await signAndExec(client, signer, tx);
+        return { digest: txResult.digest };
     });
 }
 
@@ -266,7 +261,7 @@ export async function placeMarketOrder(
 /* ------------------------------------------------------------------ */
 
 export async function cancelOrder(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     packageId: string,
     params: {
@@ -297,23 +292,13 @@ export async function cancelOrder(
             ],
         });
 
-        const result = await client.signAndExecuteTransaction({
-            transaction: tx,
-            signer,
-            options: { showEffects: true },
-        });
-
-        if (result.effects?.status.status !== "success") {
-            throw new Error(result.effects?.status.error || "Cancel failed");
-        }
-
-        await client.waitForTransaction({ digest: result.digest });
-        return { digest: result.digest };
+        const txResult = await signAndExec(client, signer, tx);
+        return { digest: txResult.digest };
     });
 }
 
 export async function cancelAllOrders(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     packageId: string,
     params: {
@@ -342,18 +327,8 @@ export async function cancelAllOrders(
             ],
         });
 
-        const result = await client.signAndExecuteTransaction({
-            transaction: tx,
-            signer,
-            options: { showEffects: true },
-        });
-
-        if (result.effects?.status.status !== "success") {
-            throw new Error(result.effects?.status.error || "Cancel all failed");
-        }
-
-        await client.waitForTransaction({ digest: result.digest });
-        return { digest: result.digest };
+        const txResult = await signAndExec(client, signer, tx);
+        return { digest: txResult.digest };
     });
 }
 
@@ -362,7 +337,7 @@ export async function cancelAllOrders(
 /* ------------------------------------------------------------------ */
 
 export async function withdraw(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     packageId: string,
     balanceManagerId: string,
@@ -381,18 +356,8 @@ export async function withdraw(
 
         tx.transferObjects([coin], signerAddress);
 
-        const result = await client.signAndExecuteTransaction({
-            transaction: tx,
-            signer,
-            options: { showEffects: true },
-        });
-
-        if (result.effects?.status.status !== "success") {
-            throw new Error(result.effects?.status.error || "Withdraw failed");
-        }
-
-        await client.waitForTransaction({ digest: result.digest });
-        return { digest: result.digest };
+        const txResult = await signAndExec(client, signer, tx);
+        return { digest: txResult.digest };
     });
 }
 
@@ -401,30 +366,31 @@ export async function withdraw(
 /* ------------------------------------------------------------------ */
 
 export async function getBalance(
-    client: SuiClient,
+    client: SuiGrpcClient,
     signer: Keypair,
     packageId: string,
     balanceManagerId: string,
     coinType: string,
 ): Promise<bigint> {
     const tx = new Transaction();
+    tx.setSender(signer.getPublicKey().toSuiAddress());
     tx.moveCall({
         target: `${packageId}::balance_manager::balance`,
         typeArguments: [coinType],
         arguments: [tx.object(balanceManagerId)],
     });
 
-    const result = await client.devInspectTransactionBlock({
-        transactionBlock: tx,
-        sender: signer.getPublicKey().toSuiAddress(),
+    const result = await client.simulateTransaction({
+        transaction: tx,
+        include: { effects: true, commandResults: true },
     });
 
-    if (result.effects.status.status !== "success") return 0n;
+    if (result.$kind === "FailedTransaction") return 0n;
 
-    const returnValues = result.results?.[0]?.returnValues;
+    const returnValues = result.commandResults?.[0]?.returnValues;
     if (!returnValues || returnValues.length === 0) return 0n;
 
-    const [bytes] = returnValues[0];
+    const bytes = returnValues[0].bcs;
     let value = 0n;
     for (let i = 0; i < 8; i++) {
         value |= BigInt(bytes[i]) << BigInt(i * 8);
@@ -436,14 +402,14 @@ export async function getBalance(
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-function extractOrderIdFromEvent(event: SuiEvent | undefined): string | null {
-    if (!event) return null;
-    const parsedJson = event.parsedJson as Record<string, unknown> | undefined;
-    if (!parsedJson) return null;
+function extractOrderIdFromEvent(
+    event: { json?: Record<string, unknown> | null } | undefined,
+): string | null {
+    if (!event?.json) return null;
 
     for (const field of ["order_id", "orderId", "id"]) {
-        if (field in parsedJson) {
-            const value = parsedJson[field];
+        if (field in event.json) {
+            const value = event.json[field];
             if (typeof value === "string") return value;
             if (typeof value === "bigint" || typeof value === "number") return String(value);
         }

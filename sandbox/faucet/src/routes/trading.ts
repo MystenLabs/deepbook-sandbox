@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Hono } from "hono";
-import type { SuiClient } from "@mysten/sui/client";
+import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { z } from "zod";
 import {
@@ -111,7 +111,7 @@ function loadManifestSync(): ManifestData | null {
     }
 }
 
-export function tradingRoutes(client: SuiClient, signer: Keypair): Hono {
+export function tradingRoutes(client: SuiGrpcClient, signer: Keypair): Hono {
     const app = new Hono();
 
     function getManifest(): ManifestData {
@@ -133,16 +133,12 @@ export function tradingRoutes(client: SuiClient, signer: Keypair): Hono {
             const signerAddress = signer.getPublicKey().toSuiAddress();
             const bmType = `${manifest.deepbookPackageId}::balance_manager::BalanceManager`;
 
-            const response = await client.getOwnedObjects({
+            const response = await client.listOwnedObjects({
                 owner: signerAddress,
-                filter: { StructType: bmType },
-                options: { showType: true },
+                type: bmType,
             });
 
-            const bmId =
-                response.data.length > 0 && response.data[0].data
-                    ? response.data[0].data.objectId
-                    : null;
+            const bmId = response.objects.length > 0 ? response.objects[0].objectId : null;
 
             return c.json({ success: true, balanceManagerId: bmId });
         } catch (err) {
@@ -189,9 +185,9 @@ export function tradingRoutes(client: SuiClient, signer: Keypair): Hono {
 
             const results: Record<string, string> = {};
             for (const [coin, coinType] of Object.entries(manifest.coinTypes)) {
-                const coins = await client.getBalance({ owner: signerAddress, coinType });
+                const resp = await client.getBalance({ owner: signerAddress, coinType });
                 const decimals = DECIMALS[coin] ?? 6;
-                results[coin] = (Number(coins.totalBalance) / 10 ** decimals).toString();
+                results[coin] = (Number(resp.balance.balance) / 10 ** decimals).toString();
             }
 
             return c.json({ success: true, address: signerAddress, balances: results });
