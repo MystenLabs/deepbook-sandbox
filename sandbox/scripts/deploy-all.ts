@@ -16,6 +16,7 @@ import {
     startOracleService,
     startMarketMaker,
     startDashboard,
+    startControlApi,
     DASHBOARD_PORT,
 } from "./utils/docker-compose";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
@@ -73,6 +74,18 @@ async function main() {
                 // Placeholder so docker compose doesn't reject ${PRIVATE_KEY:?...}.
                 // Replaced in Phase 1 with the container-generated key.
                 defaults.PRIVATE_KEY = Ed25519Keypair.generate().getSecretKey();
+            }
+            if (!process.env.CONTROL_API_TOKEN) {
+                // Generate random token for control API authentication
+                const { randomBytes } = await import("crypto");
+                const randomStr = randomBytes(16).toString("hex").substring(0, 26);
+                const token = `deepbook-${randomStr}`;
+                defaults.CONTROL_API_TOKEN = token;
+                defaults.VITE_CONTROL_API_TOKEN = token;
+            } else if (!process.env.VITE_CONTROL_API_TOKEN) {
+                // If CONTROL_API_TOKEN exists but VITE_CONTROL_API_TOKEN doesn't,
+                // set VITE_CONTROL_API_TOKEN to the same value
+                defaults.VITE_CONTROL_API_TOKEN = process.env.CONTROL_API_TOKEN;
             }
             if (!process.env.FORCE_REGENESIS) {
                 defaults.FORCE_REGENESIS = "true";
@@ -333,6 +346,10 @@ async function main() {
 
             await startMarketMaker(sandboxRoot);
             log.success("Market maker started (DEEP/SUI + SUI/USDC)");
+
+            log.spin("Starting control API...");
+            await startControlApi(sandboxRoot);
+            log.success("Control API started");
 
             log.spin("Building and starting dashboard...");
             await startDashboard(sandboxRoot);

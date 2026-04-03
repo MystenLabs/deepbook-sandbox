@@ -287,6 +287,8 @@ services:
       - remote
     build:
       context: ./dashboard
+      args:
+        VITE_CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:-placeholder-token-will-be-generated}
     image: ${DASHBOARD_IMAGE:-}
     container_name: deepbook-dashboard
     ports:
@@ -296,6 +298,9 @@ services:
     depends_on:
       sui-localnet:
         condition: service_healthy
+        required: false
+      control-api:
+        condition: service_started
         required: false
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
@@ -338,4 +343,38 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    restart: unless-stopped
+
+  # ============================================================
+  # Control API
+  # Backend API for dashboard service control panel
+  # Executes Docker commands to manage sandbox services
+  # ============================================================
+  control-api:
+    profiles:
+      - localnet
+      - remote
+    build:
+      context: ./control-api
+    image: ${CONTROL_API_IMAGE:-mysten/deepbook-sandbox-control-api:latest}
+    container_name: control-api
+    environment:
+      CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:-placeholder-token-will-be-generated}
+      PORT: "9011"
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-sandbox}
+    ports:
+      - "9011:9011"
+    volumes:
+      # Mount Docker socket for executing docker commands
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount .env for config editor
+      - ./.env:/app/.env
+    networks:
+      - deepbook-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9011/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped

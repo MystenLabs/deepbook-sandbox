@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from "child_process";
+import { execFile, execFileSync, spawn } from "child_process";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
@@ -119,7 +119,7 @@ export class MoveDeployer {
      * Import the deployer key into the container's sui CLI and switch
      * to a localnet environment pointing at the in-container RPC.
      */
-    private setupContainerCli(): void {
+    private async setupContainerCli(): Promise<void> {
         const privateKey = this.signer.getSecretKey();
         const address = this.signer.getPublicKey().toSuiAddress();
 
@@ -156,16 +156,44 @@ export class MoveDeployer {
         }
 
         // Switch to localnet env and the deployer address
+        // Ignore stderr to suppress version mismatch warnings
         execFileSync(
             "docker",
             ["exec", CONTAINER_NAME, "sui", "client", "switch", "--env", "localnet"],
-            { stdio: "pipe" },
+            { stdio: ["pipe", "pipe", "ignore"] },
         );
         execFileSync(
             "docker",
             ["exec", CONTAINER_NAME, "sui", "client", "switch", "--address", address],
-            { stdio: "pipe" },
+            { stdio: ["pipe", "pipe", "ignore"] },
         );
+
+        // Request gas from faucet inside the container so CLI can see gas coins
+        // Wait a bit for container faucet to be fully ready
+        log.detail("Waiting for container faucet to be ready...");
+        await new Promise((r) => setTimeout(r, 5000));
+
+        try {
+            const result = execFileSync(
+                "docker",
+                ["exec", CONTAINER_NAME, "sui", "client", "faucet", "--address", address],
+                { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"], timeout: 30000 },
+            );
+            if (result.includes("Request successful")) {
+                log.detail("Requested gas from container faucet");
+            }
+        } catch (err) {
+            // Try to extract stdout even from error
+            const stdout =
+                err && typeof err === "object" && "stdout" in err ? String(err.stdout) : "";
+            if (stdout.includes("Request successful")) {
+                log.detail("Requested gas from container faucet");
+            } else {
+                // Non-fatal if faucet request fails (address may already have gas)
+                log.warn("Could not request gas from container faucet (may already have funds)");
+            }
+        }
+
         log.success(`Container CLI configured for ${address}`);
     }
 
@@ -181,8 +209,10 @@ export class MoveDeployer {
 
     async deployPackage(packagePath: string, packageName: string): Promise<DeploymentResult> {
         log.spin(`Publishing ${packageName} (sui client test-publish)`);
+        console.log(`[DEBUG] deployPackage called for ${packageName}`);
 
         const resolvedPath = path.resolve(process.cwd(), packagePath);
+        console.log(`[DEBUG] resolvedPath: ${resolvedPath}`);
 
         let command: string;
         let execArgs: string[];
@@ -206,14 +236,18 @@ export class MoveDeployer {
             execArgs = ["client", "publish", "--json", resolvedPath];
         }
 
+        // Use execFileSync for simpler, synchronous execution (works better with docker exec)
         let output: string;
         try {
-            const { stdout } = await execFileAsync(command, execArgs, {
+            console.log(`[DEBUG] About to execute: ${command} ${execArgs.join(" ")}`);
+            output = execFileSync(command, execArgs, {
                 encoding: "utf-8",
-                maxBuffer: 50 * 1024 * 1024, // 50 MB — publish output includes compiled bytecode
+                maxBuffer: 100 * 1024 * 1024, // 100 MB buffer for large publish output
+                stdio: ["pipe", "pipe", "ignore"], // ignore stderr to suppress version warnings
             });
-            output = stdout;
+            console.log(`[DEBUG] Command completed, output length: ${output.length} bytes`);
         } catch (err: unknown) {
+            log.detail(`Command failed with error: ${JSON.stringify(err, null, 2)}`);
             const stderr =
                 err && typeof err === "object" && "stderr" in err
                     ? String((err as { stderr: unknown }).stderr)
@@ -222,11 +256,21 @@ export class MoveDeployer {
                 err && typeof err === "object" && "stdout" in err
                     ? String((err as { stdout: unknown }).stdout)
                     : "";
-            const detail = stderr || stdout || String(err);
+            const code =
+                err && typeof err === "object" && "status" in err
+                    ? (err as { status: unknown }).status
+                    : "unknown";
+            const signal =
+                err && typeof err === "object" && "signal" in err
+                    ? (err as { signal: unknown }).signal
+                    : "none";
+            const detail = `Exit code: ${code}, Signal: ${signal}\nStderr: ${stderr}\nStdout: ${stdout}\nError: ${String(err)}`;
             throw new Error(`Failed to publish ${packageName}.\n${detail.slice(-4000)}`);
         }
 
+        console.log(`[DEBUG] Parsing transaction data from output...`);
         const transactionDigest = parseDigestFromOutput(output);
+        console.log(`[DEBUG] Transaction digest: ${transactionDigest}`);
 
         // Fetch the full transaction via SDK for reliable structured data
         await this.client.waitForTransaction({ digest: transactionDigest });
@@ -292,7 +336,10 @@ export class MoveDeployer {
             this.network === "testnet" ? allPackages.filter((p) => p.name !== "pyth") : allPackages;
 
         if (this.network === "localnet") {
-            this.setupContainerCli();
+            await this.setupContainerCli();
+            // Wait for faucet to process gas request (can take up to 1 minute)
+            log.detail("Waiting for gas to be available in container...");
+            await new Promise((r) => setTimeout(r, 10000));
         }
 
         const deployed = new Map<string, DeploymentResult>();
