@@ -328,5 +328,40 @@ export function tradingRoutes(baseClient: SuiGrpcClient, signer: Keypair): Hono 
         }
     });
 
+    // GET /trading/pool-details/:poolKey — mid price, book params, order book depth (via SDK)
+    app.get("/pool-details/:poolKey", async (c) => {
+        try {
+            const pk = poolKeyEnum.parse(c.req.param("poolKey"));
+            const client = await getClient();
+
+            const [midPrice, bookParams, depth] = await Promise.all([
+                client.deepbook.midPrice(pk),
+                client.deepbook.poolBookParams(pk),
+                client.deepbook.getLevel2TicksFromMid(pk, 10),
+            ]);
+
+            return c.json({
+                success: true,
+                midPrice: String(midPrice),
+                tickSize: String(bookParams.tickSize),
+                lotSize: String(bookParams.lotSize),
+                minSize: String(bookParams.minSize),
+                bids: depth.bid_prices.map((price, i) => ({
+                    price: String(price),
+                    quantity: String(depth.bid_quantities[i]),
+                })),
+                asks: depth.ask_prices.map((price, i) => ({
+                    price: String(price),
+                    quantity: String(depth.ask_quantities[i]),
+                })),
+            });
+        } catch (err) {
+            return c.json(
+                { success: false, error: err instanceof Error ? err.message : "Failed" },
+                500,
+            );
+        }
+    });
+
     return app;
 }
