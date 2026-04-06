@@ -295,34 +295,56 @@ async function main() {
         await fs.writeFile(deploymentPath, JSON.stringify(manifest, null, 2));
         log.success(`Deployment manifest: ${deploymentPath}`);
 
-        // Fund MM with DEEP tokens (transfer from deployer who holds TreasuryCap minted DEEP)
+        // Fund MM with DEEP and USDC tokens (transfer from deployer)
         if (network === "localnet") {
             const tokenPkgId = deployedPackages.get("token")!.packageId;
+            const usdcPkgId = deployedPackages.get("usdc")!.packageId;
             const deepType = `${tokenPkgId}::deep::DEEP`;
-            const deepAmountForMm = 10_000_000_000; // 10,000 DEEP (6 decimals)
+            const usdcType = `${usdcPkgId}::usdc::USDC`;
 
-            log.spin("Transferring DEEP to market maker...");
+            log.spin("Transferring DEEP and USDC to market maker...");
             const { Transaction, coinWithBalance } = await import("@mysten/sui/transactions");
-            const tx = new Transaction();
+
+            // Transfer DEEP
+            const tx1 = new Transaction();
             const deepCoin = coinWithBalance({
-                balance: deepAmountForMm,
+                balance: 10_000_000_000, // 10,000 DEEP (6 decimals)
                 type: deepType,
                 useGasCoin: false,
-            })(tx);
-            tx.transferObjects([deepCoin], mmAddress);
+            })(tx1);
+            tx1.transferObjects([deepCoin], mmAddress);
 
-            const result = await client.signAndExecuteTransaction({
-                transaction: tx,
+            const r1 = await client.signAndExecuteTransaction({
+                transaction: tx1,
                 signer,
                 include: { effects: true },
             });
-            if (result.$kind === "FailedTransaction") {
-                log.warn(
-                    "Failed to transfer DEEP to market maker — MM may not have enough liquidity",
-                );
+            if (r1.$kind === "FailedTransaction") {
+                log.warn("Failed to transfer DEEP to market maker");
             } else {
-                await client.waitForTransaction({ digest: result.Transaction!.digest });
+                await client.waitForTransaction({ digest: r1.Transaction!.digest });
                 log.success(`Transferred 10,000 DEEP to market maker (${mmAddress})`);
+            }
+
+            // Transfer USDC
+            const tx2 = new Transaction();
+            const usdcCoin = coinWithBalance({
+                balance: 10_000_000_000, // 10,000 USDC (6 decimals)
+                type: usdcType,
+                useGasCoin: false,
+            })(tx2);
+            tx2.transferObjects([usdcCoin], mmAddress);
+
+            const r2 = await client.signAndExecuteTransaction({
+                transaction: tx2,
+                signer,
+                include: { effects: true },
+            });
+            if (r2.$kind === "FailedTransaction") {
+                log.warn("Failed to transfer USDC to market maker");
+            } else {
+                await client.waitForTransaction({ digest: r2.Transaction!.digest });
+                log.success(`Transferred 10,000 USDC to market maker (${mmAddress})`);
             }
         }
 
@@ -369,10 +391,10 @@ async function main() {
             });
             log.success(`BalanceManager created: ${bmCreated.objectId}`);
 
-            // Restart API service so it picks up the new BALANCE_MANAGER_ID
-            log.spin("Restarting API service...");
+            // Start API service now that BALANCE_MANAGER_ID is set
+            log.spin("Starting API service...");
             await startService("deepbook-sandbox-api", sandboxRoot);
-            log.success("API service restarted with BalanceManager ID");
+            log.success("API service started with BalanceManager ID");
         }
 
         // Phase 6: Start market maker (localnet only)
