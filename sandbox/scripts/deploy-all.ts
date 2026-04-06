@@ -15,6 +15,7 @@ import {
     configureAndStartLocalnetServices,
     startOracleService,
     startMarketMaker,
+    startService,
     startDashboard,
     DASHBOARD_PORT,
 } from "./utils/docker-compose";
@@ -323,6 +324,55 @@ async function main() {
                 await client.waitForTransaction({ digest: result.Transaction!.digest });
                 log.success(`Transferred 10,000 DEEP to market maker (${mmAddress})`);
             }
+        }
+
+        // Create a BalanceManager for the deployer (dev trading account)
+        {
+            const deepbookPkgId = deployedPackages.get("deepbook")!.packageId;
+            log.spin("Creating BalanceManager for deployer...");
+            const { Transaction } = await import("@mysten/sui/transactions");
+            const bmTx = new Transaction();
+            const bm = bmTx.moveCall({
+                target: `${deepbookPkgId}::balance_manager::new`,
+                arguments: [],
+            });
+            bmTx.moveCall({
+                target: "0x2::transfer::public_share_object",
+                arguments: [bm],
+                typeArguments: [`${deepbookPkgId}::balance_manager::BalanceManager`],
+            });
+
+            const bmResult = await client.signAndExecuteTransaction({
+                transaction: bmTx,
+                signer,
+                include: { effects: true, objectTypes: true },
+            });
+
+            if (bmResult.$kind === "FailedTransaction") {
+                throw new Error("Failed to create BalanceManager");
+            }
+
+            await client.waitForTransaction({ digest: bmResult.Transaction!.digest });
+
+            const objectTypes = bmResult.Transaction!.objectTypes ?? {};
+            const bmCreated = bmResult.Transaction!.effects?.changedObjects?.find(
+                (obj) =>
+                    obj.idOperation === "Created" &&
+                    obj.outputState !== "PackageWrite" &&
+                    (objectTypes[obj.objectId] ?? "").includes("::balance_manager::BalanceManager"),
+            );
+
+            if (!bmCreated) throw new Error("BalanceManager not found in transaction result");
+
+            updateEnvFile(sandboxRoot, {
+                BALANCE_MANAGER_ID: bmCreated.objectId,
+            });
+            log.success(`BalanceManager created: ${bmCreated.objectId}`);
+
+            // Restart API service so it picks up the new BALANCE_MANAGER_ID
+            log.spin("Restarting API service...");
+            await startService("deepbook-sandbox-api", sandboxRoot);
+            log.success("API service restarted with BalanceManager ID");
         }
 
         // Phase 6: Start market maker (localnet only)

@@ -20,8 +20,8 @@ async function tradingPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 /* ------------------------------------------------------------------ */
-/*  useBalanceManager — BM lifecycle (create, deposit, withdraw)       */
-/*  Source of truth: on-chain query via GET /trading/balance-manager    */
+/*  useBalanceManager — BM lifecycle (deposit, withdraw)               */
+/*  BM is created by deploy-all, ID from GET /trading/balance-manager  */
 /* ------------------------------------------------------------------ */
 
 export function useBalanceManager() {
@@ -42,20 +42,9 @@ export function useBalanceManager() {
     const isSetup = !!balanceManagerId;
 
     const invalidateAll = useCallback(() => {
-        queryClient.invalidateQueries({ queryKey: ["balance-manager-id"] });
         queryClient.invalidateQueries({ queryKey: ["bm-balances", balanceManagerId] });
         queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
     }, [queryClient, balanceManagerId]);
-
-    const create = useCallback(async (): Promise<{ balanceManagerId: string; digest: string }> => {
-        const result = await tradingPost<{ balanceManagerId: string; digest: string }>(
-            "/create-balance-manager",
-            {},
-        );
-        // Invalidate so the on-chain query picks up the new BM
-        await queryClient.invalidateQueries({ queryKey: ["balance-manager-id"] });
-        return result;
-    }, [queryClient]);
 
     const deposit = useCallback(
         async (coin: CoinKey, amount: number) => {
@@ -85,7 +74,7 @@ export function useBalanceManager() {
         [balanceManagerId, invalidateAll],
     );
 
-    return { balanceManagerId, isSetup, isLoading: bmQuery.isLoading, create, deposit, withdraw };
+    return { balanceManagerId, isSetup, isLoading: bmQuery.isLoading, deposit, withdraw };
 }
 
 /* ------------------------------------------------------------------ */

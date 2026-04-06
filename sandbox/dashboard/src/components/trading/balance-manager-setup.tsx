@@ -4,12 +4,7 @@ import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CoinIcon } from "./coin-icon";
 import { SdkCodeBlock } from "./sdk-code-block";
-import {
-    createBalanceManagerSnippet,
-    depositSnippet,
-    withdrawSnippet,
-    SDK_DOCS,
-} from "./sdk-snippets";
+import { depositSnippet, withdrawSnippet, SDK_DOCS } from "./sdk-snippets";
 import type { CoinKey } from "./types";
 
 interface BalanceManagerSetupProps {
@@ -17,7 +12,6 @@ interface BalanceManagerSetupProps {
     balanceManagerId: string | null;
     balances?: Record<string, string>;
     walletBalances?: Record<string, string>;
-    onCreate: () => Promise<{ balanceManagerId: string; digest: string }>;
     onDeposit: (coin: CoinKey, amount: number) => Promise<string>;
     onWithdraw: (coin: CoinKey, amount: number) => Promise<string>;
 }
@@ -38,11 +32,9 @@ export function BalanceManagerSetup({
     balanceManagerId,
     balances,
     walletBalances,
-    onCreate,
     onDeposit,
     onWithdraw,
 }: BalanceManagerSetupProps) {
-    const [creating, setCreating] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<{
@@ -55,23 +47,6 @@ export function BalanceManagerSetup({
 
     const walletBalance = parseFloat(walletBalances?.[coin] ?? "0");
     const bmBalance = parseFloat(balances?.[coin] ?? "0");
-
-    const handleCreate = async () => {
-        setCreating(true);
-        setError(null);
-        try {
-            const result = await onCreate();
-            setSuccess({
-                message: `Balance Manager created: ${result.balanceManagerId.slice(0, 12)}...`,
-                digest: result.digest,
-                snippet: createBalanceManagerSnippet(),
-            });
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to create Balance Manager");
-        } finally {
-            setCreating(false);
-        }
-    };
 
     const handleAction = async (action: "deposit" | "withdraw") => {
         const amt = parseFloat(amount);
@@ -123,16 +98,14 @@ export function BalanceManagerSetup({
             <div className="border w-full rounded-md overflow-hidden dark:border-zinc-900 bg-zinc-950 p-6">
                 <div className="flex flex-col items-center gap-4 py-8">
                     <Wallet className="h-10 w-10 text-zinc-500" />
-                    <h2 className="text-lg font-semibold text-zinc-200">
-                        Create a Balance Manager
-                    </h2>
+                    <h2 className="text-lg font-semibold text-zinc-200">No Balance Manager</h2>
                     <p className="text-sm text-zinc-500 text-center max-w-md">
-                        A Balance Manager is an on-chain escrow account required for trading. Funds
-                        are deposited into it before placing orders.
+                        A Balance Manager is created automatically during deployment. Run{" "}
+                        <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-300">
+                            pnpm deploy-all
+                        </code>{" "}
+                        to set up the sandbox.
                     </p>
-                    <Button onClick={handleCreate} disabled={creating} className="mt-2">
-                        {creating ? "Creating..." : "Create Balance Manager"}
-                    </Button>
                     {error && <p className="text-xs text-red-400">{error}</p>}
                 </div>
             </div>

@@ -284,22 +284,35 @@ export async function startOracleService(
  * Reads pool/package IDs from the .env file (via Docker Compose env substitution).
  * Uses --force-recreate so the container picks up the latest env values.
  */
-export async function startMarketMaker(
+/**
+ * Start (or restart) a single Docker Compose service with fresh .env values.
+ * Uses --force-recreate to ensure the container picks up new env vars.
+ */
+export async function startService(
+    service: string,
     sandboxRoot?: string,
     envOverlay?: Record<string, string>,
 ): Promise<void> {
     const cwd = sandboxRoot ?? getSandboxRoot();
     const env = envOverlay ? { ...process.env, ...envOverlay } : process.env;
     const result = runDockerComposeVisible(
-        ["--profile", "localnet", "up", "-d", "--force-recreate", "--build", "market-maker"],
+        ["--profile", "localnet", "up", "-d", "--force-recreate", "--build", service],
         { cwd, env },
     );
     if (result.status !== 0) {
         const stderr = result.stderr?.trim() || "";
         throw new Error(
-            `Failed to start market maker (exit ${result.status})${stderr ? `\n${stderr}` : ""}`,
+            `Failed to start ${service} (exit ${result.status})${stderr ? `\n${stderr}` : ""}`,
         );
     }
+}
+
+/** @deprecated Use startService("market-maker", ...) */
+export async function startMarketMaker(
+    sandboxRoot?: string,
+    envOverlay?: Record<string, string>,
+): Promise<void> {
+    return startService("market-maker", sandboxRoot, envOverlay);
 }
 
 /**

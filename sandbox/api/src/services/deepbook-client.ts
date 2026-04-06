@@ -7,7 +7,7 @@
  * BalanceManager on first use.
  */
 
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { deepbook, type DeepBookClient } from "@mysten/deepbook-v3";
 import type { CoinMap, PoolMap, DeepbookPackageIds, BalanceManager } from "@mysten/deepbook-v3";
@@ -136,15 +136,13 @@ function buildClient(
 
 /**
  * Returns the cached DeepBook SDK client, creating it lazily on first call.
- *
- * Starts with NO BalanceManager registered — the user must create one via
- * the dashboard. This prevents the faucet from accidentally reusing the
- * market maker's BM (same deployer key), which would cause self-matching
- * and object version conflicts.
+ * The BalanceManager ID comes from the BALANCE_MANAGER_ID env var
+ * (set by deploy-all during deployment).
  */
 export async function getOrCreateClient(
     baseClient: SuiGrpcClient,
     signer: Keypair,
+    balanceManagerId?: string,
 ): Promise<SandboxClient> {
     if (cachedClient) return cachedClient;
 
@@ -155,11 +153,8 @@ export async function getOrCreateClient(
             cachedManifest = manifest;
             const address = signer.getPublicKey().toSuiAddress();
 
-            // Restore the faucet's own BM from the persisted file.
-            // The file is at /app/data/.faucet-bm-id (Docker volume).
-            const savedBmId = loadFaucetBmId();
-            const balanceManagers = savedBmId
-                ? { [MANAGER_KEY]: { address: savedBmId } }
+            const balanceManagers = balanceManagerId
+                ? { [MANAGER_KEY]: { address: balanceManagerId } }
                 : undefined;
 
             cachedClient = buildClient(baseClient, address, manifest, balanceManagers);
@@ -172,48 +167,8 @@ export async function getOrCreateClient(
     return initPromise;
 }
 
-/**
- * Re-create the SDK client with a newly created BalanceManager registered.
- * Called after createBalanceManager succeeds.
- */
-export function recreateClient(
-    baseClient: SuiGrpcClient,
-    signer: Keypair,
-    balanceManagerId: string,
-): SandboxClient {
-    const manifest = cachedManifest ?? loadManifest();
-    cachedManifest = manifest;
-    const address = signer.getPublicKey().toSuiAddress();
-
-    cachedClient = buildClient(baseClient, address, manifest, {
-        [MANAGER_KEY]: { address: balanceManagerId },
-    });
-    return cachedClient;
-}
-
 /** The key used to register the deployer's BalanceManager in the SDK. */
 export const BALANCE_MANAGER_KEY = MANAGER_KEY;
-
-/* ------------------------------------------------------------------ */
-/*  Faucet BM persistence (survives container restarts)                */
-/* ------------------------------------------------------------------ */
-
-const BM_FILE = "/app/data/.faucet-bm-id";
-
-/** Save the faucet's own BM ID to disk so it survives restarts. */
-export function saveFaucetBmId(bmId: string): void {
-    writeFileSync(BM_FILE, bmId, "utf-8");
-}
-
-/** Load the faucet's BM ID from disk, or null if not created yet. */
-export function loadFaucetBmId(): string | null {
-    try {
-        const id = readFileSync(BM_FILE, "utf-8").trim();
-        return id || null;
-    } catch {
-        return null;
-    }
-}
 
 /** Returns the cached manifest's deepbook package ID, if loaded. */
 export function getDeepbookPackageId(): string {

@@ -63,7 +63,6 @@ export function TradingPage() {
                 balanceManagerId={bm.balanceManagerId}
                 balances={bmBalances.data}
                 walletBalances={walletBalances.data?.balances}
-                onCreate={bm.create}
                 onDeposit={bm.deposit}
                 onWithdraw={bm.withdraw}
             />

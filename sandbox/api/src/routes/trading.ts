@@ -3,7 +3,6 @@ import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { z } from "zod";
 import {
-    createBalanceManager,
     deposit,
     withdraw,
     getBalance,
@@ -15,12 +14,8 @@ import {
 } from "../services/trading.js";
 import {
     getOrCreateClient,
-    recreateClient,
-    getDeepbookPackageId,
     getCoinTypes,
     getCoinScalar,
-    loadFaucetBmId,
-    saveFaucetBmId,
     type SandboxClient,
 } from "../services/deepbook-client.js";
 
@@ -74,7 +69,11 @@ const cancelAllSchema = z.object({
 /*  Routes                                                             */
 /* ------------------------------------------------------------------ */
 
-export function tradingRoutes(baseClient: SuiGrpcClient, signer: Keypair): Hono {
+export function tradingRoutes(
+    baseClient: SuiGrpcClient,
+    signer: Keypair,
+    balanceManagerId?: string,
+): Hono {
     const app = new Hono();
 
     // Lazy SDK client — initialized on first request when the manifest is available
@@ -82,22 +81,14 @@ export function tradingRoutes(baseClient: SuiGrpcClient, signer: Keypair): Hono 
 
     async function getClient(): Promise<SandboxClient> {
         if (!dbClient) {
-            dbClient = await getOrCreateClient(baseClient, signer);
+            dbClient = await getOrCreateClient(baseClient, signer, balanceManagerId);
         }
         return dbClient;
     }
 
-    // GET /trading/balance-manager — return the faucet's dedicated BM
+    // GET /trading/balance-manager — return the deployer's BM (set by deploy-all)
     app.get("/balance-manager", async (c) => {
-        try {
-            const bmId = loadFaucetBmId();
-            return c.json({ success: true, balanceManagerId: bmId });
-        } catch (err) {
-            return c.json(
-                { success: false, error: err instanceof Error ? err.message : "Failed" },
-                500,
-            );
-        }
+        return c.json({ success: true, balanceManagerId: balanceManagerId ?? null });
     });
 
     // GET /trading/balances/:balanceManagerId — BM balances via SDK
@@ -188,27 +179,6 @@ export function tradingRoutes(baseClient: SuiGrpcClient, signer: Keypair): Hono 
             const client = await getClient();
             const orders = await getOpenOrders(client, signer, pk);
             return c.json({ success: true, orders });
-        } catch (err) {
-            return c.json(
-                { success: false, error: err instanceof Error ? err.message : "Failed" },
-                500,
-            );
-        }
-    });
-
-    // POST /trading/create-balance-manager
-    app.post("/create-balance-manager", async (c) => {
-        try {
-            const client = await getClient();
-            const result = await createBalanceManager(client, signer);
-
-            // Persist BM ID so it survives container restarts
-            saveFaucetBmId(result.balanceManagerId);
-
-            // Re-create the SDK client with the new BM registered
-            dbClient = recreateClient(baseClient, signer, result.balanceManagerId);
-
-            return c.json({ success: true, ...result });
         } catch (err) {
             return c.json(
                 { success: false, error: err instanceof Error ? err.message : "Failed" },

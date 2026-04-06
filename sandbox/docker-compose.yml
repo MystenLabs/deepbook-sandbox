@@ -41,11 +41,6 @@ volumes:
     driver_opts:
       type: tmpfs
       device: tmpfs
-  api_data:
-    driver: local
-    driver_opts:
-      type: tmpfs
-      device: tmpfs
 
 services:
   # ============================================================
@@ -261,6 +256,7 @@ services:
       NETWORK: ${NETWORK:-localnet}
       PRIVATE_KEY: ${PRIVATE_KEY:-}
       DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
+      BALANCE_MANAGER_ID: ${BALANCE_MANAGER_ID:-}
       RPC_URL: ${RPC_URL:-}
       PORT: 9009
       MAX_DEEP_PER_REQUEST: 10000
@@ -268,7 +264,6 @@ services:
       - "9009:9009"
     volumes:
       - ./deployments:/app/deployments:ro
-      - api_data:/app/data
     networks:
       - deepbook-net
     depends_on:
