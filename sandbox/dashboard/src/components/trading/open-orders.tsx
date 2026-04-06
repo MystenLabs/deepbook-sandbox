@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { List, X } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SdkCodeBlock } from "./sdk-code-block";
-import { cancelOrderSnippet, cancelAllOrdersSnippet, SDK_DOCS } from "./sdk-snippets";
+import { cancelOrderSnippet, SDK_DOCS } from "./sdk-snippets";
 import type { OrderDetail, PoolKey } from "./types";
 
 interface OpenOrdersProps {
@@ -12,18 +11,10 @@ interface OpenOrdersProps {
     orders: OrderDetail[];
     isLoading: boolean;
     onCancelOrder: (orderId: string) => Promise<string>;
-    onCancelAll: () => Promise<string>;
 }
 
-export function OpenOrders({
-    poolKey,
-    orders,
-    isLoading,
-    onCancelOrder,
-    onCancelAll,
-}: OpenOrdersProps) {
+export function OpenOrders({ poolKey, orders, isLoading, onCancelOrder }: OpenOrdersProps) {
     const [cancelingId, setCancelingId] = useState<string | null>(null);
-    const [cancelingAll, setCancelingAll] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [lastSnippet, setLastSnippet] = useState<string | null>(null);
 
@@ -41,38 +32,13 @@ export function OpenOrders({
         }
     };
 
-    const handleCancelAll = async () => {
-        setCancelingAll(true);
-        setError(null);
-        setLastSnippet(null);
-        try {
-            await onCancelAll();
-            setLastSnippet(cancelAllOrdersSnippet(poolKey));
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Cancel all failed");
-        } finally {
-            setCancelingAll(false);
-        }
-    };
-
     return (
         <div className="border w-full rounded-md overflow-hidden dark:border-zinc-900 bg-zinc-950">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                     <List className="h-4 w-4 text-zinc-500" />
                     Open Orders
                 </CardTitle>
-                {orders.length > 0 && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleCancelAll}
-                        disabled={cancelingAll}
-                        className="text-xs text-red-400 hover:text-red-300"
-                    >
-                        {cancelingAll ? "Canceling..." : "Cancel All"}
-                    </Button>
-                )}
             </CardHeader>
             <CardContent>
                 {isLoading ? (

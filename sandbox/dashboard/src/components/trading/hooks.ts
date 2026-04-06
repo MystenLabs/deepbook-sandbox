@@ -141,6 +141,29 @@ export function useMidPrice(poolKey: PoolKey) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  usePoolParams — pool book parameters (tick, lot, min size)         */
+/* ------------------------------------------------------------------ */
+
+export interface PoolParams {
+    tickSize: number;
+    lotSize: number;
+    minSize: number;
+}
+
+export function usePoolParams(poolKey: PoolKey) {
+    return useQuery<PoolParams>({
+        queryKey: ["pool-params", poolKey],
+        queryFn: async () => {
+            const res = await fetch(`${TRADING_API}/pool-params/${poolKey}`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            return { tickSize: data.tickSize, lotSize: data.lotSize, minSize: data.minSize };
+        },
+        staleTime: 60_000,
+    });
+}
+
+/* ------------------------------------------------------------------ */
 /*  useOpenOrders — poll open orders for a pool                        */
 /* ------------------------------------------------------------------ */
 

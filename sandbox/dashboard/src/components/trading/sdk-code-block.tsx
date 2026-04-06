@@ -4,6 +4,7 @@ import { Code, ExternalLink, Copy, Check } from "lucide-react";
 interface SdkCodeBlockProps {
     code: string;
     docsUrl?: string;
+    alwaysOpen?: boolean;
 }
 
 /** Lightweight regex-based syntax highlighter for TypeScript snippets. */
@@ -32,9 +33,11 @@ function highlightTs(code: string): string {
     );
 }
 
-export function SdkCodeBlock({ code, docsUrl }: SdkCodeBlockProps) {
+export function SdkCodeBlock({ code, docsUrl, alwaysOpen }: SdkCodeBlockProps) {
     const [open, setOpen] = useState(false);
     const [copied, setCopied] = useState(false);
+
+    const isVisible = alwaysOpen || open;
 
     const handleCopy = async () => {
         await navigator.clipboard.writeText(code);
@@ -44,17 +47,21 @@ export function SdkCodeBlock({ code, docsUrl }: SdkCodeBlockProps) {
 
     return (
         <div className="mt-2">
-            <button
-                type="button"
-                onClick={() => setOpen(!open)}
-                className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-                <Code className="h-3 w-3" />
-                {open ? "Hide" : "View"} SDK Code
-            </button>
+            {!alwaysOpen && (
+                <button
+                    type="button"
+                    onClick={() => setOpen(!open)}
+                    className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                    <Code className="h-3 w-3" />
+                    {open ? "Hide" : "View"} SDK Code
+                </button>
+            )}
 
-            {open && (
-                <div className="mt-1.5 rounded-md border border-zinc-800 bg-zinc-900/80 overflow-hidden">
+            {isVisible && (
+                <div
+                    className={`rounded-md border border-zinc-800 bg-zinc-900/80 overflow-hidden ${alwaysOpen ? "" : "mt-1.5"}`}
+                >
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-800">
                         <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
                             @mysten/deepbook-v3

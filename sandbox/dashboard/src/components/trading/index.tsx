@@ -3,11 +3,12 @@ import {
     useWalletBalances,
     useBmBalances,
     useMidPrice,
+    usePoolParams,
     useTrading,
     useOpenOrders,
 } from "./hooks";
 import { BalanceManagerSetup } from "./balance-manager-setup";
-import { OrderForm } from "./order-form";
+import { MarketOrderCard, LimitOrderCard, CancelOrdersCard } from "./action-cards";
 import { OpenOrders } from "./open-orders";
 import { CoinIcon } from "./coin-icon";
 
@@ -19,6 +20,7 @@ export function TradingPage() {
     const walletBalances = useWalletBalances();
     const bmBalances = useBmBalances(bm.balanceManagerId);
     const midPrice = useMidPrice(POOL_KEY);
+    const poolParams = usePoolParams(POOL_KEY);
     const trading = useTrading(POOL_KEY, bm.balanceManagerId);
     const openOrders = useOpenOrders(POOL_KEY, bm.isSetup);
 
@@ -66,20 +68,30 @@ export function TradingPage() {
                 onWithdraw={bm.withdraw}
             />
 
-            {/* Order form and open orders */}
+            {/* Trading action cards */}
             {bm.isSetup && (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <OrderForm
+                <div className="space-y-4">
+                    <MarketOrderCard
+                        poolKey={POOL_KEY}
+                        minSize={poolParams.data?.minSize}
+                        onPlace={trading.placeMarketOrder}
+                    />
+                    <LimitOrderCard
                         poolKey={POOL_KEY}
                         midPrice={midPrice.data}
-                        onPlaceLimitOrder={trading.placeLimitOrder}
-                        onPlaceMarketOrder={trading.placeMarketOrder}
+                        tickSize={poolParams.data?.tickSize}
+                        minSize={poolParams.data?.minSize}
+                        onPlace={trading.placeLimitOrder}
                     />
                     <OpenOrders
                         poolKey={POOL_KEY}
                         orders={openOrders.data ?? []}
                         isLoading={openOrders.isLoading}
                         onCancelOrder={trading.cancelOrder}
+                    />
+                    <CancelOrdersCard
+                        poolKey={POOL_KEY}
+                        orderCount={(openOrders.data ?? []).length}
                         onCancelAll={trading.cancelAllOrders}
                     />
                 </div>
