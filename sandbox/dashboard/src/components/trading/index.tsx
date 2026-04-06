@@ -1,5 +1,5 @@
+import { useDeepBookClient } from "@/hooks/use-deepbook-client";
 import {
-    useBalanceManager,
     useWalletBalances,
     useBmBalances,
     useMidPrice,
@@ -16,13 +16,23 @@ const DISPLAY_COINS = ["SUI", "DEEP"];
 const POOL_KEY = "DEEP_SUI" as const;
 
 export function TradingPage() {
-    const bm = useBalanceManager();
-    const walletBalances = useWalletBalances();
-    const bmBalances = useBmBalances(bm.balanceManagerId);
-    const midPrice = useMidPrice(POOL_KEY);
-    const poolParams = usePoolParams(POOL_KEY);
-    const trading = useTrading(POOL_KEY, bm.balanceManagerId);
-    const openOrders = useOpenOrders(POOL_KEY, bm.isSetup);
+    const { client, isReady, address, isSetup, balanceManagerId } = useDeepBookClient();
+
+    const walletBalances = useWalletBalances(address);
+    const bmBalances = useBmBalances(client);
+    const midPrice = useMidPrice(client, POOL_KEY);
+    const poolParams = usePoolParams(client, POOL_KEY);
+    const trading = useTrading(client, POOL_KEY, address);
+    const openOrders = useOpenOrders(client, POOL_KEY, isSetup);
+
+    if (!isReady) {
+        return (
+            <div className="space-y-4">
+                <h1 className="text-lg font-semibold">Trading</h1>
+                <p className="text-sm text-zinc-500">Connect your wallet to start trading.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-4">
@@ -59,16 +69,16 @@ export function TradingPage() {
 
             {/* Balance Manager setup, deposit & withdraw */}
             <BalanceManagerSetup
-                isSetup={bm.isSetup}
-                balanceManagerId={bm.balanceManagerId}
+                isSetup={isSetup}
+                balanceManagerId={balanceManagerId}
                 balances={bmBalances.data}
                 walletBalances={walletBalances.data?.balances}
-                onDeposit={bm.deposit}
-                onWithdraw={bm.withdraw}
+                onDeposit={trading.deposit}
+                onWithdraw={trading.withdraw}
             />
 
             {/* Trading action cards */}
-            {bm.isSetup && (
+            {isSetup && (
                 <div className="space-y-4">
                     <MarketOrderCard
                         poolKey={POOL_KEY}

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSuiClientQuery } from "@mysten/dapp-kit";
+import { useCurrentClient } from "@mysten/dapp-kit-react";
 import { Box, Activity, ArrowLeftRight, Droplets, RefreshCw, Server } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -62,17 +62,39 @@ const REFETCH_INTERVAL = 10_000;
 /* ------------------------------------------------------------------ */
 
 export function HealthPage() {
-    const sui = useSuiClientQuery("getLatestCheckpointSequenceNumber", undefined, {
+    const client = useCurrentClient();
+
+    const sui = useQuery<string>({
+        queryKey: ["sui-checkpoint"],
+        queryFn: async () => {
+            const resp = await client.ledgerService.getCheckpoint({
+                checkpointId: { oneofKind: undefined },
+            }).response;
+            return String(resp.checkpoint?.sequenceNumber ?? "0");
+        },
         refetchInterval: REFETCH_INTERVAL,
         retry: false,
     });
 
-    const suiState = useSuiClientQuery("getLatestSuiSystemState", undefined, {
+    const suiState = useQuery<{ epoch: string; epochDurationMs: string }>({
+        queryKey: ["sui-system-state"],
+        queryFn: async () => {
+            const resp = await client.ledgerService.getEpoch({}).response;
+            return {
+                epoch: String(resp.epoch?.epoch ?? "0"),
+                epochDurationMs: "0",
+            };
+        },
         refetchInterval: REFETCH_INTERVAL,
         retry: false,
     });
 
-    const gasPrice = useSuiClientQuery("getReferenceGasPrice", undefined, {
+    const gasPrice = useQuery<string>({
+        queryKey: ["sui-gas-price"],
+        queryFn: async () => {
+            const resp = await client.getReferenceGasPrice();
+            return String(resp.referenceGasPrice);
+        },
         refetchInterval: REFETCH_INTERVAL,
         retry: false,
     });

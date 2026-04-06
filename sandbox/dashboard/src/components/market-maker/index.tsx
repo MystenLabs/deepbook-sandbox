@@ -11,8 +11,6 @@ export function MarketMakerPage() {
 
     const orders = useMarketMakerOrders();
     const oracle = useOraclePrices();
-    const poolKey = "DEEP_SUI"; // TODO: derive from selected pool pair
-    const poolDetails = usePoolDetails(poolKey);
 
     const pools = orders.data?.pools ?? [];
     // Clamp selected index if pool count shrinks after a data refetch
@@ -26,6 +24,9 @@ export function MarketMakerPage() {
         pairByIndexRef.current.set(clampedIndex, pool.pair);
     }
     const pair = pool?.pair ?? pairByIndexRef.current.get(clampedIndex) ?? "DEEP/SUI";
+
+    const poolKey = pair.replace("/", "_"); // "DEEP/SUI" → "DEEP_SUI"
+    const poolDetails = usePoolDetails(poolKey);
 
     // Keep the last non-empty pool data *per pair* so the UI stays stable
     // during MM rebalance cycles (which briefly return 0 orders).

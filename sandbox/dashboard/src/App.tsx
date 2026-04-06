@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { ConnectButton } from "@mysten/dapp-kit-react/ui";
 import { WalletPopover } from "@/components/wallet-popover";
 import { cn } from "@/lib/utils";
 import { FaucetPage } from "@/components/faucet-page";
@@ -6,6 +7,7 @@ import { HealthPage } from "@/components/health-page";
 import { MarketMakerPage } from "@/components/market-maker";
 import { DeploymentPage } from "@/components/deployment-page";
 import { TradingPage } from "@/components/trading";
+import { DevToolsPage } from "@/components/dev-tools-page";
 
 const navLinks = [
     { to: "/", label: "Health" },
@@ -58,8 +60,9 @@ function Layout({ children }: { children: React.ReactNode }) {
                     </nav>
 
                     {/* Right */}
-                    <div className="ml-auto">
+                    <div className="ml-auto flex items-center gap-2">
                         <WalletPopover />
+                        <ConnectButton />
                     </div>
                 </div>
             </header>
@@ -78,6 +81,7 @@ export default function App() {
                     <Route path="/trading" element={<TradingPage />} />
                     <Route path="/faucet" element={<FaucetPage />} />
                     <Route path="/deployment" element={<DeploymentPage />} />
+                    <Route path="/dev-tools" element={<DevToolsPage />} />
                 </Routes>
             </Layout>
         </BrowserRouter>

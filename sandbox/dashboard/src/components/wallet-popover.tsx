@@ -3,6 +3,7 @@ import { Wallet, Copy, Check, ExternalLink } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { CoinIcon } from "@/components/trading/coin-icon";
+import { useDeepBookClient } from "@/hooks/use-deepbook-client";
 import { useWalletBalances } from "@/components/trading/hooks";
 
 const COINS = ["SUI", "DEEP", "USDC"] as const;
@@ -16,12 +17,13 @@ function explorerUrl(addr: string) {
 }
 
 export function WalletPopover() {
-    const { data, isLoading } = useWalletBalances();
+    const { address } = useDeepBookClient();
+    const { data, isLoading } = useWalletBalances(address);
     const [copied, setCopied] = useState(false);
 
     const handleCopy = async () => {
-        if (!data?.address) return;
-        await navigator.clipboard.writeText(data.address);
+        if (!address) return;
+        await navigator.clipboard.writeText(address);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
@@ -35,14 +37,14 @@ export function WalletPopover() {
             </PopoverTrigger>
             <PopoverContent align="end" className="w-64 bg-zinc-950 border-zinc-800 p-3">
                 {/* Address */}
-                {data?.address && (
+                {address && (
                     <div className="mb-3 pb-2.5 border-b border-zinc-800">
                         <p className="text-[11px] uppercase tracking-wider text-zinc-600 mb-1">
                             Address
                         </p>
                         <div className="flex items-center gap-1.5">
                             <span className="font-mono text-xs text-zinc-400">
-                                {truncateAddress(data.address)}
+                                {truncateAddress(address)}
                             </span>
                             <button
                                 onClick={handleCopy}
@@ -55,7 +57,7 @@ export function WalletPopover() {
                                 )}
                             </button>
                             <a
-                                href={explorerUrl(data.address)}
+                                href={explorerUrl(address)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="rounded p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
@@ -71,7 +73,7 @@ export function WalletPopover() {
                 {isLoading ? (
                     <p className="text-xs text-zinc-500">Loading...</p>
                 ) : !data ? (
-                    <p className="text-xs text-zinc-500">Not available</p>
+                    <p className="text-xs text-zinc-500">Connect wallet to view balances</p>
                 ) : (
                     <div className="space-y-1.5">
                         {COINS.map((coin) => {

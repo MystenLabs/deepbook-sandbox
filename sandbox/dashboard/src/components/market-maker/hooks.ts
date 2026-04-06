@@ -1,5 +1,10 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import type { OrdersResponse, OracleResponse } from "./types";
+import { useDeepBookClient } from "@/hooks/use-deepbook-client";
+import {
+    usePoolDetails as usePoolDetailsQuery,
+    type PoolDetails,
+} from "@/components/trading/hooks";
 
 export const REFETCH_INTERVAL = 3_000;
 
@@ -13,32 +18,15 @@ export function useMarketMakerOrders() {
         },
         refetchInterval: REFETCH_INTERVAL,
         retry: false,
-        // Keep previous data visible while refetching so the chart doesn't
-        // flash empty during market maker rebalance cycles.
         placeholderData: keepPreviousData,
     });
 }
 
-export interface PoolDetails {
-    midPrice: string;
-    tickSize: string;
-    lotSize: string;
-    minSize: string;
-}
+export { type PoolDetails };
 
 export function usePoolDetails(poolKey: string) {
-    return useQuery<PoolDetails>({
-        queryKey: ["pool-details", poolKey],
-        queryFn: async () => {
-            const r = await fetch(`/api/trading/pool-details/${poolKey}`);
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            const data = await r.json();
-            if (!data.success) throw new Error(data.error);
-            return data as PoolDetails;
-        },
-        refetchInterval: 5_000,
-        retry: false,
-    });
+    const { client } = useDeepBookClient();
+    return usePoolDetailsQuery(client, poolKey as "DEEP_SUI" | "SUI_USDC");
 }
 
 export function useOraclePrices() {

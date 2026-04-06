@@ -16,22 +16,6 @@ export const SDK_DOCS = {
 
 /* eslint-disable no-irregular-whitespace */
 
-export function createBalanceManagerSnippet(): string {
-    return [
-        'import { deepbook } from "@mysten/deepbook-v3";',
-        'import { Transaction } from "@mysten/sui/transactions";',
-        "",
-        "const tx = new Transaction();",
-        "client.deepbook.balanceManager.createAndShareBalanceManager()(tx);",
-        "",
-        "await client.core.signAndExecuteTransaction({",
-        "    transaction: tx,",
-        "    signer,",
-        "    include: { effects: true },",
-        "});",
-    ].join("\n");
-}
-
 export function depositSnippet(coinKey: string, amount: number): string {
     return [
         'import { Transaction } from "@mysten/sui/transactions";',

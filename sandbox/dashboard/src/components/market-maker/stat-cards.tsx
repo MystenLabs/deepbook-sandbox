@@ -64,7 +64,7 @@ export function StatCards({
                     isLoading={pdLoading}
                     tooltip="Midpoint between best bid and best ask on the pool's order book"
                 >
-                    {poolDetails ? parseFloat(poolDetails.midPrice).toFixed(6) : "—"}
+                    {poolDetails ? Number(poolDetails.midPrice).toFixed(6) : "—"}
                 </StatCard>
                 <StatCard
                     label="Tick Size"
