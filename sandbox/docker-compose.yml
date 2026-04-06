@@ -41,6 +41,11 @@ volumes:
     driver_opts:
       type: tmpfs
       device: tmpfs
+  faucet_data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
 
 services:
   # ============================================================
@@ -255,6 +260,7 @@ services:
     environment:
       NETWORK: ${NETWORK:-localnet}
       PRIVATE_KEY: ${PRIVATE_KEY:-}
+      TRADING_PRIVATE_KEY: ${TRADING_PRIVATE_KEY:-}
       DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
       RPC_URL: ${RPC_URL:-}
       PORT: 9009
@@ -263,6 +269,7 @@ services:
       - "9009:9009"
     volumes:
       - ./deployments:/app/deployments:ro
+      - faucet_data:/app/data
     networks:
       - deepbook-net
     depends_on:

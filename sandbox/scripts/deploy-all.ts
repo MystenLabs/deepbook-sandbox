@@ -225,6 +225,20 @@ async function main() {
             log.success("Oracle service started");
         }
 
+        // Generate a dedicated keypair for the trading service so it
+        // doesn't share gas coins or BalanceManagers with the market maker.
+        log.spin("Generating trading service keypair...");
+        const tradingKeypair = Ed25519Keypair.generate();
+        const tradingAddress = tradingKeypair.getPublicKey().toSuiAddress();
+        const tradingPrivateKey = tradingKeypair.getSecretKey(); // bech32 suiprivkey1...
+        log.detail(`Trading signer: ${tradingAddress}`);
+
+        await ensureMinimumBalance(client, tradingAddress, getFaucetUrl(network));
+        updateEnvFile(sandboxRoot, {
+            TRADING_PRIVATE_KEY: tradingPrivateKey,
+        });
+        log.success("Trading service keypair funded and saved to .env");
+
         // Phase 5: Create DEEP/SUI, SUI/USDC deepbook pools and SUI, USDC margin pools
         log.phase("Phase 5/6: Creating DEEP/SUI and SUI/USDC pools");
         const { pools } = await poolCreator.createDeepbookPools(deployedPackages);

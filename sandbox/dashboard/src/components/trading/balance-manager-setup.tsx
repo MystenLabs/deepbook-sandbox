@@ -3,6 +3,13 @@ import { Wallet, ArrowDownToLine, ArrowUpFromLine, ExternalLink, Loader2 } from 
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CoinIcon } from "./coin-icon";
+import { SdkCodeBlock } from "./sdk-code-block";
+import {
+    createBalanceManagerSnippet,
+    depositSnippet,
+    withdrawSnippet,
+    SDK_DOCS,
+} from "./sdk-snippets";
 import type { CoinKey } from "./types";
 
 interface BalanceManagerSetupProps {
@@ -38,7 +45,11 @@ export function BalanceManagerSetup({
     const [creating, setCreating] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<{ message: string; digest: string } | null>(null);
+    const [success, setSuccess] = useState<{
+        message: string;
+        digest: string;
+        snippet?: string;
+    } | null>(null);
     const [coin, setCoin] = useState<CoinKey>("SUI");
     const [amount, setAmount] = useState("");
 
@@ -53,6 +64,7 @@ export function BalanceManagerSetup({
             setSuccess({
                 message: `Balance Manager created: ${result.balanceManagerId.slice(0, 12)}...`,
                 digest: result.digest,
+                snippet: createBalanceManagerSnippet(),
             });
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to create Balance Manager");
@@ -85,10 +97,18 @@ export function BalanceManagerSetup({
             let digest: string;
             if (action === "deposit") {
                 digest = await onDeposit(coin, amt);
-                setSuccess({ message: `Deposited ${amt} ${coin}`, digest });
+                setSuccess({
+                    message: `Deposited ${amt} ${coin}`,
+                    digest,
+                    snippet: depositSnippet(coin, amt),
+                });
             } else {
                 digest = await onWithdraw(coin, amt);
-                setSuccess({ message: `Withdrew ${amt} ${coin}`, digest });
+                setSuccess({
+                    message: `Withdrew ${amt} ${coin}`,
+                    digest,
+                    snippet: withdrawSnippet(coin, amt),
+                });
             }
             setAmount("");
         } catch (err) {
@@ -230,18 +250,26 @@ export function BalanceManagerSetup({
 
                 {error && <p className="text-xs text-red-400">{error}</p>}
                 {success && (
-                    <p className="text-xs text-emerald-400 flex items-center gap-1.5">
-                        {success.message}
-                        <a
-                            href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
-                        >
-                            View tx
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
-                    </p>
+                    <div>
+                        <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                            {success.message}
+                            <a
+                                href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
+                            >
+                                View tx
+                                <ExternalLink className="h-3 w-3" />
+                            </a>
+                        </p>
+                        {success.snippet && (
+                            <SdkCodeBlock
+                                code={success.snippet}
+                                docsUrl={SDK_DOCS.balanceManager}
+                            />
+                        )}
+                    </div>
                 )}
             </CardContent>
         </div>

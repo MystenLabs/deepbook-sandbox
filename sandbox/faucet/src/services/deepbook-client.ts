@@ -155,8 +155,8 @@ export async function getOrCreateClient(
             cachedManifest = manifest;
             const address = signer.getPublicKey().toSuiAddress();
 
-            // Restore the faucet's own BM if it was created in a previous session.
-            // Does NOT auto-discover BMs on-chain — avoids picking up the MM's BM.
+            // Restore the faucet's own BM from the persisted file.
+            // The file is at /app/data/.faucet-bm-id (Docker volume).
             const savedBmId = loadFaucetBmId();
             const balanceManagers = savedBmId
                 ? { [MANAGER_KEY]: { address: savedBmId } }
@@ -198,7 +198,7 @@ export const BALANCE_MANAGER_KEY = MANAGER_KEY;
 /*  Faucet BM persistence (survives container restarts)                */
 /* ------------------------------------------------------------------ */
 
-const BM_FILE = "/app/.faucet-bm-id";
+const BM_FILE = "/app/data/.faucet-bm-id";
 
 /** Save the faucet's own BM ID to disk so it survives restarts. */
 export function saveFaucetBmId(bmId: string): void {

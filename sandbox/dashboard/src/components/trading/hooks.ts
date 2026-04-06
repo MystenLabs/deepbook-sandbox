@@ -124,6 +124,23 @@ export function useBmBalances(balanceManagerId: string | null) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  useMidPrice — poll current mid price for a pool                    */
+/* ------------------------------------------------------------------ */
+
+export function useMidPrice(poolKey: PoolKey) {
+    return useQuery<number>({
+        queryKey: ["mid-price", poolKey],
+        queryFn: async () => {
+            const res = await fetch(`${TRADING_API}/mid-price/${poolKey}`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+            return data.midPrice;
+        },
+        refetchInterval: 5_000,
+    });
+}
+
+/* ------------------------------------------------------------------ */
 /*  useOpenOrders — poll open orders for a pool                        */
 /* ------------------------------------------------------------------ */
 

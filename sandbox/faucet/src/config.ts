@@ -24,6 +24,7 @@ const envSchema = z
     .object({
         NETWORK: z.enum(["localnet", "testnet"]),
         PRIVATE_KEY: z.string().min(1, "PRIVATE_KEY is required"),
+        TRADING_PRIVATE_KEY: z.string().optional(),
         DEEP_TOKEN_PACKAGE_ID: z.string().min(1, "DEEP_TOKEN_PACKAGE_ID is required"),
         RPC_URL: z.string().optional(),
         PORT: z.coerce.number().default(9009),
@@ -34,6 +35,7 @@ const envSchema = z
         return {
             network: raw.NETWORK,
             privateKey: raw.PRIVATE_KEY.trim(),
+            tradingPrivateKey: raw.TRADING_PRIVATE_KEY?.trim() || undefined,
             deepTokenPackageId: raw.DEEP_TOKEN_PACKAGE_ID.trim(),
             deepType: `${raw.DEEP_TOKEN_PACKAGE_ID.trim()}::deep::DEEP`,
             rpcUrl: raw.RPC_URL?.trim() || defaults.rpcUrl,

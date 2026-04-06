@@ -264,25 +264,122 @@ async function getBalanceWithSender(
     return Number(value) / scalar;
 }
 
-export async function getOpenOrders(client: SandboxClient, poolKey: string) {
+export async function getOpenOrders(client: SandboxClient, signer: Keypair, poolKey: string) {
     try {
         const raw = await client.deepbook.getAccountOrderDetails(poolKey, BALANCE_MANAGER_KEY);
+        console.log(`[getOpenOrders] SDK returned ${raw.length} orders`);
+        return enrichOrders(client, raw);
+    } catch (err) {
+        console.error("[getOpenOrders] SDK call failed, trying fallback:", err);
+        return getOpenOrdersWithSender(client, signer, poolKey);
+    }
+}
 
-        // Enrich with is_bid and price by decoding the on-chain order ID
-        return raw.map((order) => {
-            try {
-                const decoded = client.deepbook.decodeOrderId(BigInt(order.order_id));
-                return {
-                    ...order,
-                    is_bid: decoded.isBid,
-                    price: String(decoded.price),
-                };
-            } catch {
-                return order;
-            }
+async function getOpenOrdersWithSender(client: SandboxClient, signer: Keypair, poolKey: string) {
+    try {
+        const tx = new Transaction();
+        tx.setSender(signer.getPublicKey().toSuiAddress());
+        client.deepbook.deepBook.getAccountOrderDetails(poolKey, BALANCE_MANAGER_KEY)(tx);
+
+        const result = await client.core.simulateTransaction({
+            transaction: tx,
+            include: { effects: true, commandResults: true },
         });
+
+        if (result.$kind === "FailedTransaction") {
+            console.error(
+                "[getOpenOrdersWithSender] simulation failed:",
+                result.FailedTransaction.status,
+            );
+            return [];
+        }
+
+        const bcsBytes = result.commandResults?.[0]?.returnValues?.[0]?.bcs;
+        if (!bcsBytes || bcsBytes.length === 0) {
+            console.log("[getOpenOrdersWithSender] no BCS data returned, bcsBytes:", bcsBytes);
+            return [];
+        }
+
+        // Parse the BCS vector of Order structs manually.
+        // Each Order is: order_id(u128) + client_order_id(u64) + quantity(u64) +
+        //                filled_quantity(u64) + fee_is_deep(bool) +
+        //                order_deep_price { asset_is_base(bool), deep_per_asset(u64) } +
+        //                epoch(u64) + status(u8) + expire_timestamp(u64)
+        const orders = parseOrdersBcs(bcsBytes);
+        return enrichOrders(client, orders);
     } catch {
-        // Fallback for owned BMs: SDK doesn't set sender for simulate.
         return [];
     }
+}
+
+function enrichOrders(
+    client: SandboxClient,
+    raw: Array<{ order_id: string; [key: string]: unknown }>,
+) {
+    return raw.map((order) => {
+        try {
+            const decoded = client.deepbook.decodeOrderId(BigInt(order.order_id));
+            return { ...order, is_bid: decoded.isBid, price: String(decoded.price) };
+        } catch {
+            return order;
+        }
+    });
+}
+
+/** Parse BCS-encoded vector<Order> from get_account_order_details. */
+function parseOrdersBcs(bcs: Uint8Array) {
+    let offset = 0;
+
+    // ULEB128 vector length
+    let length = 0;
+    let shift = 0;
+    while (offset < bcs.length) {
+        const byte = bcs[offset++];
+        length |= (byte & 0x7f) << shift;
+        if ((byte & 0x80) === 0) break;
+        shift += 7;
+    }
+
+    const orders = [];
+    for (let i = 0; i < length; i++) {
+        const order_id = readU128(bcs, offset);
+        offset += 16;
+        const client_order_id = readU64(bcs, offset);
+        offset += 8;
+        const quantity = readU64(bcs, offset);
+        offset += 8;
+        const filled_quantity = readU64(bcs, offset);
+        offset += 8;
+        const fee_is_deep = bcs[offset++] !== 0;
+        const _asset_is_base = bcs[offset++] !== 0;
+        const _deep_per_asset = readU64(bcs, offset);
+        offset += 8;
+        const _epoch = readU64(bcs, offset);
+        offset += 8;
+        const status = bcs[offset++];
+        const _expire_timestamp = readU64(bcs, offset);
+        offset += 8;
+
+        orders.push({
+            order_id: order_id.toString(),
+            client_order_id: client_order_id.toString(),
+            quantity: quantity.toString(),
+            filled_quantity: filled_quantity.toString(),
+            fee_is_deep,
+            status,
+        });
+    }
+    return orders;
+}
+
+function readU64(buf: Uint8Array, offset: number): bigint {
+    let v = 0n;
+    for (let i = 0; i < 8; i++) v |= BigInt(buf[offset + i]) << BigInt(i * 8);
+    return v;
+}
+
+function readU128(buf: Uint8Array, offset: number): bigint {
+    const lo = readU64(buf, offset);
+    const hi = readU64(buf, offset + 8);
+    return (hi << 64n) | lo;
 }

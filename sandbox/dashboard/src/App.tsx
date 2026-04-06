@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { ConnectButton } from "@mysten/dapp-kit";
+import { WalletPopover } from "@/components/wallet-popover";
 import { cn } from "@/lib/utils";
 import { RequireWallet } from "@/components/require-wallet";
 import { FaucetPage } from "@/components/faucet-page";
@@ -59,7 +60,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                     </nav>
 
                     {/* Right */}
-                    <div className="ml-auto">
+                    <div className="ml-auto flex items-center gap-2">
+                        <WalletPopover />
                         <ConnectButton />
                     </div>
                 </div>

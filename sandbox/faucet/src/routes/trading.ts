@@ -151,12 +151,27 @@ export function tradingRoutes(baseClient: SuiGrpcClient, signer: Keypair): Hono 
         }
     });
 
+    // GET /trading/mid-price/:poolKey — current mid price via SDK
+    app.get("/mid-price/:poolKey", async (c) => {
+        try {
+            const pk = poolKeyEnum.parse(c.req.param("poolKey"));
+            const client = await getClient();
+            const midPrice = await client.deepbook.midPrice(pk);
+            return c.json({ success: true, midPrice });
+        } catch (err) {
+            return c.json(
+                { success: false, error: err instanceof Error ? err.message : "Failed" },
+                500,
+            );
+        }
+    });
+
     // GET /trading/orders/:poolKey — open order details
     app.get("/orders/:poolKey", async (c) => {
         try {
             const pk = poolKeyEnum.parse(c.req.param("poolKey"));
             const client = await getClient();
-            const orders = await getOpenOrders(client, pk);
+            const orders = await getOpenOrders(client, signer, pk);
             return c.json({ success: true, orders });
         } catch (err) {
             return c.json(

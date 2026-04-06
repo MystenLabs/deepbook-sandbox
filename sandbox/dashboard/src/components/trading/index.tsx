@@ -2,6 +2,7 @@ import {
     useBalanceManager,
     useWalletBalances,
     useBmBalances,
+    useMidPrice,
     useTrading,
     useOpenOrders,
 } from "./hooks";
@@ -17,6 +18,7 @@ export function TradingPage() {
     const bm = useBalanceManager();
     const walletBalances = useWalletBalances();
     const bmBalances = useBmBalances(bm.balanceManagerId);
+    const midPrice = useMidPrice(POOL_KEY);
     const trading = useTrading(POOL_KEY, bm.balanceManagerId);
     const openOrders = useOpenOrders(POOL_KEY, bm.isSetup);
 
@@ -69,10 +71,12 @@ export function TradingPage() {
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     <OrderForm
                         poolKey={POOL_KEY}
+                        midPrice={midPrice.data}
                         onPlaceLimitOrder={trading.placeLimitOrder}
                         onPlaceMarketOrder={trading.placeMarketOrder}
                     />
                     <OpenOrders
+                        poolKey={POOL_KEY}
                         orders={openOrders.data ?? []}
                         isLoading={openOrders.isLoading}
                         onCancelOrder={trading.cancelOrder}

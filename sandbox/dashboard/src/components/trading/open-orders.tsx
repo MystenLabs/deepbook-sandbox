@@ -3,25 +3,37 @@ import { List, X } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { OrderDetail } from "./types";
+import { SdkCodeBlock } from "./sdk-code-block";
+import { cancelOrderSnippet, cancelAllOrdersSnippet, SDK_DOCS } from "./sdk-snippets";
+import type { OrderDetail, PoolKey } from "./types";
 
 interface OpenOrdersProps {
+    poolKey: PoolKey;
     orders: OrderDetail[];
     isLoading: boolean;
     onCancelOrder: (orderId: string) => Promise<string>;
     onCancelAll: () => Promise<string>;
 }
 
-export function OpenOrders({ orders, isLoading, onCancelOrder, onCancelAll }: OpenOrdersProps) {
+export function OpenOrders({
+    poolKey,
+    orders,
+    isLoading,
+    onCancelOrder,
+    onCancelAll,
+}: OpenOrdersProps) {
     const [cancelingId, setCancelingId] = useState<string | null>(null);
     const [cancelingAll, setCancelingAll] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [lastSnippet, setLastSnippet] = useState<string | null>(null);
 
     const handleCancel = async (orderId: string) => {
         setCancelingId(orderId);
         setError(null);
+        setLastSnippet(null);
         try {
             await onCancelOrder(orderId);
+            setLastSnippet(cancelOrderSnippet(poolKey, orderId));
         } catch (err) {
             setError(err instanceof Error ? err.message : "Cancel failed");
         } finally {
@@ -32,8 +44,10 @@ export function OpenOrders({ orders, isLoading, onCancelOrder, onCancelAll }: Op
     const handleCancelAll = async () => {
         setCancelingAll(true);
         setError(null);
+        setLastSnippet(null);
         try {
             await onCancelAll();
+            setLastSnippet(cancelAllOrdersSnippet(poolKey));
         } catch (err) {
             setError(err instanceof Error ? err.message : "Cancel all failed");
         } finally {
@@ -108,6 +122,7 @@ export function OpenOrders({ orders, isLoading, onCancelOrder, onCancelAll }: Op
                     </div>
                 )}
                 {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+                {lastSnippet && <SdkCodeBlock code={lastSnippet} docsUrl={SDK_DOCS.orders} />}
             </CardContent>
         </div>
     );
