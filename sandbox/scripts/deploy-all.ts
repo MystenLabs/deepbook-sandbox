@@ -225,19 +225,19 @@ async function main() {
             log.success("Oracle service started");
         }
 
-        // Generate a dedicated keypair for the trading service so it
-        // doesn't share gas coins or BalanceManagers with the market maker.
-        log.spin("Generating trading service keypair...");
-        const tradingKeypair = Ed25519Keypair.generate();
-        const tradingAddress = tradingKeypair.getPublicKey().toSuiAddress();
-        const tradingPrivateKey = tradingKeypair.getSecretKey(); // bech32 suiprivkey1...
-        log.detail(`Trading signer: ${tradingAddress}`);
+        // Generate a dedicated keypair for the market maker so it
+        // doesn't share gas coins or BalanceManagers with the deployer/dev.
+        log.spin("Generating market maker keypair...");
+        const mmKeypair = Ed25519Keypair.generate();
+        const mmAddress = mmKeypair.getPublicKey().toSuiAddress();
+        const mmPrivateKey = mmKeypair.getSecretKey(); // bech32 suiprivkey1...
+        log.detail(`Market maker signer: ${mmAddress}`);
 
-        await ensureMinimumBalance(client, tradingAddress, getFaucetUrl(network));
+        await ensureMinimumBalance(client, mmAddress, getFaucetUrl(network));
         updateEnvFile(sandboxRoot, {
-            TRADING_PRIVATE_KEY: tradingPrivateKey,
+            MM_PRIVATE_KEY: mmPrivateKey,
         });
-        log.success("Trading service keypair funded and saved to .env");
+        log.success("Market maker keypair funded and saved to .env");
 
         // Phase 5: Create DEEP/SUI, SUI/USDC deepbook pools and SUI, USDC margin pools
         log.phase("Phase 5/6: Creating DEEP/SUI and SUI/USDC pools");
@@ -293,6 +293,37 @@ async function main() {
         await fs.mkdir(deploymentsDir, { recursive: true });
         await fs.writeFile(deploymentPath, JSON.stringify(manifest, null, 2));
         log.success(`Deployment manifest: ${deploymentPath}`);
+
+        // Fund MM with DEEP tokens (transfer from deployer who holds TreasuryCap minted DEEP)
+        if (network === "localnet") {
+            const tokenPkgId = deployedPackages.get("token")!.packageId;
+            const deepType = `${tokenPkgId}::deep::DEEP`;
+            const deepAmountForMm = 10_000_000_000; // 10,000 DEEP (6 decimals)
+
+            log.spin("Transferring DEEP to market maker...");
+            const { Transaction, coinWithBalance } = await import("@mysten/sui/transactions");
+            const tx = new Transaction();
+            const deepCoin = coinWithBalance({
+                balance: deepAmountForMm,
+                type: deepType,
+                useGasCoin: false,
+            })(tx);
+            tx.transferObjects([deepCoin], mmAddress);
+
+            const result = await client.signAndExecuteTransaction({
+                transaction: tx,
+                signer,
+                include: { effects: true },
+            });
+            if (result.$kind === "FailedTransaction") {
+                log.warn(
+                    "Failed to transfer DEEP to market maker — MM may not have enough liquidity",
+                );
+            } else {
+                await client.waitForTransaction({ digest: result.Transaction!.digest });
+                log.success(`Transferred 10,000 DEEP to market maker (${mmAddress})`);
+            }
+        }
 
         // Phase 6: Start market maker (localnet only)
         if (network === "localnet") {

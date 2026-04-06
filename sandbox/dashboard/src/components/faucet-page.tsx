@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useState, useEffect } from "react";
-import { useCurrentAccount, useSuiClientContext, useSuiClientQuery } from "@mysten/dapp-kit";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSuiClientContext, useSuiClientQuery } from "@mysten/dapp-kit";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Check, ExternalLink } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,29 +26,44 @@ async function requestFaucet(address: string, token: Token) {
 }
 
 export function FaucetPage() {
-    const account = useCurrentAccount();
-    const address = account!.address;
     const { network } = useSuiClientContext();
     const queryClient = useQueryClient();
 
+    // Fetch deployer address from the API (PRIVATE_KEY signer)
+    const { data: apiInfo } = useQuery<{ deployer: string }>({
+        queryKey: ["api-info"],
+        queryFn: async () => {
+            const r = await fetch("/api/");
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        },
+        staleTime: Infinity,
+    });
+
+    const address = apiInfo?.deployer;
+
     const [copied, setCopied] = useState(false);
 
-    const { data: allBalances, isLoading: balanceLoading } = useSuiClientQuery("getAllBalances", {
-        owner: address,
-    });
+    const { data: allBalances, isLoading: balanceLoading } = useSuiClientQuery(
+        "getAllBalances",
+        {
+            owner: address!,
+        },
+        { enabled: !!address, refetchInterval: 5_000 },
+    );
 
     const suiBalance = allBalances?.find((b) => b.coinType === "0x2::sui::SUI");
     const deepBalance = allBalances?.find((b) => b.coinType.endsWith("::deep::DEEP"));
 
     const suiFaucet = useMutation({
-        mutationFn: () => requestFaucet(address, "SUI"),
+        mutationFn: () => requestFaucet(address!, "SUI"),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: [network, "getAllBalances"] });
         },
     });
 
     const deepFaucet = useMutation({
-        mutationFn: () => requestFaucet(address, "DEEP"),
+        mutationFn: () => requestFaucet(address!, "DEEP"),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: [network, "getAllBalances"] });
         },
@@ -68,6 +83,7 @@ export function FaucetPage() {
     }, [deepFaucet.status]);
 
     const copyAddress = async () => {
+        if (!address) return;
         await navigator.clipboard.writeText(address);
         setCopied(true);
     };
@@ -78,12 +94,21 @@ export function FaucetPage() {
         return () => clearTimeout(id);
     }, [copied]);
 
+    if (!address) {
+        return (
+            <div className="space-y-4">
+                <h1 className="text-lg font-semibold">Faucet</h1>
+                <p className="text-sm text-zinc-500">Loading deployer address...</p>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-4">
             <div className="space-y-1">
                 <h1 className="text-lg font-semibold">Faucet</h1>
                 <p className="text-xs text-muted-foreground">
-                    Request testnet tokens for your connected wallet
+                    Request tokens for your deployer wallet
                 </p>
             </div>
 

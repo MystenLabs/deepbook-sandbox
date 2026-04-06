@@ -1,8 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
-import { ConnectButton } from "@mysten/dapp-kit";
 import { WalletPopover } from "@/components/wallet-popover";
 import { cn } from "@/lib/utils";
-import { RequireWallet } from "@/components/require-wallet";
 import { FaucetPage } from "@/components/faucet-page";
 import { HealthPage } from "@/components/health-page";
 import { MarketMakerPage } from "@/components/market-maker";
@@ -60,9 +58,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                     </nav>
 
                     {/* Right */}
-                    <div className="ml-auto flex items-center gap-2">
+                    <div className="ml-auto">
                         <WalletPopover />
-                        <ConnectButton />
                     </div>
                 </div>
             </header>
@@ -78,22 +75,8 @@ export default function App() {
                 <Routes>
                     <Route path="/" element={<HealthPage />} />
                     <Route path="/market-maker" element={<MarketMakerPage />} />
-                    <Route
-                        path="/trading"
-                        element={
-                            <RequireWallet>
-                                <TradingPage />
-                            </RequireWallet>
-                        }
-                    />
-                    <Route
-                        path="/faucet"
-                        element={
-                            <RequireWallet>
-                                <FaucetPage />
-                            </RequireWallet>
-                        }
-                    />
+                    <Route path="/trading" element={<TradingPage />} />
+                    <Route path="/faucet" element={<FaucetPage />} />
                     <Route path="/deployment" element={<DeploymentPage />} />
                 </Routes>
             </Layout>

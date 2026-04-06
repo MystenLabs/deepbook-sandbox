@@ -392,11 +392,17 @@ describe("deploy-all pipeline (localnet)", () => {
     // Phase 9: Start market maker
     // ----------------------------------------------------------------
     test("starts market maker", async () => {
+        // Generate a dedicated MM keypair (same as deploy-all)
+        const mmKeypair = Ed25519Keypair.generate();
+        const mmAddress = mmKeypair.getPublicKey().toSuiAddress();
+        await ensureMinimumBalance(client, mmAddress, FAUCET_HOST);
+
         updateEnvFile(SANDBOX_ROOT, {
             DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
             POOL_ID: pools.DEEP_SUI.poolId,
             BASE_COIN_TYPE: pools.DEEP_SUI.baseCoinType,
             DEPLOYER_ADDRESS: signerAddress,
+            MM_PRIVATE_KEY: mmKeypair.getSecretKey(),
         });
 
         await startMarketMaker(SANDBOX_ROOT);

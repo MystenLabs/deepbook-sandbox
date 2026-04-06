@@ -125,7 +125,7 @@ services:
     environment:
       NETWORK: localnet
       RPC_URL: http://sui-localnet:9000
-      PRIVATE_KEY: ${PRIVATE_KEY:?Set PRIVATE_KEY in .env}
+      PRIVATE_KEY: ${MM_PRIVATE_KEY:-}
       VERBOSE: "1"
       DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID}
       DEPLOYER_ADDRESS: ${DEPLOYER_ADDRESS}
@@ -260,7 +260,6 @@ services:
     environment:
       NETWORK: ${NETWORK:-localnet}
       PRIVATE_KEY: ${PRIVATE_KEY:-}
-      TRADING_PRIVATE_KEY: ${TRADING_PRIVATE_KEY:-}
       DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
       RPC_URL: ${RPC_URL:-}
       PORT: 9009

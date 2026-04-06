@@ -10,11 +10,6 @@ const config = loadConfig();
 const client = getClient(config.rpcUrl);
 const signer = getSigner(config.privateKey);
 
-// Dedicated trading signer — separate key avoids self-matching and object
-// version conflicts with the market maker. Falls back to deployer signer
-// when TRADING_PRIVATE_KEY is not set (e.g. remote/testnet profile).
-const tradingSigner = config.tradingPrivateKey ? getSigner(config.tradingPrivateKey) : signer;
-
 const app = new Hono();
 
 app.get("/", (c) =>
@@ -38,9 +33,9 @@ app.get("/manifest", async (c) => {
 });
 
 app.route("/", faucetRoutes(config, client, signer));
-app.route("/trading", tradingRoutes(client, tradingSigner));
+app.route("/trading", tradingRoutes(client, signer));
 
-console.log(`Faucet listening on port ${config.port} (network: ${config.network})`);
+console.log(`API listening on port ${config.port} (network: ${config.network})`);
 console.log(`Deployer address: ${signer.getPublicKey().toSuiAddress()}`);
 
 serve({ fetch: app.fetch, port: config.port });
