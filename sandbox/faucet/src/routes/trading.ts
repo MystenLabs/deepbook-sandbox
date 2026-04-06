@@ -151,6 +151,21 @@ export function tradingRoutes(baseClient: SuiGrpcClient, signer: Keypair): Hono 
         }
     });
 
+    // GET /trading/pool-params/:poolKey — tick size, lot size, min size
+    app.get("/pool-params/:poolKey", async (c) => {
+        try {
+            const pk = poolKeyEnum.parse(c.req.param("poolKey"));
+            const client = await getClient();
+            const params = await client.deepbook.poolBookParams(pk);
+            return c.json({ success: true, ...params });
+        } catch (err) {
+            return c.json(
+                { success: false, error: err instanceof Error ? err.message : "Failed" },
+                500,
+            );
+        }
+    });
+
     // GET /trading/mid-price/:poolKey — current mid price via SDK
     app.get("/mid-price/:poolKey", async (c) => {
         try {
