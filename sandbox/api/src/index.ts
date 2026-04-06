@@ -19,7 +19,7 @@ const app = new Hono();
 
 app.get("/", (c) =>
     c.json({
-        service: "deepbook sandbox - faucet",
+        service: "deepbook sandbox - api",
         network: config.network,
         deployer: signer.getPublicKey().toSuiAddress(),
     }),

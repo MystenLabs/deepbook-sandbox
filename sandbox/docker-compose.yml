@@ -41,7 +41,7 @@ volumes:
     driver_opts:
       type: tmpfs
       device: tmpfs
-  faucet_data:
+  api_data:
     driver: local
     driver_opts:
       type: tmpfs
@@ -246,17 +246,17 @@ services:
     restart: unless-stopped
 
   # ============================================================
-  # DeepBook Faucet
-  # Distributes SUI (proxied) and DEEP tokens for testing
+  # DeepBook Sandbox API
+  # Unified service: faucet (SUI + DEEP) + trading routes
   # ============================================================
-  deepbook-faucet:
+  deepbook-sandbox-api:
     profiles:
       - localnet
       - remote
     build:
-      context: ./faucet
-    image: ${FAUCET_IMAGE:-mysten/deepbook-sandbox-faucet:bf4ae378eeaf4225858e1a89f92171c16dcd1fd0-arm64}
-    container_name: deepbook-faucet
+      context: ./api
+    image: ${API_IMAGE:-mysten/deepbook-sandbox-api:latest}
+    container_name: deepbook-sandbox-api
     environment:
       NETWORK: ${NETWORK:-localnet}
       PRIVATE_KEY: ${PRIVATE_KEY:-}
@@ -269,7 +269,7 @@ services:
       - "9009:9009"
     volumes:
       - ./deployments:/app/deployments:ro
-      - faucet_data:/app/data
+      - api_data:/app/data
     networks:
       - deepbook-net
     depends_on:

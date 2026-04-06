@@ -242,7 +242,7 @@ export async function configureAndStartLocalnetServices(
     if (!options?.quick) {
         upArgs.push("--build");
     }
-    upArgs.push("deepbook-indexer", "deepbook-server", "deepbook-faucet");
+    upArgs.push("deepbook-indexer", "deepbook-server", "deepbook-sandbox-api");
     const result = runDockerComposeVisible(upArgs, { cwd });
 
     if (result.status !== 0) {

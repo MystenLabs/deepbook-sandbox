@@ -278,7 +278,7 @@ describe("deploy-all pipeline (localnet)", () => {
         // Faucet service should respond
         await waitForUrl("http://127.0.0.1:9009/", {
             timeoutMs: 60_000,
-            label: "DeepBook faucet",
+            label: "DeepBook sandbox API",
         });
     }, 600_000);
 

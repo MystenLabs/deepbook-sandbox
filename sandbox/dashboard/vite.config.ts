@@ -26,15 +26,16 @@ export default defineConfig({
                 changeOrigin: true,
                 rewrite: (p) => p.replace(/^\/api\/mm/, ""),
             },
-            "/api/faucet": {
-                target: "http://localhost:9009",
-                changeOrigin: true,
-                rewrite: (p) => p.replace(/^\/api\/faucet/, ""),
-            },
             "/api/sui": {
                 target: "http://localhost:9000",
                 changeOrigin: true,
                 rewrite: (p) => p.replace(/^\/api\/sui/, ""),
+            },
+            // Unified API (faucet + trading) — catch-all after specific proxies
+            "/api": {
+                target: "http://localhost:9009",
+                changeOrigin: true,
+                rewrite: (p) => p.replace(/^\/api/, ""),
             },
         },
     },

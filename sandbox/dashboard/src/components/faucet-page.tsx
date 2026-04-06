@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const FAUCET_URL = "/api/faucet/faucet";
+const FAUCET_URL = "/api/faucet";
 const MIST_PER_SUI = 1_000_000_000;
 
 type Token = "SUI" | "DEEP";

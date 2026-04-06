@@ -103,7 +103,7 @@ export function HealthPage() {
     const faucet = useQuery<FaucetResponse>({
         queryKey: ["faucet-health"],
         queryFn: async () => {
-            const r = await fetch("/api/faucet/");
+            const r = await fetch("/api/");
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return r.json();
         },

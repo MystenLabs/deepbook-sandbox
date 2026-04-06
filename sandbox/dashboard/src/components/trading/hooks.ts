@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PoolKey, CoinKey, OrderDetail } from "./types";
 
-const TRADING_API = "/api/faucet/trading";
+const TRADING_API = "/api/trading";
 
 /* ------------------------------------------------------------------ */
 /*  API helpers                                                        */
