@@ -19,6 +19,28 @@ export function useMarketMakerOrders() {
     });
 }
 
+export interface PoolDetails {
+    midPrice: string;
+    tickSize: string;
+    lotSize: string;
+    minSize: string;
+}
+
+export function usePoolDetails(poolKey: string) {
+    return useQuery<PoolDetails>({
+        queryKey: ["pool-details", poolKey],
+        queryFn: async () => {
+            const r = await fetch(`/api/faucet/trading/pool-details/${poolKey}`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const data = await r.json();
+            if (!data.success) throw new Error(data.error);
+            return data as PoolDetails;
+        },
+        refetchInterval: 5_000,
+        retry: false,
+    });
+}
+
 export function useOraclePrices() {
     return useQuery<OracleResponse>({
         queryKey: ["oracle-prices"],

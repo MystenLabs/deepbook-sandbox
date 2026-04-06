@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useMarketMakerOrders, useOraclePrices, REFETCH_INTERVAL } from "./hooks";
+import { useMarketMakerOrders, useOraclePrices, usePoolDetails, REFETCH_INTERVAL } from "./hooks";
 import { PoolSelector } from "./pool-selector";
 import { OrderBook } from "./order-book";
 import { DepthChart } from "./depth-chart";
@@ -11,6 +11,8 @@ export function MarketMakerPage() {
 
     const orders = useMarketMakerOrders();
     const oracle = useOraclePrices();
+    const poolKey = "DEEP_SUI"; // TODO: derive from selected pool pair
+    const poolDetails = usePoolDetails(poolKey);
 
     const pools = orders.data?.pools ?? [];
     // Clamp selected index if pool count shrinks after a data refetch
@@ -74,6 +76,8 @@ export function MarketMakerPage() {
                 pool={displayPool}
                 config={orders.data?.config}
                 oraclePrices={oracle.data?.prices}
+                poolDetails={poolDetails.data}
+                poolDetailsLoading={poolDetails.isLoading}
                 pair={pair}
                 isLoading={orders.isLoading}
             />
