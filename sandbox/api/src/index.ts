@@ -33,7 +33,7 @@ app.get("/manifest", async (c) => {
 });
 
 app.route("/", faucetRoutes(config, client, signer));
-app.route("/trading", tradingRoutes(client, signer, config.balanceManagerId));
+app.route("/trading", tradingRoutes(config.balanceManagerId));
 
 console.log(`API listening on port ${config.port} (network: ${config.network})`);
 console.log(`Deployer address: ${signer.getPublicKey().toSuiAddress()}`);

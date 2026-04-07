@@ -90,7 +90,7 @@ function buildPoolMap(m: Manifest): PoolMap {
 /*  Data fetching hooks                                                */
 /* ------------------------------------------------------------------ */
 
-export function useManifest() {
+function useManifest() {
     return useQuery<Manifest>({
         queryKey: ["deployment-manifest"],
         queryFn: async () => {
@@ -102,7 +102,7 @@ export function useManifest() {
     });
 }
 
-export function useBalanceManagerId() {
+function useBalanceManagerId() {
     return useQuery<string | null>({
         queryKey: ["balance-manager-id"],
         queryFn: async () => {
