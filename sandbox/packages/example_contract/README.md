@@ -23,8 +23,8 @@ Edit `.env` and set:
   sui keytool export --key-identity $(sui client active-address)
   ```
 - `**SUI_TOOLS_IMAGE**` — Choose based on your CPU architecture:
-  - Apple Silicon (M1/M2/M3/M4): `mysten/sui-tools:mainnet-v1.63.3-arm64`
-  - Intel/AMD (x86_64): `mysten/sui-tools:mainnet-v1.63.3`
+  - Apple Silicon (M1/M2/M3/M4): `mysten/sui-tools:compat-arm64`
+  - Intel/AMD (x86_64): `mysten/sui-tools:compat`
 
 ## Step 2: Deploy DeepBook
 

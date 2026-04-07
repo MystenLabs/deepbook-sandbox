@@ -284,7 +284,7 @@ pnpm down
 | Docker containers                                               | Yes — all stopped and removed |
 | Docker volumes (chain data, postgres)                           | Yes — wiped clean             |
 | Auto-generated .env keys (package IDs, oracle IDs, pool IDs)    | Yes — cleaned                 |
-| User-set .env values (NETWORK, SUI*TOOLS_IMAGE, MM*\* settings) | No — preserved                |
+| User-set .env values (SUI_TOOLS_IMAGE, MM_\* settings)          | No — preserved                |
 | Deployment manifest (deployments/localnet.json)                 | No — kept for reference       |
 | Pub.localnet.toml                                               | Yes — removed                 |
 | Your source code                                                | Never                         |
@@ -401,11 +401,11 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `postgres`         | `deepbook-postgres`     | (always)             | 5432:5432              | PostgreSQL 16 database for the indexer             |
 | `sui-localnet`     | `sui-localnet`          | `localnet`           | 9000:9000, 9123:9123   | Full Sui node with built-in faucet                 |
 | `market-maker`     | `deepbook-market-maker` | `localnet`           | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools    |
-| `deepbook-indexer` | `deepbook-indexer`      | `remote`, `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres       |
-| `deepbook-server`  | `deepbook-server`       | `remote`, `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |
-| `deepbook-faucet`  | `deepbook-faucet`       | `localnet`, `remote` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens          |
+| `deepbook-indexer` | `deepbook-indexer`      | `localnet`           | 9184:9184              | Reads checkpoints, writes events to Postgres       |
+| `deepbook-server`  | `deepbook-server`       | `localnet`           | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |
+| `deepbook-faucet`  | `deepbook-faucet`       | `localnet`           | 9009:9009              | Distributes SUI (proxied) and DEEP tokens          |
 | `oracle-service`   | `oracle-service`        | `localnet`           | 9010:9010              | Updates Pyth price feeds every 10 seconds          |
-| `dashboard`        | `deepbook-dashboard`    | `localnet`, `remote` | 5173:80                | Web UI for monitoring and interacting with sandbox |
+| `dashboard`        | `deepbook-dashboard`    | `localnet`           | 5173:80                | Web UI for monitoring and interacting with sandbox |
 
 ## Appendix D: Data Flows
 

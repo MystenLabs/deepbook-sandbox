@@ -8,8 +8,6 @@ import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { z } from "zod";
 
-export type Network = "localnet";
-
 const DEFAULT_RPC_URL = "http://127.0.0.1:9000";
 
 const envSchema = z
@@ -44,10 +42,6 @@ export class ConfigurationLoader {
         return this.load();
     }
 
-    getNetwork(): Network {
-        return "localnet";
-    }
-
     getRpcUrl(): string {
         const cfg = this.getConfig();
         return cfg.rpcUrl ?? DEFAULT_RPC_URL;
@@ -59,10 +53,6 @@ export class ConfigurationLoader {
 }
 
 const loader = new ConfigurationLoader();
-
-export function getNetwork(): Network {
-    return loader.getNetwork();
-}
 
 export function getRpcUrl(): string {
     return loader.getRpcUrl();
