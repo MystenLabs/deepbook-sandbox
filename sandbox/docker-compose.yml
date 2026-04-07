@@ -1,23 +1,14 @@
-# DeepBook Sandbox - Docker Compose
+# DeepBook Sandbox - Docker Compose (localnet only)
 #
 # Usage:
-#   Testnet/Mainnet (full stack with indexer):
-#     docker compose --profile remote up -d     # Start postgres + indexer + server
-#     docker compose --profile remote down      # Stop services
-#     docker compose --profile remote down -v   # Stop and remove volumes
-#
-#   Localnet (full local stack with indexer):
-#     docker compose --profile localnet up -d   # Start postgres + sui-localnet + indexer
-#     docker compose --profile localnet down    # Stop services
-#
-#   Stop all services (any profile):
-#     docker compose --profile remote --profile localnet down
+#   docker compose --profile localnet up -d   # Start postgres + sui-localnet + indexer
+#   docker compose --profile localnet down    # Stop services
+#   docker compose --profile localnet down -v # Stop and remove volumes
 #
 #   View logs:
 #     docker compose logs -f
 #
-# Architecture note (localnet only):
-#   Set SUI_TOOLS_IMAGE in .env based on your CPU:
+# Set SUI_TOOLS_IMAGE in .env based on your CPU:
 #   - ARM64 (Apple Silicon): SUI_TOOLS_IMAGE=mysten/sui-tools:mainnet-v1.63.3-arm64
 #   - x86_64 (Intel/AMD):    SUI_TOOLS_IMAGE=mysten/sui-tools:mainnet-v1.63.3
 
@@ -118,7 +109,6 @@ services:
     image: ${MARKET_MAKER_IMAGE:-mysten/deepbook-sandbox-market-maker:bf4ae378eeaf4225858e1a89f92171c16dcd1fd0-arm64}
     container_name: deepbook-market-maker
     environment:
-      NETWORK: localnet
       RPC_URL: http://sui-localnet:9000
       PRIVATE_KEY: ${PRIVATE_KEY:?Set PRIVATE_KEY in .env}
       VERBOSE: "1"
@@ -156,12 +146,10 @@ services:
   # ============================================================
   # DeepBook Indexer
   # Indexes DeepBook events from Sui chain checkpoints
-  # Localnet: reads from shared checkpoint_data volume
-  # Remote: reads from network checkpoint URLs
+  # Reads from shared checkpoint_data volume
   # ============================================================
   deepbook-indexer:
     profiles:
-      - remote
       - localnet
     image: ${INDEXER_IMAGE:-mysten/deepbookv3-sandbox-indexer:794efb1c54ee5cc4f0f367233a4e70818aa0defb-arm64}
     build:
@@ -173,7 +161,7 @@ services:
     container_name: deepbook-indexer
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-      NETWORK: ${NETWORK:-localnet}
+      NETWORK: localnet
       RUST_LOG: ${RUST_LOG:-info}
       FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-}
       LOCAL_CHECKPOINTS_DIR: ${LOCAL_CHECKPOINTS_DIR:-/checkpoints}
@@ -206,7 +194,6 @@ services:
   # ============================================================
   deepbook-server:
     profiles:
-      - remote
       - localnet
     image: ${SERVER_IMAGE:-mysten/deepbookv3-server:794efb1c54ee5cc4f0f367233a4e70818aa0defb-arm64}
     build:
@@ -218,7 +205,7 @@ services:
     container_name: deepbook-server
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-      RPC_URL: http://host.docker.internal:9000 # Overwrite this for testnet
+      RPC_URL: http://host.docker.internal:9000
       DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-}
       DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
       DEEP_TREASURY_ID: ${DEEP_TREASURY_ID:-}
@@ -247,13 +234,11 @@ services:
   deepbook-faucet:
     profiles:
       - localnet
-      - remote
     build:
       context: ./faucet
     image: ${FAUCET_IMAGE:-mysten/deepbook-sandbox-faucet:bf4ae378eeaf4225858e1a89f92171c16dcd1fd0-arm64}
     container_name: deepbook-faucet
     environment:
-      NETWORK: ${NETWORK:-localnet}
       PRIVATE_KEY: ${PRIVATE_KEY:-}
       DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
       RPC_URL: ${RPC_URL:-}
@@ -284,7 +269,6 @@ services:
   dashboard:
     profiles:
       - localnet
-      - remote
     build:
       context: ./dashboard
     image: ${DASHBOARD_IMAGE:-}
@@ -318,7 +302,6 @@ services:
     image: ${ORACLE_SERVICE_IMAGE:-mysten/deepbook-sandbox-oracle-service:bf4ae378eeaf4225858e1a89f92171c16dcd1fd0-arm64}
     container_name: oracle-service
     environment:
-      NETWORK: localnet
       ORACLE_PRIVATE_KEY: ${ORACLE_PRIVATE_KEY:-}
       RPC_URL: http://sui-localnet:9000
       PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID:-}

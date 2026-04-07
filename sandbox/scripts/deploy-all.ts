@@ -3,7 +3,6 @@ import fs from "fs/promises";
 import {
     getClient,
     getFaucetUrl,
-    getNetwork,
     getRpcUrl,
     getSigner,
     hasPrivateKey,
@@ -11,7 +10,6 @@ import {
 import {
     getSandboxRoot,
     startLocalnet,
-    startRemote,
     configureAndStartLocalnetServices,
     startOracleService,
     startMarketMaker,
@@ -24,79 +22,70 @@ import { updateEnvFile, validateEnvFile } from "./utils/env";
 import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
-import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
+import { setupPythOracles } from "./utils/oracle";
 import { serializePoolConfigs, type PoolConfig } from "./market-maker/types";
 import { Keypair } from "@mysten/sui/cryptography";
 import log, { c } from "./utils/logger";
 
 async function main() {
     const quick = process.argv.includes("--quick");
-    const network = getNetwork();
     const sandboxRoot = getSandboxRoot();
 
-    log.banner(` DeepBook sandbox [${network}] deployment`);
+    log.banner(" DeepBook sandbox [localnet] deployment");
     if (quick)
         log.info("Quick mode: skipping indexer and server image builds (using pre-built images)");
 
     // Validate .env before doing anything else.
-    // On localnet, PRIVATE_KEY is auto-generated if missing, so we only
-    // enforce the other required keys. Non-localnet requires everything.
+    // PRIVATE_KEY is auto-generated if missing, so we only enforce the other required keys.
     const envCheck = validateEnvFile(sandboxRoot);
     if (!envCheck.valid) {
-        const missing =
-            network === "localnet"
-                ? envCheck.missing.filter((k) => k !== "PRIVATE_KEY")
-                : envCheck.missing;
+        const missing = envCheck.missing.filter((k) => k !== "PRIVATE_KEY");
 
-        if (!envCheck.fileExists && network === "localnet") {
+        if (!envCheck.fileExists) {
             log.info("No .env found — will create one during setup");
         } else if (missing.length > 0) {
             throw new Error(
                 `sandbox/.env is missing required keys: ${missing.join(", ")}. ` +
                     (envCheck.fileExists
                         ? "Your .env file exists but is incomplete — fix it before deploying."
-                        : `Create a .env with the required keys before deploying to ${network}.`),
+                        : "Create a .env with the required keys before deploying."),
             );
         }
     }
 
     try {
-        // On localnet, ensure .env has the minimum variables docker compose
+        // Ensure .env has the minimum variables docker compose
         // needs to parse the file (even for services we don't start yet).
         const hasUserKey = hasPrivateKey();
-        if (network === "localnet") {
-            const defaults: Record<string, string> = {};
-            if (!process.env.SUI_TOOLS_IMAGE) {
-                defaults.SUI_TOOLS_IMAGE = defaultSuiToolsImage();
-            }
-            if (!hasUserKey) {
-                // Placeholder so docker compose doesn't reject ${PRIVATE_KEY:?...}.
-                // Replaced in Phase 1 with the container-generated key.
-                defaults.PRIVATE_KEY = Ed25519Keypair.generate().getSecretKey();
-            }
-            if (!process.env.FORCE_REGENESIS) {
-                defaults.FORCE_REGENESIS = "true";
-            }
-            if (Object.keys(defaults).length > 0) {
-                updateEnvFile(sandboxRoot, defaults);
-                Object.assign(process.env, defaults);
-            }
+        const defaults: Record<string, string> = {};
+        if (!process.env.SUI_TOOLS_IMAGE) {
+            defaults.SUI_TOOLS_IMAGE = defaultSuiToolsImage();
+        }
+        if (!hasUserKey) {
+            // Placeholder so docker compose doesn't reject ${PRIVATE_KEY:?...}.
+            // Replaced in Phase 1 with the container-generated key.
+            defaults.PRIVATE_KEY = Ed25519Keypair.generate().getSecretKey();
+        }
+        if (!process.env.FORCE_REGENESIS) {
+            defaults.FORCE_REGENESIS = "true";
+        }
+        if (Object.keys(defaults).length > 0) {
+            updateEnvFile(sandboxRoot, defaults);
+            Object.assign(process.env, defaults);
         }
 
-        // Start localnet network if localnet is selected
-        if (network === "localnet") {
-            log.phase("Starting localnet (docker compose)");
-            await startLocalnet(sandboxRoot);
-            log.success("RPC: http://127.0.0.1:9000");
-            log.success("Faucet: http://127.0.0.1:9123");
-        }
+        // Start localnet
+        log.phase("Starting localnet (docker compose)");
+        await startLocalnet(sandboxRoot);
+        log.success("RPC: http://127.0.0.1:9000");
+        log.success("Faucet: http://127.0.0.1:9123");
 
         // Phase 1: Setup Sui client and keypair
         log.phase("Phase 1/6: Setting up Sui client");
 
         let signer: Keypair;
 
-        if (network === "localnet" && hasUserKey) {
+        if (hasUserKey) {
             // Use the existing key from .env
             signer = getSigner();
             try {
@@ -107,7 +96,7 @@ async function main() {
                 );
             }
             log.success("Using PRIVATE_KEY from .env");
-        } else if (network === "localnet") {
+        } else {
             // No user key — read the container-generated key
             log.info("Reading key from sui-localnet container...");
             const { keypair, privateKey } = readContainerKey(sandboxRoot);
@@ -122,17 +111,13 @@ async function main() {
             }
             updateEnvFile(sandboxRoot, { PRIVATE_KEY: privateKey });
             log.success("Container key imported");
-        } else if (hasPrivateKey()) {
-            signer = getSigner();
-        } else {
-            throw new Error("PRIVATE_KEY is required for testnet deployments. Set it in .env.");
         }
 
         let signerAddress = signer.getPublicKey().toSuiAddress();
         log.detail(`Signer: ${signerAddress}`);
-        log.detail(`Network: ${network}`);
+        log.detail("Network: localnet");
 
-        const client = getClient(network);
+        const client = getClient();
 
         // Verify RPC is working
         try {
@@ -144,86 +129,65 @@ async function main() {
 
         // Phase 2: Fund deployer address
         log.phase("Phase 2/6: Funding deployer address");
-        const poolCreator = new PoolCreator(client, signer, getFaucetUrl(network));
-        await ensureMinimumBalance(client, signerAddress, getFaucetUrl(network));
+        const poolCreator = new PoolCreator(client, signer, getFaucetUrl());
+        await ensureMinimumBalance(client, signerAddress, getFaucetUrl());
 
         // Phase 3: Deploy Move packages
         log.phase("Phase 3/6: Deploying Move packages");
         log.info("This will take a few seconds...");
-        const deployer = new MoveDeployer(client, signer, network);
+        const deployer = new MoveDeployer(client, signer);
         const deployedPackages = await deployer.deployAll();
 
-        let firstCheckpoint: string | undefined;
-        if (network === "testnet") {
-            const tokenResult = deployedPackages.get("token")!;
-            await client.waitForTransaction({ digest: tokenResult.transactionDigest });
-            const txResult = await client.getTransaction({
-                digest: tokenResult.transactionDigest,
-            });
-            const txData = txResult.Transaction ?? txResult.FailedTransaction;
-            firstCheckpoint = txData?.epoch ?? undefined;
-        }
-        const envUpdates = getDeploymentEnv(deployedPackages, { firstCheckpoint });
-        if (network === "localnet") {
-            envUpdates.FIRST_CHECKPOINT = "0";
-        }
+        const envUpdates = getDeploymentEnv(deployedPackages, {});
+        envUpdates.FIRST_CHECKPOINT = "0";
 
         updateEnvFile(sandboxRoot, envUpdates);
         log.success("Updated .env with deployment IDs and FIRST_CHECKPOINT");
 
-        // Phase 4: Start deepbook-indexer and server (testnet only)
-        if (network === "testnet") {
-            log.phase("Phase 4/6: Starting deepbook-indexer and server");
-            const { serverPort } = await startRemote(sandboxRoot, envUpdates);
-            log.success(`DeepBook server: http://127.0.0.1:${serverPort}`);
-        } else {
-            log.phase("Phase 4/6: Starting indexer and services for localnet");
-            const deepbookPkg = deployedPackages.get("deepbook")!;
-            const marginPkg = deployedPackages.get("deepbook_margin");
-            await configureAndStartLocalnetServices(
-                {
-                    corePackageId: deepbookPkg.packageId,
-                    ...(marginPkg && { marginPackageId: marginPkg.packageId }),
-                },
-                sandboxRoot,
-                { quick },
-            );
-        }
+        // Phase 4: Start indexer and services
+        log.phase("Phase 4/6: Starting indexer and services");
+        const deepbookPkg = deployedPackages.get("deepbook")!;
+        const marginPkg = deployedPackages.get("deepbook_margin");
+        await configureAndStartLocalnetServices(
+            {
+                corePackageId: deepbookPkg.packageId,
+                ...(marginPkg && { marginPackageId: marginPkg.packageId }),
+            },
+            sandboxRoot,
+            { quick },
+        );
 
-        // Setup the pyth oracles for localnet
-        let pythOracleIds: PythOracleIds | undefined;
-        if (network === "localnet") {
-            log.phase("Setting up pyth oracles");
-            log.spin("Creating price feed objects...");
-            pythOracleIds = await setupPythOracles(client, signer, deployedPackages);
+        // Setup the pyth oracles
+        log.phase("Setting up pyth oracles");
+        log.spin("Creating price feed objects...");
+        const pythOracleIds = await setupPythOracles(client, signer, deployedPackages);
 
-            const pythPkg = deployedPackages.get("pyth")!;
-            updateEnvFile(sandboxRoot, {
-                PYTH_PACKAGE_ID: pythPkg.packageId,
-                DEEP_PRICE_INFO_OBJECT_ID: pythOracleIds.deepPriceInfoObjectId,
-                SUI_PRICE_INFO_OBJECT_ID: pythOracleIds.suiPriceInfoObjectId,
-                USDC_PRICE_INFO_OBJECT_ID: pythOracleIds.usdcPriceInfoObjectId,
-            });
-            log.success("Updated .env with pyth oracle IDs");
+        const pythPkg = deployedPackages.get("pyth")!;
+        updateEnvFile(sandboxRoot, {
+            PYTH_PACKAGE_ID: pythPkg.packageId,
+            DEEP_PRICE_INFO_OBJECT_ID: pythOracleIds.deepPriceInfoObjectId,
+            SUI_PRICE_INFO_OBJECT_ID: pythOracleIds.suiPriceInfoObjectId,
+            USDC_PRICE_INFO_OBJECT_ID: pythOracleIds.usdcPriceInfoObjectId,
+        });
+        log.success("Updated .env with pyth oracle IDs");
 
-            // Generate a dedicated keypair for the oracle service so it
-            // doesn't share gas coins with the market maker / deployer.
-            log.spin("Generating oracle service keypair...");
-            const oracleKeypair = Ed25519Keypair.generate();
-            const oracleAddress = oracleKeypair.getPublicKey().toSuiAddress();
-            const oraclePrivateKey = oracleKeypair.getSecretKey(); // bech32 suiprivkey1...
-            log.detail(`Oracle signer: ${oracleAddress}`);
+        // Generate a dedicated keypair for the oracle service so it
+        // doesn't share gas coins with the market maker / deployer.
+        log.spin("Generating oracle service keypair...");
+        const oracleKeypair = Ed25519Keypair.generate();
+        const oracleAddress = oracleKeypair.getPublicKey().toSuiAddress();
+        const oraclePrivateKey = oracleKeypair.getSecretKey(); // bech32 suiprivkey1...
+        log.detail(`Oracle signer: ${oracleAddress}`);
 
-            await ensureMinimumBalance(client, oracleAddress, getFaucetUrl(network));
-            updateEnvFile(sandboxRoot, {
-                ORACLE_PRIVATE_KEY: oraclePrivateKey,
-            });
-            log.success("Oracle service keypair funded and saved to .env");
+        await ensureMinimumBalance(client, oracleAddress, getFaucetUrl());
+        updateEnvFile(sandboxRoot, {
+            ORACLE_PRIVATE_KEY: oraclePrivateKey,
+        });
+        log.success("Oracle service keypair funded and saved to .env");
 
-            log.spin("Starting oracle service container...");
-            await startOracleService(sandboxRoot);
-            log.success("Oracle service started");
-        }
+        log.spin("Starting oracle service container...");
+        await startOracleService(sandboxRoot);
+        log.success("Oracle service started");
 
         // Phase 5: Create DEEP/SUI, SUI/USDC deepbook pools and SUI, USDC margin pools
         log.phase("Phase 5/6: Creating DEEP/SUI and SUI/USDC pools");
@@ -241,9 +205,9 @@ async function main() {
         // Write deployment manifest (reference-only, not read by services)
         const manifest = {
             network: {
-                type: network,
-                rpcUrl: getRpcUrl(network),
-                faucetUrl: getFaucetUrl(network),
+                type: "localnet" as const,
+                rpcUrl: getRpcUrl(),
+                faucetUrl: getFaucetUrl(),
             },
             packages: Object.fromEntries(
                 Array.from(deployedPackages.entries()).map(([name, data]) => [
@@ -275,71 +239,69 @@ async function main() {
         };
 
         const deploymentsDir = path.join(getSandboxRoot(), "deployments");
-        const deploymentPath = path.join(deploymentsDir, `${network}.json`);
+        const deploymentPath = path.join(deploymentsDir, "localnet.json");
         await fs.mkdir(deploymentsDir, { recursive: true });
         await fs.writeFile(deploymentPath, JSON.stringify(manifest, null, 2));
         log.success(`Deployment manifest: ${deploymentPath}`);
 
-        // Phase 6: Start market maker (localnet only)
-        if (network === "localnet") {
-            log.phase("Phase 6/6: Starting market maker");
+        // Phase 6: Start market maker
+        log.phase("Phase 6/6: Starting market maker");
 
-            // Build multi-pool config for the market maker
-            const mmPools: PoolConfig[] = [
-                {
-                    poolId: pools.DEEP_SUI.poolId,
-                    baseCoinType: pools.DEEP_SUI.baseCoinType,
-                    quoteCoinType: pools.DEEP_SUI.quoteCoinType,
-                    basePriceInfoObjectId: pythOracleIds?.deepPriceInfoObjectId,
-                    quotePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
-                    tickSize: 1_000_000n, // 0.001 SUI
-                    lotSize: 1_000_000n, // 1 DEEP
-                    minSize: 10_000_000n, // 10 DEEP
-                    orderSizeBase: 10_000_000n, // 10 DEEP per order
-                    fallbackMidPrice: 100_000_000n, // 0.1 SUI
-                    baseDepositAmount: 1_000_000_000n, // 1000 DEEP
-                    quoteDepositAmount: 10_000_000_000n, // 10 SUI
-                    baseDecimals: 6,
-                    quoteDecimals: 9,
-                },
-                {
-                    poolId: pools.SUI_USDC.poolId,
-                    baseCoinType: pools.SUI_USDC.baseCoinType,
-                    quoteCoinType: pools.SUI_USDC.quoteCoinType,
-                    basePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
-                    quotePriceInfoObjectId: pythOracleIds?.usdcPriceInfoObjectId,
-                    tickSize: 1_000n, // 0.001 USDC
-                    lotSize: 100_000_000n, // 0.1 SUI
-                    minSize: 1_000_000_000n, // 1 SUI
-                    orderSizeBase: 1_000_000_000n, // 1 SUI per order
-                    fallbackMidPrice: 3_500_000n, // 3.5 USDC
-                    baseDepositAmount: 10_000_000_000n, // 10 SUI
-                    quoteDepositAmount: 100_000_000n, // 100 USDC
-                    baseDecimals: 9,
-                    quoteDecimals: 6,
-                },
-            ];
+        // Build multi-pool config for the market maker
+        const mmPools: PoolConfig[] = [
+            {
+                poolId: pools.DEEP_SUI.poolId,
+                baseCoinType: pools.DEEP_SUI.baseCoinType,
+                quoteCoinType: pools.DEEP_SUI.quoteCoinType,
+                basePriceInfoObjectId: pythOracleIds.deepPriceInfoObjectId,
+                quotePriceInfoObjectId: pythOracleIds.suiPriceInfoObjectId,
+                tickSize: 1_000_000n, // 0.001 SUI
+                lotSize: 1_000_000n, // 1 DEEP
+                minSize: 10_000_000n, // 10 DEEP
+                orderSizeBase: 10_000_000n, // 10 DEEP per order
+                fallbackMidPrice: 100_000_000n, // 0.1 SUI
+                baseDepositAmount: 1_000_000_000n, // 1000 DEEP
+                quoteDepositAmount: 10_000_000_000n, // 10 SUI
+                baseDecimals: 6,
+                quoteDecimals: 9,
+            },
+            {
+                poolId: pools.SUI_USDC.poolId,
+                baseCoinType: pools.SUI_USDC.baseCoinType,
+                quoteCoinType: pools.SUI_USDC.quoteCoinType,
+                basePriceInfoObjectId: pythOracleIds.suiPriceInfoObjectId,
+                quotePriceInfoObjectId: pythOracleIds.usdcPriceInfoObjectId,
+                tickSize: 1_000n, // 0.001 USDC
+                lotSize: 100_000_000n, // 0.1 SUI
+                minSize: 1_000_000_000n, // 1 SUI
+                orderSizeBase: 1_000_000_000n, // 1 SUI per order
+                fallbackMidPrice: 3_500_000n, // 3.5 USDC
+                baseDepositAmount: 10_000_000_000n, // 10 SUI
+                quoteDepositAmount: 100_000_000n, // 100 USDC
+                baseDecimals: 9,
+                quoteDecimals: 6,
+            },
+        ];
 
-            updateEnvFile(sandboxRoot, {
-                DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
-                DEPLOYER_ADDRESS: signerAddress,
-                // Legacy single-pool vars (backward compat for tests and fallback)
-                POOL_ID: pools.DEEP_SUI.poolId,
-                BASE_COIN_TYPE: pools.DEEP_SUI.baseCoinType,
-                // Multi-pool config for the market maker
-                MM_POOLS: serializePoolConfigs(mmPools),
-            });
-            log.success("Updated .env with market maker config");
+        updateEnvFile(sandboxRoot, {
+            DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
+            DEPLOYER_ADDRESS: signerAddress,
+            // Legacy single-pool vars (backward compat for tests and fallback)
+            POOL_ID: pools.DEEP_SUI.poolId,
+            BASE_COIN_TYPE: pools.DEEP_SUI.baseCoinType,
+            // Multi-pool config for the market maker
+            MM_POOLS: serializePoolConfigs(mmPools),
+        });
+        log.success("Updated .env with market maker config");
 
-            await startMarketMaker(sandboxRoot);
-            log.success("Market maker started (DEEP/SUI + SUI/USDC)");
+        await startMarketMaker(sandboxRoot);
+        log.success("Market maker started (DEEP/SUI + SUI/USDC)");
 
-            log.spin("Building and starting dashboard...");
-            await startDashboard(sandboxRoot);
-            log.success(
-                `Dashboard running — open http://127.0.0.1:${DASHBOARD_PORT} in your browser`,
-            );
-        }
+        log.spin("Building and starting dashboard...");
+        await startDashboard(sandboxRoot);
+        log.success(
+            `Dashboard running — open http://127.0.0.1:${DASHBOARD_PORT} in your browser`,
+        );
 
         // Build summary — only user-facing URLs and key identifiers
         const summaryEntries: Array<{ label: string; value: string }> = [
@@ -350,13 +312,9 @@ async function main() {
             { label: "Deployment File", value: deploymentPath },
             { label: "Dashboard", value: `http://127.0.0.1:${DASHBOARD_PORT}` },
         ];
-        if (network === "testnet") {
-            summaryEntries.push({ label: "DeepBook Server", value: "http://127.0.0.1:9008" });
-        }
-
         log.summary("DeepBook Sandbox Ready!", summaryEntries);
 
-        if (network === "localnet" && !hasUserKey) {
+        if (!hasUserKey) {
             const line = c.yellow("!".repeat(60));
             console.log(line);
             console.log(c.yellow(c.bold("  A NEW WALLET WAS AUTO-GENERATED FOR THIS DEPLOYMENT")));

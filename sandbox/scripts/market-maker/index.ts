@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { getClient, getNetwork, getSigner } from "../utils/config";
+import { getClient, getSigner } from "../utils/config";
 import { loadConfig, parseEnvConfig } from "./config";
 import type { DeploymentManifest, PoolConfig } from "./types";
 import { explorerObjectUrl, parsePoolConfigs, pairLabel } from "./types";
@@ -51,7 +51,6 @@ function loadPoolConfigs(): PoolConfig[] {
 }
 
 function loadManifestFromEnv(): DeploymentManifest {
-    const network = getNetwork() as "localnet" | "testnet";
     const deepbookPackageId = requireEnv("DEEPBOOK_PACKAGE_ID");
     const deployerAddress = requireEnv("DEPLOYER_ADDRESS");
 
@@ -61,7 +60,7 @@ function loadManifestFromEnv(): DeploymentManifest {
 
     return {
         network: {
-            type: network,
+            type: "localnet",
             rpcUrl: process.env.RPC_URL ?? "",
             faucetUrl: "",
         },

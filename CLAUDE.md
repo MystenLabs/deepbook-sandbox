@@ -85,42 +85,37 @@ Docker compose file: `./sandbox/docker-compose.yml`
 
 Services in the stack:
 
-| Service              | Profile              | Description                                        | Ports                         |
-| -------------------- | -------------------- | -------------------------------------------------- | ----------------------------- |
-| **PostgreSQL**       | (always)             | Database for the indexer                           | 5432                          |
-| **Sui Localnet**     | `localnet`           | Local Sui blockchain for testing                   | 9000 (RPC), 9123 (faucet)     |
-| **Market Maker**     | `localnet`           | Automated market maker for DEEP/SUI + SUI/USDC     | 3001 (health), 9091 (metrics) |
-| **DeepBook Indexer** | `remote`             | Indexes DeepBook events (testnet/mainnet only)     | 9184 (metrics)                |
-| **DeepBook Server**  | `remote`             | REST API for querying indexed data                 | 9008                          |
-| **DeepBook Faucet**  | `localnet`, `remote` | Distributes SUI (proxied) and DEEP tokens          | 9009                          |
-| **Oracle Service**   | `localnet`           | Updates Pyth price feeds for DEEP/SUI every 10s    | 9010 (status)                 |
-| **Dashboard**        | `localnet`, `remote` | Web UI for monitoring and interacting with sandbox | 5173 (HTTP)                   |
-
-> **Note:** The indexer only supports testnet/mainnet (hardcoded checkpoint URLs). It cannot index a local Sui node.
+| Service              | Profile    | Description                                        | Ports                         |
+| -------------------- | ---------- | -------------------------------------------------- | ----------------------------- |
+| **PostgreSQL**       | (always)   | Database for the indexer                           | 5432                          |
+| **Sui Localnet**     | `localnet` | Local Sui blockchain for testing                   | 9000 (RPC), 9123 (faucet)     |
+| **Market Maker**     | `localnet` | Automated market maker for DEEP/SUI + SUI/USDC     | 3001 (health), 9091 (metrics) |
+| **DeepBook Indexer** | `localnet` | Indexes DeepBook events from checkpoints           | 9184 (metrics)                |
+| **DeepBook Server**  | `localnet` | REST API for querying indexed data                 | 9008                          |
+| **DeepBook Faucet**  | `localnet` | Distributes SUI (proxied) and DEEP tokens          | 9009                          |
+| **Oracle Service**   | `localnet` | Updates Pyth price feeds for DEEP/SUI every 10s    | 9010 (status)                 |
+| **Dashboard**        | `localnet` | Web UI for monitoring and interacting with sandbox | 5173 (HTTP)                   |
 
 ### Running the Stack
 
 ```bash
 cd sandbox
 
-# Testnet/Mainnet (full indexer stack)
-docker compose --profile remote up -d
-docker compose --profile remote down      # Stop services
-docker compose --profile remote down -v   # Fresh start (remove volumes)
+# Start localnet, deploy contracts, start all services
+pnpm deploy-all
 
-# Localnet (Sui node + oracle + market maker)
-pnpm deploy-all                           # Start localnet, deploy contracts, start services
-pnpm down                                 # Full teardown (volumes, .env keys)
+# Full teardown (volumes, .env keys)
+pnpm down
 
-# Stop all services (any profile)
-docker compose --profile remote --profile localnet down
+# Stop containers
+docker compose --profile localnet down
 
 # View logs
 docker compose logs -f
 docker compose logs -f market-maker       # Market maker logs only
 ```
 
-> **Localnet workflow:** Run `pnpm deploy-all` to start localnet, deploy contracts, and automatically launch the oracle service and market maker containers with the correct env vars.
+> Run `pnpm deploy-all` to start localnet, deploy contracts, and automatically launch the oracle service and market maker containers with the correct env vars.
 
 ## Development Commands
 

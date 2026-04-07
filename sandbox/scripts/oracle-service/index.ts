@@ -1,6 +1,6 @@
 import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
-import { getClient, getNetwork } from "../utils/config";
+import { getClient } from "../utils/config";
 import { PythClient } from "./pyth-client";
 import { OracleUpdater } from "./oracle-updater";
 import { createInitialStatus, createStatusServer, updateStatus } from "./status-server";
@@ -42,19 +42,12 @@ function requireEnv(name: string): string {
 async function main() {
     log.banner("Oracle Service");
 
-    const network = getNetwork();
-    if (network !== "localnet") {
-        throw new Error(
-            "Oracle service is only supported on localnet. Current network: " + network,
-        );
-    }
-
     const pythPackageId = requireEnv("PYTH_PACKAGE_ID");
     const deepPriceInfoObjectId = requireEnv("DEEP_PRICE_INFO_OBJECT_ID");
     const suiPriceInfoObjectId = requireEnv("SUI_PRICE_INFO_OBJECT_ID");
     const usdcPriceInfoObjectId = requireEnv("USDC_PRICE_INFO_OBJECT_ID");
 
-    log.detail(`Network: ${network}`);
+    log.detail("Network: localnet");
     log.detail(`Pyth Package: ${pythPackageId}`);
     log.detail(`SUI Oracle: ${suiPriceInfoObjectId}`);
     log.detail(`DEEP Oracle: ${deepPriceInfoObjectId}`);
@@ -63,7 +56,7 @@ async function main() {
 
     // Initialize clients — oracle service uses its own dedicated keypair
     // to avoid gas coin conflicts with the market maker / deployer.
-    const client = getClient(network);
+    const client = getClient();
     const oracleKey = requireEnv("ORACLE_PRIVATE_KEY");
     const { secretKey } = decodeSuiPrivateKey(oracleKey);
     const signer = Ed25519Keypair.fromSecretKey(secretKey);

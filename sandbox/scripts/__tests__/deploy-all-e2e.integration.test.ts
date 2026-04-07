@@ -96,7 +96,6 @@ describe("deploy-all E2E (subprocess)", () => {
         // user-supplied key exists).
         const envContent =
             [
-                `NETWORK=localnet`,
                 `SUI_TOOLS_IMAGE=${process.env.SUI_TOOLS_IMAGE ?? defaultSuiToolsImage()}`,
                 `FORCE_REGENESIS=true`,
             ].join("\n") + "\n";

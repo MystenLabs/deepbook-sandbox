@@ -1,8 +1,7 @@
 const MAX_RETRIES = 3;
 
 /**
- * Proxies SUI token requests to the upstream Sui faucet.
- * Localnet: sui-localnet:9123, Testnet: faucet.testnet.sui.io/v2
+ * Proxies SUI token requests to the upstream Sui faucet (sui-localnet:9123).
  * Retries on 429 using the wait time from the response body.
  */
 export async function requestSui(

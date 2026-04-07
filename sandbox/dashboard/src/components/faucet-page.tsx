@@ -83,7 +83,7 @@ export function FaucetPage() {
             <div className="space-y-1">
                 <h1 className="text-lg font-semibold">Faucet</h1>
                 <p className="text-xs text-muted-foreground">
-                    Request testnet tokens for your connected wallet
+                    Request tokens for your connected wallet
                 </p>
             </div>
 

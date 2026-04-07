@@ -27,7 +27,7 @@ describe("env utility tests", () => {
 
     /** Helper: builds .env content with all required keys populated. */
     function requiredBlock(): string {
-        return "PRIVATE_KEY=0xabc123\nNETWORK=localnet\nSUI_TOOLS_IMAGE=mysten/sui-tools:compat\n";
+        return "PRIVATE_KEY=0xabc123\nSUI_TOOLS_IMAGE=mysten/sui-tools:compat\n";
     }
 
     describe("cleanEnvFile", () => {
@@ -66,7 +66,6 @@ describe("env utility tests", () => {
         it("handles values with special characters (= in URLs, spaces, quotes)", async () => {
             const lines = [
                 "PRIVATE_KEY=suiprivkey1abc123==",
-                "NETWORK=localnet",
                 "SUI_TOOLS_IMAGE=mysten/sui-tools:compat",
                 "DB_URL=postgres://user:pass@host:5432/db?sslmode=require",
                 'QUOTED="hello world"',
@@ -135,7 +134,7 @@ describe("env utility tests", () => {
             expect(result).toContain("GOOD_KEY=value");
         });
 
-        it("warns when required keys (PRIVATE_KEY, NETWORK, SUI_TOOLS_IMAGE) are missing", async () => {
+        it("warns when required keys (PRIVATE_KEY, SUI_TOOLS_IMAGE) are missing", async () => {
             // .env has none of the required keys
             await writeEnv("SOME_OTHER_KEY=value\n");
 
@@ -146,7 +145,6 @@ describe("env utility tests", () => {
                 expect(warnSpy).toHaveBeenCalledTimes(1);
                 const warnMsg = warnSpy.mock.calls[0][0];
                 expect(warnMsg).toContain("PRIVATE_KEY");
-                expect(warnMsg).toContain("NETWORK");
                 expect(warnMsg).toContain("SUI_TOOLS_IMAGE");
             } finally {
                 warnSpy.mockRestore();
@@ -189,17 +187,17 @@ describe("env utility tests", () => {
             expect(result.valid).toBe(false);
             expect(result.fileExists).toBe(true);
             expect(result.present).toEqual(["PRIVATE_KEY"]);
-            expect(result.missing).toEqual(expect.arrayContaining(["NETWORK", "SUI_TOOLS_IMAGE"]));
+            expect(result.missing).toEqual(expect.arrayContaining(["SUI_TOOLS_IMAGE"]));
         });
 
         it("returns invalid when required keys have empty values", async () => {
-            await writeEnv("PRIVATE_KEY=0xabc\nNETWORK=\nSUI_TOOLS_IMAGE=  \n");
+            await writeEnv("PRIVATE_KEY=0xabc\nSUI_TOOLS_IMAGE=  \n");
 
             const result = validateEnvFile(tmpDir);
             expect(result.valid).toBe(false);
             expect(result.fileExists).toBe(true);
             expect(result.present).toEqual(["PRIVATE_KEY"]);
-            expect(result.missing).toEqual(expect.arrayContaining(["NETWORK", "SUI_TOOLS_IMAGE"]));
+            expect(result.missing).toEqual(expect.arrayContaining(["SUI_TOOLS_IMAGE"]));
         });
 
         it("returns fileExists=false and all missing when .env does not exist", () => {
@@ -218,7 +216,6 @@ describe("env utility tests", () => {
                 "",
                 "# User keys",
                 "PRIVATE_KEY=suiprivkey1abc",
-                "NETWORK=localnet",
                 "SUI_TOOLS_IMAGE=mysten/sui-tools:compat",
                 "MM_SPREAD_BPS=10",
                 "MM_LEVELS_PER_SIDE=5",
@@ -245,7 +242,6 @@ describe("env utility tests", () => {
 
             // User keys preserved
             expect(result).toContain("PRIVATE_KEY=suiprivkey1abc");
-            expect(result).toContain("NETWORK=localnet");
             expect(result).toContain("SUI_TOOLS_IMAGE=mysten/sui-tools:compat");
             expect(result).toContain("MM_SPREAD_BPS=10");
             expect(result).toContain("MM_LEVELS_PER_SIDE=5");

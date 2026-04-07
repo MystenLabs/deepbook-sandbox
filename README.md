@@ -352,7 +352,6 @@ bunx prettier-move -c *.move --write
 | `docker compose ps`                         | List running containers and their status                                              |
 | `docker compose --profile localnet down`    | Stop all localnet containers                                                          |
 | `docker compose --profile localnet down -v` | Stop containers and remove volumes                                                    |
-| `docker compose --profile remote up -d`     | Start the remote profile (testnet/mainnet indexer stack)                              |
 | `curl http://localhost:9010/`               | Check oracle service status and latest prices                                         |
 | `curl http://localhost:3001/health`         | Check market maker health                                                             |
 | `curl http://localhost:9091/metrics`        | View market maker Prometheus metrics                                                  |
@@ -367,7 +366,6 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `SUI_TOOLS_IMAGE`           | No (auto-detected)              | `mysten/sui-tools:compat[-arm64]`                  | Docker image for Sui node; auto-detected from CPU architecture            |
 | `PRIVATE_KEY`               | No (auto-generated on localnet) | —                                                  | Deployer/signer private key (`suiprivkey1...` or `0x...` hex)             |
 | `ORACLE_PRIVATE_KEY`        | No (auto-generated)             | —                                                  | Dedicated oracle service keypair                                          |
-| `NETWORK`                   | No                              | `localnet`                                         | Target network: `localnet` or `testnet`                                   |
 | `RPC_URL`                   | No                              | auto-detected                                      | Sui RPC endpoint override                                                 |
 | `FORCE_REGENESIS`           | No                              | `true`                                             | Wipe chain state on restart; set empty to persist                         |
 | `DEEPBOOK_PACKAGE_ID`       | No (auto-populated)             | —                                                  | Deployed DeepBook package address                                         |

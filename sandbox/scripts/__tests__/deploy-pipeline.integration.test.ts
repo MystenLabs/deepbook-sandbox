@@ -113,7 +113,6 @@ describe("deploy-all pipeline (localnet)", () => {
         const envContent =
             [
                 `PRIVATE_KEY=${placeholderKey}`,
-                `NETWORK=localnet`,
                 `SUI_TOOLS_IMAGE=${process.env.SUI_TOOLS_IMAGE ?? defaultSuiToolsImage()}`,
                 `FORCE_REGENESIS=true`,
             ].join("\n") + "\n";
@@ -183,7 +182,7 @@ describe("deploy-all pipeline (localnet)", () => {
     // Phase 3: Deploy Move packages
     // ----------------------------------------------------------------
     test("deploys Move packages", async () => {
-        const deployer = new MoveDeployer(client, signer, "localnet");
+        const deployer = new MoveDeployer(client, signer);
         deployedPackages = await deployer.deployAll();
 
         // Should deploy all 6 packages

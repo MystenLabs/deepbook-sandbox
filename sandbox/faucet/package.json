@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "type": "module",
     "private": true,
-    "description": "Faucet service for distributing SUI and DEEP tokens on localnet/testnet",
+    "description": "Faucet service for distributing SUI and DEEP tokens on localnet",
     "scripts": {
         "dev": "tsx src/index.ts",
         "build": "tsc",
