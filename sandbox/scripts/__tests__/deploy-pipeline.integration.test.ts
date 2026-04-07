@@ -34,6 +34,7 @@ import {
     configureAndStartLocalnetServices,
     startOracleService,
     startMarketMaker,
+    startService,
 } from "../utils/docker-compose";
 import { MoveDeployer, type DeploymentResult } from "../utils/deployer";
 import { ensureMinimumBalance, getDeploymentEnv } from "../utils/helpers";
@@ -274,12 +275,6 @@ describe("deploy-all pipeline (localnet)", () => {
             timeoutMs: 120_000,
             label: "DeepBook server",
         });
-
-        // Faucet service should respond
-        await waitForUrl("http://127.0.0.1:9009/", {
-            timeoutMs: 60_000,
-            label: "DeepBook sandbox API",
-        });
     }, 600_000);
 
     // ----------------------------------------------------------------
@@ -411,6 +406,55 @@ describe("deploy-all pipeline (localnet)", () => {
         await waitForUrl("http://127.0.0.1:3001/health", {
             timeoutMs: 60_000,
             label: "Market maker",
+        });
+    }, 120_000);
+
+    // ----------------------------------------------------------------
+    // Phase 9b: Create BalanceManager + start API service
+    // (Mirrors deploy-all: BM must exist before starting the API so
+    //  BALANCE_MANAGER_ID is available in the env.)
+    // ----------------------------------------------------------------
+    test("creates balance manager and starts API", async () => {
+        const deepbookPkgId = deployedPackages.get("deepbook")!.packageId;
+        const { Transaction } = await import("@mysten/sui/transactions");
+        const bmTx = new Transaction();
+        const bm = bmTx.moveCall({
+            target: `${deepbookPkgId}::balance_manager::new`,
+            arguments: [],
+        });
+        bmTx.moveCall({
+            target: "0x2::transfer::public_share_object",
+            arguments: [bm],
+            typeArguments: [`${deepbookPkgId}::balance_manager::BalanceManager`],
+        });
+
+        const bmResult = await client.signAndExecuteTransaction({
+            transaction: bmTx,
+            signer,
+            include: { effects: true, objectTypes: true },
+        });
+
+        expect(bmResult.$kind).toBe("Transaction");
+        await client.waitForTransaction({ digest: bmResult.Transaction!.digest });
+
+        const objectTypes = bmResult.Transaction!.objectTypes ?? {};
+        const bmCreated = bmResult.Transaction!.effects?.changedObjects?.find(
+            (obj) =>
+                obj.idOperation === "Created" &&
+                obj.outputState !== "PackageWrite" &&
+                (objectTypes[obj.objectId] ?? "").includes("::balance_manager::BalanceManager"),
+        );
+        expect(bmCreated, "BalanceManager not found in tx result").toBeDefined();
+
+        updateEnvFile(SANDBOX_ROOT, {
+            BALANCE_MANAGER_ID: bmCreated!.objectId,
+        });
+
+        await startService("deepbook-sandbox-api", SANDBOX_ROOT);
+
+        await waitForUrl("http://127.0.0.1:9009/", {
+            timeoutMs: 60_000,
+            label: "DeepBook sandbox API",
         });
     }, 120_000);
 
