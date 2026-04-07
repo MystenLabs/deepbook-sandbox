@@ -247,41 +247,41 @@ async function main() {
         // Phase 6: Start market maker
         log.phase("Phase 6/6: Starting market maker");
 
-        // Build multi-pool config for the market maker
-        const mmPools: PoolConfig[] = [
-            {
-                poolId: pools.DEEP_SUI.poolId,
-                baseCoinType: pools.DEEP_SUI.baseCoinType,
-                quoteCoinType: pools.DEEP_SUI.quoteCoinType,
-                basePriceInfoObjectId: pythOracleIds.deepPriceInfoObjectId,
-                quotePriceInfoObjectId: pythOracleIds.suiPriceInfoObjectId,
-                tickSize: 1_000_000n, // 0.001 SUI
-                lotSize: 1_000_000n, // 1 DEEP
-                minSize: 10_000_000n, // 10 DEEP
-                orderSizeBase: 10_000_000n, // 10 DEEP per order
-                fallbackMidPrice: 100_000_000n, // 0.1 SUI
-                baseDepositAmount: 1_000_000_000n, // 1000 DEEP
-                quoteDepositAmount: 10_000_000_000n, // 10 SUI
-                baseDecimals: 6,
-                quoteDecimals: 9,
-            },
-            {
-                poolId: pools.SUI_USDC.poolId,
-                baseCoinType: pools.SUI_USDC.baseCoinType,
-                quoteCoinType: pools.SUI_USDC.quoteCoinType,
-                basePriceInfoObjectId: pythOracleIds.suiPriceInfoObjectId,
-                quotePriceInfoObjectId: pythOracleIds.usdcPriceInfoObjectId,
-                tickSize: 1_000n, // 0.001 USDC
-                lotSize: 100_000_000n, // 0.1 SUI
-                minSize: 1_000_000_000n, // 1 SUI
-                orderSizeBase: 1_000_000_000n, // 1 SUI per order
-                fallbackMidPrice: 3_500_000n, // 3.5 USDC
-                baseDepositAmount: 10_000_000_000n, // 10 SUI
-                quoteDepositAmount: 100_000_000n, // 100 USDC
-                baseDecimals: 9,
-                quoteDecimals: 6,
-            },
-        ];
+            // Build multi-pool config for the market maker
+            const mmPools: PoolConfig[] = [
+                {
+                    poolId: pools.DEEP_SUI.poolId,
+                    baseCoinType: pools.DEEP_SUI.baseCoinType,
+                    quoteCoinType: pools.DEEP_SUI.quoteCoinType,
+                    basePriceInfoObjectId: pythOracleIds?.deepPriceInfoObjectId,
+                    quotePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
+                    tickSize: 1_000_000n, // 0.001 SUI
+                    lotSize: 1_000_000n, // 1 DEEP
+                    minSize: 10_000_000n, // 10 DEEP
+                    orderSizeBase: 10_000_000n, // 10 DEEP per order
+                    fallbackMidPrice: 100_000_000n, // 0.1 SUI
+                    baseDepositAmount: 1_000_000_000n, // 1000 DEEP
+                    quoteDepositAmount: 100_000_000_000n, // 100 SUI
+                    baseDecimals: 6,
+                    quoteDecimals: 9,
+                },
+                {
+                    poolId: pools.SUI_USDC.poolId,
+                    baseCoinType: pools.SUI_USDC.baseCoinType,
+                    quoteCoinType: pools.SUI_USDC.quoteCoinType,
+                    basePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
+                    quotePriceInfoObjectId: pythOracleIds?.usdcPriceInfoObjectId,
+                    tickSize: 1_000n, // 0.001 USDC
+                    lotSize: 100_000_000n, // 0.1 SUI
+                    minSize: 1_000_000_000n, // 1 SUI
+                    orderSizeBase: 1_000_000_000n, // 1 SUI per order
+                    fallbackMidPrice: 3_500_000n, // 3.5 USDC
+                    baseDepositAmount: 100_000_000_000n, // 100 SUI
+                    quoteDepositAmount: 500_000_000n, // 500 USDC
+                    baseDecimals: 9,
+                    quoteDecimals: 6,
+                },
+            ];
 
         updateEnvFile(sandboxRoot, {
             DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,

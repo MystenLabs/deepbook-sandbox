@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { RequireWallet } from "@/components/require-wallet";
 import { FaucetPage } from "@/components/faucet-page";
 import { HealthPage } from "@/components/health-page";
-import { MarketMakerPage } from "@/components/market-maker-page";
+import { MarketMakerPage } from "@/components/market-maker";
 import { DeploymentPage } from "@/components/deployment-page";
 
 const navLinks = [
