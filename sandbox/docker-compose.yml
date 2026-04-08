@@ -256,7 +256,6 @@ services:
       NETWORK: ${NETWORK:-localnet}
       PRIVATE_KEY: ${PRIVATE_KEY:-}
       DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
-      BALANCE_MANAGER_ID: ${BALANCE_MANAGER_ID:-}
       RPC_URL: ${RPC_URL:-}
       PORT: 9009
       MAX_DEEP_PER_REQUEST: 10000
@@ -288,6 +287,8 @@ services:
       - remote
     build:
       context: ./dashboard
+      args:
+        PRIVATE_KEY: ${PRIVATE_KEY:-}
     image: ${DASHBOARD_IMAGE:-}
     container_name: deepbook-dashboard
     ports:

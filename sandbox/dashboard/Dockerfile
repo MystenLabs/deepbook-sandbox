@@ -2,6 +2,11 @@
 FROM node:22-alpine AS builder
 RUN corepack enable
 
+# PRIVATE_KEY is baked into the bundle by Vite (via define) so the dev
+# wallet has the deployer key available without a runtime fetch.
+ARG PRIVATE_KEY=""
+ENV PRIVATE_KEY=$PRIVATE_KEY
+
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install

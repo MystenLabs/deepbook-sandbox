@@ -2,7 +2,10 @@
  * Shared DeepBook SDK client hook.
  *
  * Builds a client from the deployment manifest + connected wallet address.
- * The BM ID is fetched from the backend (set by deploy-all).
+ * The BM ID is discovered on-chain via `client.deepbook.getBalanceManagerIds`,
+ * which reads the deepbook Registry's owner→IDs map. No backend storage —
+ * the chain is the source of truth.
+ *
  * All SDK queries and transaction building use this client.
  */
 
@@ -43,15 +46,28 @@ export interface Manifest {
 /*  SDK config builders                                                */
 /* ------------------------------------------------------------------ */
 
-function findObject(objects: ManifestPackage["objects"], match: string, exclude?: string): string {
+/**
+ * Locate an object whose type name matches `typeName` exactly at the end of
+ * the type string (i.e. `…::typeName` or `…::typeName<…>`). Substring matching
+ * is dangerous: e.g. "Registry" would otherwise match `RegistryInner` and the
+ * `dynamic_field::Field<u64, RegistryInner>` child object that gets emitted
+ * during package init — which then fails as a PTB input because it's owned by
+ * the Versioned wrapper, not by an address.
+ */
+function findObject(
+    objects: ManifestPackage["objects"],
+    typeName: string,
+    exclude?: string,
+): string {
+    const pattern = new RegExp(`::${typeName}(?:<|$)`);
     const obj = objects.find(
-        (o) => o.objectType.includes(match) && (!exclude || !o.objectType.includes(exclude)),
+        (o) => pattern.test(o.objectType) && (!exclude || !o.objectType.includes(exclude)),
     );
-    if (!obj) throw new Error(`Object matching "${match}" not found`);
+    if (!obj) throw new Error(`Object matching "${typeName}" not found`);
     return obj.objectId;
 }
 
-function buildPackageIds(m: Manifest): DeepbookPackageIds {
+export function buildPackageIds(m: Manifest): DeepbookPackageIds {
     return {
         DEEPBOOK_PACKAGE_ID: m.packages.deepbook.packageId,
         REGISTRY_ID: findObject(m.packages.deepbook.objects, "Registry", "MarginRegistry"),
@@ -102,56 +118,71 @@ function useManifest() {
     });
 }
 
-function useBalanceManagerId() {
-    return useQuery<string | null>({
-        queryKey: ["balance-manager-id"],
-        queryFn: async () => {
-            const r = await fetch("/api/trading/balance-manager");
-            const data = await r.json();
-            if (!data.success) throw new Error(data.error);
-            return data.balanceManagerId ?? null;
-        },
-        staleTime: 60_000,
-    });
-}
-
 /* ------------------------------------------------------------------ */
 /*  Main hook                                                          */
 /* ------------------------------------------------------------------ */
+
+function buildClient(
+    suiClient: ReturnType<typeof useCurrentClient>,
+    address: string,
+    manifestData: Manifest,
+    balanceManagerId: string | null,
+): SandboxClient | null {
+    const balanceManagers: Record<string, BalanceManager> | undefined = balanceManagerId
+        ? { [BALANCE_MANAGER_KEY]: { address: balanceManagerId } }
+        : undefined;
+
+    try {
+        return (
+            suiClient as unknown as {
+                $extend: (reg: ReturnType<typeof deepbook>) => SandboxClient;
+            }
+        ).$extend(
+            deepbook({
+                address,
+                packageIds: buildPackageIds(manifestData),
+                coins: buildCoinMap(manifestData),
+                pools: buildPoolMap(manifestData),
+                balanceManagers,
+            }),
+        );
+    } catch (err) {
+        console.error("Failed to create DeepBook client:", err);
+        return null;
+    }
+}
 
 export function useDeepBookClient() {
     const suiClient = useCurrentClient();
     const account = useCurrentAccount();
     const manifest = useManifest();
-    const bmQuery = useBalanceManagerId();
+
+    // Bare client (no BM in config) — used to drive the discovery query.
+    // Cheap to build, just a config wrapper around the underlying suiClient.
+    const bareClient = useMemo(() => {
+        if (!account?.address || !manifest.data) return null;
+        return buildClient(suiClient, account.address, manifest.data, null);
+    }, [suiClient, account?.address, manifest.data]);
+
+    // Discover the user's BM via the on-chain registry. Returns the first
+    // BM ID owned by the connected address, or null if none registered yet.
+    const bmQuery = useQuery<string | null>({
+        queryKey: ["balance-manager-id", account?.address ?? null],
+        queryFn: async () => {
+            if (!bareClient || !account?.address) return null;
+            const ids = await bareClient.deepbook.getBalanceManagerIds(account.address);
+            return ids[0] ?? null;
+        },
+        enabled: !!bareClient && !!account?.address,
+        staleTime: 60_000,
+    });
 
     const balanceManagerId = bmQuery.data ?? null;
 
+    // Full client — has the BM in config if discovery found one.
     const client = useMemo(() => {
         if (!account?.address || !manifest.data) return null;
-
-        const balanceManagers: Record<string, BalanceManager> | undefined = balanceManagerId
-            ? { [BALANCE_MANAGER_KEY]: { address: balanceManagerId } }
-            : undefined;
-
-        try {
-            return (
-                suiClient as unknown as {
-                    $extend: (reg: ReturnType<typeof deepbook>) => SandboxClient;
-                }
-            ).$extend(
-                deepbook({
-                    address: account.address,
-                    packageIds: buildPackageIds(manifest.data),
-                    coins: buildCoinMap(manifest.data),
-                    pools: buildPoolMap(manifest.data),
-                    balanceManagers,
-                }),
-            );
-        } catch (err) {
-            console.error("Failed to create DeepBook client:", err);
-            return null;
-        }
+        return buildClient(suiClient, account.address, manifest.data, balanceManagerId);
     }, [suiClient, account?.address, manifest.data, balanceManagerId]);
 
     return {
@@ -160,6 +191,7 @@ export function useDeepBookClient() {
         address: account?.address ?? null,
         balanceManagerId,
         isSetup: !!balanceManagerId,
+        manifest: manifest.data ?? null,
         manifestLoading: manifest.isLoading,
     };
 }

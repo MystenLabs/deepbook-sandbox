@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Wallet, ArrowDownToLine, ArrowUpFromLine, ExternalLink, Loader2 } from "lucide-react";
+import {
+    Wallet,
+    ArrowDownToLine,
+    ArrowUpFromLine,
+    ExternalLink,
+    Loader2,
+    Plus,
+} from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CoinIcon } from "./coin-icon";
@@ -12,6 +19,8 @@ interface BalanceManagerSetupProps {
     balanceManagerId: string | null;
     balances?: Record<string, string>;
     walletBalances?: Record<string, string>;
+    canCreate: boolean;
+    onCreate: () => Promise<string>;
     onDeposit: (coin: CoinKey, amount: number) => Promise<string>;
     onWithdraw: (coin: CoinKey, amount: number) => Promise<string>;
 }
@@ -32,10 +41,13 @@ export function BalanceManagerSetup({
     balanceManagerId,
     balances,
     walletBalances,
+    canCreate,
+    onCreate,
     onDeposit,
     onWithdraw,
 }: BalanceManagerSetupProps) {
     const [loading, setLoading] = useState(false);
+    const [creating, setCreating] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<{
         message: string;
@@ -44,6 +56,18 @@ export function BalanceManagerSetup({
     } | null>(null);
     const [coin, setCoin] = useState<CoinKey>("SUI");
     const [amount, setAmount] = useState("");
+
+    const handleCreate = async () => {
+        setCreating(true);
+        setError(null);
+        try {
+            await onCreate();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to create Balance Manager");
+        } finally {
+            setCreating(false);
+        }
+    };
 
     const walletBalance = parseFloat(walletBalances?.[coin] ?? "0");
     const bmBalance = parseFloat(balances?.[coin] ?? "0");
@@ -100,12 +124,21 @@ export function BalanceManagerSetup({
                     <Wallet className="h-10 w-10 text-zinc-500" />
                     <h2 className="text-lg font-semibold text-zinc-200">No Balance Manager</h2>
                     <p className="text-sm text-zinc-500 text-center max-w-md">
-                        A Balance Manager is created automatically during deployment. Run{" "}
-                        <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-300">
-                            pnpm deploy-all
-                        </code>{" "}
-                        to set up the sandbox.
+                        Create a Balance Manager for your wallet to start trading. It will be
+                        registered on-chain and discovered automatically next time you connect.
                     </p>
+                    <Button
+                        onClick={handleCreate}
+                        disabled={!canCreate || creating}
+                        className="gap-1.5"
+                    >
+                        {creating ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <Plus className="h-4 w-4" />
+                        )}
+                        {creating ? "Creating..." : "Create Balance Manager"}
+                    </Button>
                     {error && <p className="text-xs text-red-400">{error}</p>}
                 </div>
             </div>

@@ -11,8 +11,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDAppKit, useCurrentClient } from "@mysten/dapp-kit-react";
 import { Transaction } from "@mysten/sui/transactions";
 import { OrderType, SelfMatchingOptions } from "@mysten/deepbook-v3";
-import type { SandboxClient } from "@/hooks/use-deepbook-client";
-import { BALANCE_MANAGER_KEY } from "@/hooks/use-deepbook-client";
+import type { Manifest, SandboxClient } from "@/hooks/use-deepbook-client";
+import { BALANCE_MANAGER_KEY, buildPackageIds } from "@/hooks/use-deepbook-client";
 import type { PoolKey, CoinKey, OrderDetail } from "./types";
 
 /* ------------------------------------------------------------------ */
@@ -44,9 +44,9 @@ export function useWalletBalances(address: string | null) {
     });
 }
 
-export function useBmBalances(client: SandboxClient | null) {
+export function useBmBalances(client: SandboxClient | null, balanceManagerId: string | null) {
     return useQuery<Record<string, string>>({
-        queryKey: ["bm-balances"],
+        queryKey: ["bm-balances", balanceManagerId],
         queryFn: async () => {
             if (!client) throw new Error("Not ready");
             const coins = ["SUI", "DEEP", "USDC"];
@@ -64,7 +64,7 @@ export function useBmBalances(client: SandboxClient | null) {
             }
             return results;
         },
-        enabled: !!client,
+        enabled: !!client && !!balanceManagerId,
         refetchInterval: 10_000,
     });
 }
@@ -99,9 +99,13 @@ export function usePoolParams(client: SandboxClient | null, poolKey: PoolKey) {
     });
 }
 
-export function useOpenOrders(client: SandboxClient | null, poolKey: PoolKey, isSetup: boolean) {
+export function useOpenOrders(
+    client: SandboxClient | null,
+    poolKey: PoolKey,
+    balanceManagerId: string | null,
+) {
     return useQuery<OrderDetail[]>({
-        queryKey: ["open-orders", poolKey],
+        queryKey: ["open-orders", poolKey, balanceManagerId],
         queryFn: async () => {
             if (!client) throw new Error("Not ready");
             const raw = await client.deepbook.getAccountOrderDetails(poolKey, BALANCE_MANAGER_KEY);
@@ -130,7 +134,7 @@ export function useOpenOrders(client: SandboxClient | null, poolKey: PoolKey, is
                 }
             });
         },
-        enabled: !!client && isSetup,
+        enabled: !!client && !!balanceManagerId,
         refetchInterval: 10_000,
     });
 }
@@ -288,4 +292,59 @@ export function useTrading(
     }, [client, poolKey, dAppKit, invalidateAll]);
 
     return { deposit, withdraw, placeLimitOrder, placeMarketOrder, cancelOrder, cancelAllOrders };
+}
+
+/**
+ * Create a BalanceManager for the connected wallet.
+ *
+ * Bundles three moveCalls in a single PTB:
+ *   1. SDK helper `createBalanceManagerWithOwner` — creates the BM, returns ref
+ *   2. raw `register_balance_manager`            — records owner→BM in registry
+ *   3. SDK helper `shareBalanceManager`          — shares the BM publicly
+ *
+ * The middle step is a raw moveCall because the SDK's `registerBalanceManager`
+ * helper takes a `managerKey` (a config lookup), not a fresh `TransactionArgument`,
+ * so it can't be chained with a just-created BM in the same PTB.
+ *
+ * After the tx settles, invalidates the BM discovery query so the dashboard
+ * picks up the new BM and unlocks the trading UI.
+ */
+export function useCreateBalanceManager(
+    client: SandboxClient | null,
+    manifest: Manifest | null,
+    address: string | null,
+) {
+    const dAppKit = useDAppKit();
+    const suiClient = useCurrentClient();
+    const queryClient = useQueryClient();
+
+    return useCallback(async () => {
+        if (!client || !manifest || !address) throw new Error("Not ready");
+
+        const pkgIds = buildPackageIds(manifest);
+        const deepbookPkgId = pkgIds.DEEPBOOK_PACKAGE_ID;
+        const registryId = pkgIds.REGISTRY_ID;
+        if (!deepbookPkgId || !registryId) {
+            throw new Error("Manifest missing deepbook package id or registry id");
+        }
+
+        const tx = new Transaction();
+
+        const bm = client.deepbook.balanceManager.createBalanceManagerWithOwner(address)(tx);
+
+        tx.moveCall({
+            target: `${deepbookPkgId}::balance_manager::register_balance_manager`,
+            arguments: [bm, tx.object(registryId)],
+        });
+
+        client.deepbook.balanceManager.shareBalanceManager(bm)(tx);
+
+        const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+        if (result.$kind === "FailedTransaction") {
+            throw new Error(result.FailedTransaction.status.error?.message ?? "Transaction failed");
+        }
+        await suiClient.waitForTransaction({ digest: result.Transaction!.digest });
+        queryClient.invalidateQueries({ queryKey: ["balance-manager-id"] });
+        return result.Transaction!.digest;
+    }, [client, manifest, address, dAppKit, suiClient, queryClient]);
 }

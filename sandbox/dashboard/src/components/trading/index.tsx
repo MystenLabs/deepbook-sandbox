@@ -6,6 +6,7 @@ import {
     usePoolParams,
     useTrading,
     useOpenOrders,
+    useCreateBalanceManager,
 } from "./hooks";
 import { BalanceManagerSetup } from "./balance-manager-setup";
 import { MarketOrderCard, LimitOrderCard, CancelOrdersCard } from "./action-cards";
@@ -16,14 +17,15 @@ const DISPLAY_COINS = ["SUI", "DEEP"];
 const POOL_KEY = "DEEP_SUI" as const;
 
 export function TradingPage() {
-    const { client, isReady, address, isSetup, balanceManagerId } = useDeepBookClient();
+    const { client, isReady, address, isSetup, balanceManagerId, manifest } = useDeepBookClient();
 
     const walletBalances = useWalletBalances(address);
-    const bmBalances = useBmBalances(client);
+    const bmBalances = useBmBalances(client, balanceManagerId);
     const midPrice = useMidPrice(client, POOL_KEY);
     const poolParams = usePoolParams(client, POOL_KEY);
     const trading = useTrading(client, POOL_KEY, address);
-    const openOrders = useOpenOrders(client, POOL_KEY, isSetup);
+    const openOrders = useOpenOrders(client, POOL_KEY, balanceManagerId);
+    const createBm = useCreateBalanceManager(client, manifest, address);
 
     if (!isReady) {
         return (
@@ -73,6 +75,8 @@ export function TradingPage() {
                 balanceManagerId={balanceManagerId}
                 balances={bmBalances.data}
                 walletBalances={walletBalances.data?.balances}
+                canCreate={!!client && !!manifest && !!address}
+                onCreate={createBm}
                 onDeposit={trading.deposit}
                 onWithdraw={trading.withdraw}
             />

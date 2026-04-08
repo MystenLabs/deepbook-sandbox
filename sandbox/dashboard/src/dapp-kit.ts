@@ -5,12 +5,18 @@ import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { decodeSuiPrivateKey } from "@mysten/sui/cryptography";
 
-// TODO: Later this will be fetched from an API endpoint
-const PRIVATE_KEY = "suiprivkey1qpe95na2djkmp92f68cpeghh4qw74pvqnmn05v7twgsua4fruey5xc3x0dz";
+// Injected at build time by vite.config.ts from sandbox/.env (PRIVATE_KEY).
+const PRIVATE_KEY = import.meta.env.VITE_DEV_WALLET_PRIVATE_KEY ?? "";
 
-// Create adapter and import deployer key before passing to devWalletInitializer
+// Create adapter, import deployer key (if available) before initializing dAppKit.
 const adapter = new InMemorySignerAdapter();
 const adapterReady = adapter.initialize().then(async () => {
+    if (!PRIVATE_KEY) {
+        console.warn(
+            "[DevWallet] PRIVATE_KEY missing — set it in sandbox/.env (deploy-all generates one on localnet). Dev wallet will start with no accounts.",
+        );
+        return;
+    }
     const { secretKey } = decodeSuiPrivateKey(PRIVATE_KEY);
     const keypair = Ed25519Keypair.fromSecretKey(secretKey);
     await adapter.importAccount({ signer: keypair, label: "Deployer" });

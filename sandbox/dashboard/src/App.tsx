@@ -7,7 +7,6 @@ import { HealthPage } from "@/components/health-page";
 import { MarketMakerPage } from "@/components/market-maker";
 import { DeploymentPage } from "@/components/deployment-page";
 import { TradingPage } from "@/components/trading";
-import { DevToolsPage } from "@/components/dev-tools-page";
 
 const navLinks = [
     { to: "/", label: "Health" },
@@ -81,7 +80,6 @@ export default function App() {
                     <Route path="/trading" element={<TradingPage />} />
                     <Route path="/faucet" element={<FaucetPage />} />
                     <Route path="/deployment" element={<DeploymentPage />} />
-                    <Route path="/dev-tools" element={<DevToolsPage />} />
                 </Routes>
             </Layout>
         </BrowserRouter>

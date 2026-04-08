@@ -410,46 +410,11 @@ describe("deploy-all pipeline (localnet)", () => {
     }, 120_000);
 
     // ----------------------------------------------------------------
-    // Phase 9b: Create BalanceManager + start API service
-    // (Mirrors deploy-all: BM must exist before starting the API so
-    //  BALANCE_MANAGER_ID is available in the env.)
+    // Phase 9b: Start API service
+    // (BalanceManagers are now created by users from the dashboard via
+    //  the on-chain registry — no env var or seed BM required.)
     // ----------------------------------------------------------------
-    test("creates balance manager and starts API", async () => {
-        const deepbookPkgId = deployedPackages.get("deepbook")!.packageId;
-        const { Transaction } = await import("@mysten/sui/transactions");
-        const bmTx = new Transaction();
-        const bm = bmTx.moveCall({
-            target: `${deepbookPkgId}::balance_manager::new`,
-            arguments: [],
-        });
-        bmTx.moveCall({
-            target: "0x2::transfer::public_share_object",
-            arguments: [bm],
-            typeArguments: [`${deepbookPkgId}::balance_manager::BalanceManager`],
-        });
-
-        const bmResult = await client.signAndExecuteTransaction({
-            transaction: bmTx,
-            signer,
-            include: { effects: true, objectTypes: true },
-        });
-
-        expect(bmResult.$kind).toBe("Transaction");
-        await client.waitForTransaction({ digest: bmResult.Transaction!.digest });
-
-        const objectTypes = bmResult.Transaction!.objectTypes ?? {};
-        const bmCreated = bmResult.Transaction!.effects?.changedObjects?.find(
-            (obj) =>
-                obj.idOperation === "Created" &&
-                obj.outputState !== "PackageWrite" &&
-                (objectTypes[obj.objectId] ?? "").includes("::balance_manager::BalanceManager"),
-        );
-        expect(bmCreated, "BalanceManager not found in tx result").toBeDefined();
-
-        updateEnvFile(SANDBOX_ROOT, {
-            BALANCE_MANAGER_ID: bmCreated!.objectId,
-        });
-
+    test("starts API service", async () => {
         await startService("deepbook-sandbox-api", SANDBOX_ROOT);
 
         await waitForUrl("http://127.0.0.1:9009/", {

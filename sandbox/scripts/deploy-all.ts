@@ -348,54 +348,11 @@ async function main() {
             }
         }
 
-        // Create a BalanceManager for the deployer (dev trading account)
-        {
-            const deepbookPkgId = deployedPackages.get("deepbook")!.packageId;
-            log.spin("Creating BalanceManager for deployer...");
-            const { Transaction } = await import("@mysten/sui/transactions");
-            const bmTx = new Transaction();
-            const bm = bmTx.moveCall({
-                target: `${deepbookPkgId}::balance_manager::new`,
-                arguments: [],
-            });
-            bmTx.moveCall({
-                target: "0x2::transfer::public_share_object",
-                arguments: [bm],
-                typeArguments: [`${deepbookPkgId}::balance_manager::BalanceManager`],
-            });
-
-            const bmResult = await client.signAndExecuteTransaction({
-                transaction: bmTx,
-                signer,
-                include: { effects: true, objectTypes: true },
-            });
-
-            if (bmResult.$kind === "FailedTransaction") {
-                throw new Error("Failed to create BalanceManager");
-            }
-
-            await client.waitForTransaction({ digest: bmResult.Transaction!.digest });
-
-            const objectTypes = bmResult.Transaction!.objectTypes ?? {};
-            const bmCreated = bmResult.Transaction!.effects?.changedObjects?.find(
-                (obj) =>
-                    obj.idOperation === "Created" &&
-                    obj.outputState !== "PackageWrite" &&
-                    (objectTypes[obj.objectId] ?? "").includes("::balance_manager::BalanceManager"),
-            );
-
-            if (!bmCreated) throw new Error("BalanceManager not found in transaction result");
-
-            updateEnvFile(sandboxRoot, {
-                BALANCE_MANAGER_ID: bmCreated.objectId,
-            });
-            log.success(`BalanceManager created: ${bmCreated.objectId}`);
-
-            // Start API service now that BALANCE_MANAGER_ID is set
-            log.spin("Starting API service...");
-            await startService("deepbook-sandbox-api", sandboxRoot);
-            log.success("API service started with BalanceManager ID");
-        }
+        // Start API service. Users create their own BalanceManager from the
+        // dashboard via the on-chain registry — no env var or seed BM needed.
+        log.spin("Starting API service...");
+        await startService("deepbook-sandbox-api", sandboxRoot);
+        log.success("API service started");
 
         // Phase 6: Start market maker (localnet only)
         if (network === "localnet") {
