@@ -79,7 +79,6 @@ pnpm deploy-all
 
 When you see `DeepBook Sandbox Ready!`, everything is running:
 
-
 | Endpoint                     | URL                                                          |
 | ---------------------------- | ------------------------------------------------------------ |
 | Dashboard                    | [http://localhost:5173](http://localhost:5173)               |
@@ -89,7 +88,6 @@ When you see `DeepBook Sandbox Ready!`, everything is running:
 | DeepBook REST API            | [http://localhost:9008](http://localhost:9008)               |
 | Oracle Status                | [http://localhost:9010](http://localhost:9010)               |
 | Market Maker Health          | [http://localhost:3001/health](http://localhost:3001/health) |
-
 
 Verify it works:
 
@@ -143,7 +141,6 @@ The dashboard has five pages:
 
 Nginx proxies API requests to the sandbox services:
 
-
 | Path            | Target           | Service          |
 | --------------- | ---------------- | ---------------- |
 | `/api/sui`      | `localhost:9000` | Sui localnet RPC |
@@ -151,7 +148,6 @@ Nginx proxies API requests to the sandbox services:
 | `/api/mm`       | `localhost:3001` | Market maker     |
 | `/api/faucet`   | `localhost:9009` | Faucet           |
 | `/api/deepbook` | `localhost:9008` | DeepBook server  |
-
 
 ## 7. Building Your Own Contracts on DeepBook
 
@@ -167,7 +163,6 @@ cp -r sandbox/packages/example_contract sandbox/packages/my_contract
 
 Your `Move.toml` can reference any of these local dependencies:
 
-
 | Dependency           | Path                                          | Description                                            |
 | -------------------- | --------------------------------------------- | ------------------------------------------------------ |
 | `token`              | `../../.external-packages/token`              | DEEP token definition                                  |
@@ -176,7 +171,6 @@ Your `Move.toml` can reference any of these local dependencies:
 | `margin_liquidation` | `../../.external-packages/margin_liquidation` | Margin liquidation logic                               |
 | `pyth`               | `../pyth`                                     | Pyth oracle price feeds                                |
 | `usdc`               | `../usdc`                                     | USDC coin type                                         |
-
 
 > **Note:** The `.external-packages/` directory is created automatically by `pnpm deploy-all`. Your contract won't build until you've run it at least once.
 
@@ -286,7 +280,6 @@ cd sandbox
 pnpm down
 ```
 
-
 | What                                                         | Destroyed?                    |
 | ------------------------------------------------------------ | ----------------------------- |
 | Docker containers                                            | Yes — all stopped and removed |
@@ -297,7 +290,6 @@ pnpm down
 | Pub.localnet.toml                                            | Yes — removed                 |
 | Your source code                                             | Never                         |
 | Dashboard code/config                                        | Never                         |
-
 
 > **Note:** By default, `FORCE_REGENESIS=true` means the Sui node wipes chain state on every restart. Set it to empty in `.env` if you want data to persist across `deploy-all` runs.
 
@@ -349,7 +341,6 @@ bunx prettier-move -c *.move --write
 
 ## Appendix A: All Commands
 
-
 | Command                                     | Description                                                                           |
 | ------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `pnpm deploy-all`                           | Deploy everything — start containers, publish contracts, create pools, start services |
@@ -369,11 +360,9 @@ bunx prettier-move -c *.move --write
 | `curl http://localhost:9091/metrics`        | View market maker Prometheus metrics                                                  |
 | `curl http://localhost:9009/manifest`       | View full deployment manifest (package IDs, pools, oracles)                           |
 
-
 ## Appendix B: Configuration Reference
 
 All variables from `sandbox/.env.example`. For localnet, you don't need to set any of these — `deploy-all` auto-detects and auto-generates everything.
-
 
 | Variable                    | Required                        | Default                                            | Description                                                               |
 | --------------------------- | ------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------- |
@@ -408,9 +397,7 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `FAUCET_IMAGE`              | No                              | `mysten/deepbook-sandbox-faucet:...-arm64`         | Faucet Docker image override                                              |
 | `ORACLE_SERVICE_IMAGE`      | No                              | `mysten/deepbook-sandbox-oracle-service:...-arm64` | Oracle service Docker image override                                      |
 
-
 ## Appendix C: Docker Services Reference
-
 
 | Service            | Container Name          | Profile    | Ports (host:container) | Description                                        |
 | ------------------ | ----------------------- | ---------- | ---------------------- | -------------------------------------------------- |
@@ -422,7 +409,6 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `deepbook-faucet`  | `deepbook-faucet`       | `localnet` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens          |
 | `oracle-service`   | `oracle-service`        | `localnet` | 9010:9010              | Updates Pyth price feeds every 10 seconds          |
 | `dashboard`        | `deepbook-dashboard`    | `localnet` | 5173:80                | Web UI for monitoring and interacting with sandbox |
-
 
 ## Appendix D: Data Flows
 
@@ -463,7 +449,6 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 
 ## Appendix F: Important Files
 
-
 | File                                      | Description                                                                             |
 | ----------------------------------------- | --------------------------------------------------------------------------------------- |
 | `sandbox/docker-compose.yml`              | Defines all Docker services, profiles, ports, and volumes                               |
@@ -487,7 +472,6 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `sandbox/deployments/localnet.json`       | Generated deployment manifest with all addresses and IDs                                |
 | `sandbox/Pub.localnet.toml`               | Generated publish manifest for Sui CLI dependency resolution                            |
 | `external/deepbook/`                      | Git submodule — DeepBook V3 Move smart contracts and Rust crates                        |
-
 
 ## Appendix G: Submodule Note
 
@@ -513,7 +497,6 @@ git commit -m "Update deepbook submodule"
 
 This repository uses [pre-commit](https://pre-commit.com/) to check code quality and formatting before commits:
 
-
 | Hook                     | Purpose                                            |
 | ------------------------ | -------------------------------------------------- |
 | **check-merge-conflict** | Prevents committing merge conflict markers         |
@@ -524,7 +507,6 @@ This repository uses [pre-commit](https://pre-commit.com/) to check code quality
 | **mixed-line-ending**    | Normalizes line endings (LF)                       |
 | **editorconfig-checker** | Validates files match `.editorconfig` rules        |
 | **prettier**             | Checks formatting (4-space indent, 100-char width) |
-
 
 Activate the hooks after installing `pre-commit`:
 

@@ -290,11 +290,7 @@ export class MoveDeployer {
             const pubTomlPath = path.join(sandboxRoot, "Pub.localnet.toml");
             execFileSync(
                 "docker",
-                [
-                    "cp",
-                    `${CONTAINER_NAME}:${CONTAINER_WORKSPACE}/Pub.localnet.toml`,
-                    sandboxRoot,
-                ],
+                ["cp", `${CONTAINER_NAME}:${CONTAINER_WORKSPACE}/Pub.localnet.toml`, sandboxRoot],
                 { stdio: "pipe" },
             );
             // Rewrite container paths to local machine paths
@@ -381,10 +377,7 @@ export class MoveDeployer {
         }
 
         // Update the chain ID in existing [environments] section (pyth/usdc already use this format).
-        if (
-            pkg.name === "pyth" ||
-            (pkg.name === "usdc" && patched.includes("[environments]"))
-        ) {
+        if (pkg.name === "pyth" || (pkg.name === "usdc" && patched.includes("[environments]"))) {
             patched = patched.replace(/localnet\s*=\s*"[^"]*"/, `localnet = "${chainId}"`);
         }
         writeFileSync(tomlPath, patched);
