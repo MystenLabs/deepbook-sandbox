@@ -8,35 +8,20 @@ import { Secp256r1Keypair } from "@mysten/sui/keypairs/secp256r1";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { z } from "zod";
 
-export type Network = "testnet" | "localnet";
-
-const networkSchema = z.enum(["testnet", "localnet"]);
-
-const DEFAULT_RPC_URLS: Record<Network, string> = {
-    localnet: "http://127.0.0.1:9000",
-    testnet: "https://fullnode.testnet.sui.io:443",
-};
+const DEFAULT_RPC_URL = "http://127.0.0.1:9000";
 
 const envSchema = z
     .object({
         PRIVATE_KEY: z.string().optional(),
-        NETWORK: z.string().optional(),
         RPC_URL: z.string().optional(),
         SUI_TOOLS_IMAGE: z.string().optional(),
     })
-    .transform((raw) => {
-        const network = raw.NETWORK?.toLowerCase();
-        const validNetwork =
-            network && networkSchema.safeParse(network).success
-                ? (networkSchema.parse(network) as Network)
-                : undefined;
-        return {
-            privateKey: raw.PRIVATE_KEY?.trim(),
-            network: validNetwork,
-            rpcUrl: raw.RPC_URL?.trim() || undefined,
-            suiToolsImage: raw.SUI_TOOLS_IMAGE?.trim(),
-        };
-    });
+    .transform((raw) => ({
+        privateKey: raw.PRIVATE_KEY?.trim(),
+        network: "localnet" as const,
+        rpcUrl: raw.RPC_URL?.trim() || undefined,
+        suiToolsImage: raw.SUI_TOOLS_IMAGE?.trim(),
+    }));
 
 export type EnvConfig = z.infer<typeof envSchema>;
 
@@ -57,39 +42,28 @@ export class ConfigurationLoader {
         return this.load();
     }
 
-    getNetwork(): Network {
+    getRpcUrl(): string {
         const cfg = this.getConfig();
-        return cfg.network ?? "localnet";
+        return cfg.rpcUrl ?? DEFAULT_RPC_URL;
     }
 
-    getRpcUrl(network?: Network): string {
-        const cfg = this.getConfig();
-        const n = network ?? this.getNetwork();
-        return cfg.rpcUrl ?? DEFAULT_RPC_URLS[n];
-    }
-
-    getFaucetUrl(network?: Network): string {
-        return getFaucetHost(network ?? this.getNetwork());
+    getFaucetUrl(): string {
+        return getFaucetHost("localnet");
     }
 }
 
 const loader = new ConfigurationLoader();
 
-export function getNetwork(): Network {
-    return loader.getNetwork();
+export function getRpcUrl(): string {
+    return loader.getRpcUrl();
 }
 
-export function getRpcUrl(network?: Network): string {
-    return loader.getRpcUrl(network);
+export function getFaucetUrl(): string {
+    return loader.getFaucetUrl();
 }
 
-export function getFaucetUrl(network?: Network): string {
-    return loader.getFaucetUrl(network);
-}
-
-export function getClient(network?: Network): SuiGrpcClient {
-    const n = network ?? getNetwork();
-    return new SuiGrpcClient({ network: n, baseUrl: getRpcUrl(n) });
+export function getClient(): SuiGrpcClient {
+    return new SuiGrpcClient({ network: "localnet", baseUrl: getRpcUrl() });
 }
 
 export function hasPrivateKey(): boolean {

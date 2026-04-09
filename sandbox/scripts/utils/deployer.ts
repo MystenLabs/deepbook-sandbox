@@ -7,7 +7,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
-import type { Network } from "./config";
 import log from "./logger";
 
 const CONTAINER_NAME = "sui-localnet";
@@ -26,9 +25,6 @@ const PACKAGES_NEED_MOVE_PATCH = [
     "deepbook_margin",
     "margin_liquidation",
 ] as const;
-
-const PYTH_GIT_TESTNET =
-    'pyth = { git = "https://github.com/pyth-network/pyth-crosschain.git", subdir = "target_chains/sui/contracts", rev = "sui-contract-testnet" }';
 
 function getSandboxRoot(): string {
     return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -97,15 +93,12 @@ function parseDigestFromOutput(output: string): string {
 }
 
 export class MoveDeployer {
-    private suiBinary: string;
     private sandboxRoot: string;
 
     constructor(
         private client: SuiGrpcClient,
         private signer: Keypair,
-        private network: Network,
     ) {
-        this.suiBinary = process.env.SUI_BINARY || "sui";
         this.sandboxRoot = getSandboxRoot();
     }
 
@@ -184,27 +177,19 @@ export class MoveDeployer {
 
         const resolvedPath = path.resolve(process.cwd(), packagePath);
 
-        let command: string;
-        let execArgs: string[];
-
-        if (this.network === "localnet") {
-            const containerPkgPath = this.toContainerPath(resolvedPath);
-            const suiArgs = [
-                "client",
-                "test-publish",
-                "--json",
-                "--build-env",
-                "localnet",
-                "--pubfile-path",
-                `${CONTAINER_WORKSPACE}/Pub.localnet.toml`,
-                containerPkgPath,
-            ];
-            command = "docker";
-            execArgs = ["exec", CONTAINER_NAME, "sui", ...suiArgs];
-        } else {
-            command = this.suiBinary;
-            execArgs = ["client", "publish", "--json", resolvedPath];
-        }
+        const containerPkgPath = this.toContainerPath(resolvedPath);
+        const suiArgs = [
+            "client",
+            "test-publish",
+            "--json",
+            "--build-env",
+            "localnet",
+            "--pubfile-path",
+            `${CONTAINER_WORKSPACE}/Pub.localnet.toml`,
+            containerPkgPath,
+        ];
+        const command = "docker";
+        const execArgs = ["exec", CONTAINER_NAME, "sui", ...suiArgs];
 
         let output: string;
         try {
@@ -271,7 +256,7 @@ export class MoveDeployer {
         const pythPath = path.join(sandboxRoot, "packages", "pyth");
         const usdcPath = path.join(sandboxRoot, "packages", "usdc");
 
-        const allPackages: PackageInfo[] = [
+        const packages: PackageInfo[] = [
             { name: "token", path: path.join(stagingDir, "token"), deps: [] },
             { name: "deepbook", path: path.join(stagingDir, "deepbook"), deps: ["token"] },
             { name: "pyth", path: pythPath, deps: [] },
@@ -288,46 +273,33 @@ export class MoveDeployer {
             },
         ];
 
-        const packages =
-            this.network === "testnet" ? allPackages.filter((p) => p.name !== "pyth") : allPackages;
-
-        if (this.network === "localnet") {
-            this.setupContainerCli();
-        }
+        this.setupContainerCli();
 
         const deployed = new Map<string, DeploymentResult>();
 
         for (const pkg of packages) {
             this.preDeployment(pkg, deployed, chainId);
-            if (this.network === "localnet") {
-                this.copyToContainer(pkg.path);
-            }
+            this.copyToContainer(pkg.path);
             const result = await this.deployPackage(pkg.path, pkg.name);
             deployed.set(pkg.name, result);
             await new Promise((r) => setTimeout(r, 2000));
         }
 
         // Copy the Pub.localnet.toml from the container to the sandbox root
-        if (this.network === "localnet") {
-            try {
-                const pubTomlPath = path.join(sandboxRoot, "Pub.localnet.toml");
-                execFileSync(
-                    "docker",
-                    [
-                        "cp",
-                        `${CONTAINER_NAME}:${CONTAINER_WORKSPACE}/Pub.localnet.toml`,
-                        sandboxRoot,
-                    ],
-                    { stdio: "pipe" },
-                );
-                // Rewrite container paths to local machine paths
-                let pubToml = readFileSync(pubTomlPath, "utf-8");
-                pubToml = pubToml.replaceAll(CONTAINER_WORKSPACE, sandboxRoot);
-                writeFileSync(pubTomlPath, pubToml);
-                log.success("Copied Pub.localnet.toml from container (paths rewritten to local)");
-            } catch {
-                log.warn("Could not copy Pub.localnet.toml from container");
-            }
+        try {
+            const pubTomlPath = path.join(sandboxRoot, "Pub.localnet.toml");
+            execFileSync(
+                "docker",
+                ["cp", `${CONTAINER_NAME}:${CONTAINER_WORKSPACE}/Pub.localnet.toml`, sandboxRoot],
+                { stdio: "pipe" },
+            );
+            // Rewrite container paths to local machine paths
+            let pubToml = readFileSync(pubTomlPath, "utf-8");
+            pubToml = pubToml.replaceAll(CONTAINER_WORKSPACE, sandboxRoot);
+            writeFileSync(pubTomlPath, pubToml);
+            log.success("Copied Pub.localnet.toml from container (paths rewritten to local)");
+        } catch {
+            log.warn("Could not copy Pub.localnet.toml from container");
         }
 
         return deployed;
@@ -342,25 +314,21 @@ export class MoveDeployer {
         chainId: string,
     ): void {
         if (needsMovePatch(pkg.name)) {
-            this.patchMoveTOML(pkg, deployed, chainId, this.network);
+            this.patchMoveTOML(pkg, deployed, chainId);
         }
     }
 
     private patchMoveTOML(
         pkg: PackageInfo,
-        deployed: Map<string, DeploymentResult>,
+        _deployed: Map<string, DeploymentResult>,
         chainId: string,
-        network: Network,
     ): void {
         const tomlPath = path.join(path.resolve(process.cwd(), pkg.path), "Move.toml");
         let patched = readFileSync(tomlPath, "utf-8");
-        const isLocalnet = network === "localnet";
         const envBlock = `[environments]\nlocalnet = "${chainId}"\n`;
 
         if (pkg.name === "token") {
-            if (isLocalnet) {
-                patched = patched.replace(/\[addresses\]\s*\n\s*token\s*=\s*"0x0"\s*/, envBlock);
-            }
+            patched = patched.replace(/\[addresses\]\s*\n\s*token\s*=\s*"0x0"\s*/, envBlock);
         }
 
         if (pkg.name === "deepbook") {
@@ -368,9 +336,7 @@ export class MoveDeployer {
                 /token\s*=\s*\{[^}]*git[^}]*\}/g,
                 'token = { local = "../token" }',
             );
-            if (isLocalnet) {
-                patched = patched.replace(/\[addresses\]\s*\n\s*deepbook\s*=\s*"0x0"\s*/, envBlock);
-            }
+            patched = patched.replace(/\[addresses\]\s*\n\s*deepbook\s*=\s*"0x0"\s*/, envBlock);
         }
 
         if (pkg.name === "deepbook_margin") {
@@ -382,26 +348,18 @@ export class MoveDeployer {
                 /deepbook\s*=\s*\{[^}]*local[^}]*\}/g,
                 'deepbook = { local = "../deepbook" }',
             );
-            if (isLocalnet) {
-                patched = patched.replace(
-                    /Pyth\s*=\s*\{[^}]*git[^}]*\}/g,
-                    'pyth = { local = "../../packages/pyth" }',
-                );
-            } else {
-                patched = patched.replace(/Pyth\s*=\s*\{[^}]*\}/g, PYTH_GIT_TESTNET);
-            }
-            if (isLocalnet) {
-                patched = patched.replace(
-                    /\[addresses\]\s*\n\s*deepbook_margin\s*=\s*"0x0"\s*/,
-                    envBlock,
-                );
-            }
+            patched = patched.replace(
+                /Pyth\s*=\s*\{[^}]*git[^}]*\}/g,
+                'pyth = { local = "../../packages/pyth" }',
+            );
+            patched = patched.replace(
+                /\[addresses\]\s*\n\s*deepbook_margin\s*=\s*"0x0"\s*/,
+                envBlock,
+            );
         }
 
         if (pkg.name === "margin_liquidation") {
-            const pythDep = isLocalnet
-                ? 'pyth = { local = "../../packages/pyth" }'
-                : PYTH_GIT_TESTNET;
+            const pythDep = 'pyth = { local = "../../packages/pyth" }';
             const extraDeps = [
                 ...(patched.includes("token") ? [] : ['token = { local = "../token" }']),
                 ...(patched.includes("pyth") ? [] : [pythDep]),
@@ -412,19 +370,14 @@ export class MoveDeployer {
                     `deepbook_margin = { local = "../deepbook_margin" }\n${extraDeps.join("\n")}`,
                 );
             }
-            if (isLocalnet) {
-                patched = patched.replace(
-                    /\[addresses\]\s*\n\s*margin_liquidation\s*=\s*"0x0"\s*/,
-                    envBlock,
-                );
-            }
+            patched = patched.replace(
+                /\[addresses\]\s*\n\s*margin_liquidation\s*=\s*"0x0"\s*/,
+                envBlock,
+            );
         }
 
         // Update the chain ID in existing [environments] section (pyth/usdc already use this format).
-        if (
-            pkg.name === "pyth" ||
-            (pkg.name === "usdc" && isLocalnet && patched.includes("[environments]"))
-        ) {
+        if (pkg.name === "pyth" || (pkg.name === "usdc" && patched.includes("[environments]"))) {
             patched = patched.replace(/localnet\s*=\s*"[^"]*"/, `localnet = "${chainId}"`);
         }
         writeFileSync(tomlPath, patched);

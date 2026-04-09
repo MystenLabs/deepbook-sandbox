@@ -79,15 +79,15 @@ pnpm deploy-all
 
 When you see `DeepBook Sandbox Ready!`, everything is running:
 
-| Endpoint                     | URL                          |
-| ---------------------------- | ---------------------------- |
-| Dashboard                    | http://localhost:5173        |
-| Sui RPC                      | http://localhost:9000        |
-| Sui Faucet (native)          | http://localhost:9123        |
-| DeepBook Faucet (SUI + DEEP) | http://localhost:9009        |
-| DeepBook REST API            | http://localhost:9008        |
-| Oracle Status                | http://localhost:9010        |
-| Market Maker Health          | http://localhost:3001/health |
+| Endpoint                     | URL                                                          |
+| ---------------------------- | ------------------------------------------------------------ |
+| Dashboard                    | [http://localhost:5173](http://localhost:5173)               |
+| Sui RPC                      | [http://localhost:9000](http://localhost:9000)               |
+| Sui Faucet (native)          | [http://localhost:9123](http://localhost:9123)               |
+| DeepBook Faucet (SUI + DEEP) | [http://localhost:9009](http://localhost:9009)               |
+| DeepBook REST API            | [http://localhost:9008](http://localhost:9008)               |
+| Oracle Status                | [http://localhost:9010](http://localhost:9010)               |
+| Market Maker Health          | [http://localhost:3001/health](http://localhost:3001/health) |
 
 Verify it works:
 
@@ -129,7 +129,7 @@ When you run `pnpm deploy-all`, here's the full sequence:
 
 ## 6. The Dashboard
 
-The web dashboard is a React app served by an nginx container as part of the Docker stack. It starts automatically with `pnpm deploy-all` and is available at http://localhost:5173.
+The web dashboard is a React app served by an nginx container as part of the Docker stack. It starts automatically with `pnpm deploy-all` and is available at [http://localhost:5173](http://localhost:5173).
 
 The dashboard has five pages:
 
@@ -236,7 +236,7 @@ curl http://localhost:9009/
 curl http://localhost:9009/manifest
 ```
 
-You can also request tokens from the dashboard's Faucet tab at http://localhost:5173 (requires a connected Sui wallet).
+You can also request tokens from the dashboard's Faucet tab at [http://localhost:5173](http://localhost:5173) (requires a connected Sui wallet).
 
 ## 9. Day-to-Day Workflow
 
@@ -280,16 +280,16 @@ cd sandbox
 pnpm down
 ```
 
-| What                                                            | Destroyed?                    |
-| --------------------------------------------------------------- | ----------------------------- |
-| Docker containers                                               | Yes — all stopped and removed |
-| Docker volumes (chain data, postgres)                           | Yes — wiped clean             |
-| Auto-generated .env keys (package IDs, oracle IDs, pool IDs)    | Yes — cleaned                 |
-| User-set .env values (NETWORK, SUI*TOOLS_IMAGE, MM*\* settings) | No — preserved                |
-| Deployment manifest (deployments/localnet.json)                 | No — kept for reference       |
-| Pub.localnet.toml                                               | Yes — removed                 |
-| Your source code                                                | Never                         |
-| Dashboard code/config                                           | Never                         |
+| What                                                         | Destroyed?                    |
+| ------------------------------------------------------------ | ----------------------------- |
+| Docker containers                                            | Yes — all stopped and removed |
+| Docker volumes (chain data, postgres)                        | Yes — wiped clean             |
+| Auto-generated .env keys (package IDs, oracle IDs, pool IDs) | Yes — cleaned                 |
+| User-set .env values (SUI*TOOLS_IMAGE, MM* settings)         | No — preserved                |
+| Deployment manifest (deployments/localnet.json)              | No — kept for reference       |
+| Pub.localnet.toml                                            | Yes — removed                 |
+| Your source code                                             | Never                         |
+| Dashboard code/config                                        | Never                         |
 
 > **Note:** By default, `FORCE_REGENESIS=true` means the Sui node wipes chain state on every restart. Set it to empty in `.env` if you want data to persist across `deploy-all` runs.
 
@@ -355,7 +355,6 @@ bunx prettier-move -c *.move --write
 | `docker compose ps`                         | List running containers and their status                                              |
 | `docker compose --profile localnet down`    | Stop all localnet containers                                                          |
 | `docker compose --profile localnet down -v` | Stop containers and remove volumes                                                    |
-| `docker compose --profile remote up -d`     | Start the remote profile (testnet/mainnet indexer stack)                              |
 | `curl http://localhost:9010/`               | Check oracle service status and latest prices                                         |
 | `curl http://localhost:3001/health`         | Check market maker health                                                             |
 | `curl http://localhost:9091/metrics`        | View market maker Prometheus metrics                                                  |
@@ -370,7 +369,6 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `SUI_TOOLS_IMAGE`           | No (auto-detected)              | `mysten/sui-tools:compat[-arm64]`                  | Docker image for Sui node; auto-detected from CPU architecture            |
 | `PRIVATE_KEY`               | No (auto-generated on localnet) | —                                                  | Deployer/signer private key (`suiprivkey1...` or `0x...` hex)             |
 | `ORACLE_PRIVATE_KEY`        | No (auto-generated)             | —                                                  | Dedicated oracle service keypair                                          |
-| `NETWORK`                   | No                              | `localnet`                                         | Target network: `localnet` or `testnet`                                   |
 | `RPC_URL`                   | No                              | auto-detected                                      | Sui RPC endpoint override                                                 |
 | `FORCE_REGENESIS`           | No                              | `true`                                             | Wipe chain state on restart; set empty to persist                         |
 | `DEEPBOOK_PACKAGE_ID`       | No (auto-populated)             | —                                                  | Deployed DeepBook package address                                         |
@@ -401,16 +399,16 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 
 ## Appendix C: Docker Services Reference
 
-| Service            | Container Name          | Profile              | Ports (host:container) | Description                                        |
-| ------------------ | ----------------------- | -------------------- | ---------------------- | -------------------------------------------------- |
-| `postgres`         | `deepbook-postgres`     | (always)             | 5432:5432              | PostgreSQL 16 database for the indexer             |
-| `sui-localnet`     | `sui-localnet`          | `localnet`           | 9000:9000, 9123:9123   | Full Sui node with built-in faucet                 |
-| `market-maker`     | `deepbook-market-maker` | `localnet`           | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools    |
-| `deepbook-indexer` | `deepbook-indexer`      | `remote`, `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres       |
-| `deepbook-server`  | `deepbook-server`       | `remote`, `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |
-| `deepbook-faucet`  | `deepbook-faucet`       | `localnet`, `remote` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens          |
-| `oracle-service`   | `oracle-service`        | `localnet`           | 9010:9010              | Updates Pyth price feeds every 10 seconds          |
-| `dashboard`        | `deepbook-dashboard`    | `localnet`, `remote` | 5173:80                | Web UI for monitoring and interacting with sandbox |
+| Service            | Container Name          | Profile    | Ports (host:container) | Description                                        |
+| ------------------ | ----------------------- | ---------- | ---------------------- | -------------------------------------------------- |
+| `postgres`         | `deepbook-postgres`     | (always)   | 5432:5432              | PostgreSQL 16 database for the indexer             |
+| `sui-localnet`     | `sui-localnet`          | `localnet` | 9000:9000, 9123:9123   | Full Sui node with built-in faucet                 |
+| `market-maker`     | `deepbook-market-maker` | `localnet` | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools    |
+| `deepbook-indexer` | `deepbook-indexer`      | `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres       |
+| `deepbook-server`  | `deepbook-server`       | `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |
+| `deepbook-faucet`  | `deepbook-faucet`       | `localnet` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens          |
+| `oracle-service`   | `oracle-service`        | `localnet` | 9010:9010              | Updates Pyth price feeds every 10 seconds          |
+| `dashboard`        | `deepbook-dashboard`    | `localnet` | 5173:80                | Web UI for monitoring and interacting with sandbox |
 
 ## Appendix D: Data Flows
 

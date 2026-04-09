@@ -76,14 +76,13 @@ curl -X POST http://localhost:9009/faucet \
 
 ## Environment Variables
 
-| Variable                | Required | Default             | Description                                      |
-| ----------------------- | -------- | ------------------- | ------------------------------------------------ |
-| `NETWORK`               | Yes      | —                   | `localnet` or `testnet`                          |
-| `PRIVATE_KEY`           | Yes      | —                   | Bech32-encoded Sui private key (deployer wallet) |
-| `DEEP_TOKEN_PACKAGE_ID` | Yes      | —                   | Package ID of the deployed DEEP token            |
-| `RPC_URL`               | No       | Per-network default | Sui RPC endpoint                                 |
-| `PORT`                  | No       | `9009`              | Server listen port                               |
-| `MAX_DEEP_PER_REQUEST`  | No       | `10000`             | Maximum DEEP tokens per request                  |
+| Variable                | Required | Default                    | Description                                      |
+| ----------------------- | -------- | -------------------------- | ------------------------------------------------ |
+| `PRIVATE_KEY`           | Yes      | —                          | Bech32-encoded Sui private key (deployer wallet) |
+| `DEEP_TOKEN_PACKAGE_ID` | Yes      | —                          | Package ID of the deployed DEEP token            |
+| `RPC_URL`               | No       | `http://sui-localnet:9000` | Sui RPC endpoint                                 |
+| `PORT`                  | No       | `9009`                     | Server listen port                               |
+| `MAX_DEEP_PER_REQUEST`  | No       | `10000`                    | Maximum DEEP tokens per request                  |
 
 ## Running
 
@@ -93,12 +92,7 @@ The faucet is included in the sandbox Docker Compose stack:
 
 ```bash
 cd sandbox
-
-# Localnet
 docker compose --profile localnet up -d
-
-# Testnet
-docker compose --profile remote up -d
 ```
 
 ### Local development

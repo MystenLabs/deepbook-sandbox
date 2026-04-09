@@ -1,19 +1,16 @@
 import { spawnSync } from "child_process";
 import { unlinkSync } from "fs";
 import path from "path";
-import { getNetwork } from "./utils/config";
 import { getSandboxRoot } from "./utils/docker-compose";
 import { cleanEnvFile, USER_ENV_KEYS } from "./utils/env";
 import log from "./utils/logger";
 
 function main() {
-    const network = getNetwork();
-    const profile = network === "localnet" ? "localnet" : "remote";
     const cwd = getSandboxRoot();
 
     // 1. Stop containers and remove volumes
-    log.phase(`Stopping containers and removing volumes (profile: ${profile})`);
-    const result = spawnSync("docker", ["compose", "--profile", profile, "down", "-v"], {
+    log.phase("Stopping containers and removing volumes (profile: localnet)");
+    const result = spawnSync("docker", ["compose", "--profile", "localnet", "down", "-v"], {
         cwd,
         encoding: "utf-8",
         stdio: "inherit",

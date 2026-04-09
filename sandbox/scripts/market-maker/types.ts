@@ -46,7 +46,7 @@ export interface PoolConfig {
 
 export interface DeploymentManifest {
     network: {
-        type: "localnet" | "testnet";
+        type: "localnet";
         rpcUrl: string;
         faucetUrl: string;
     };

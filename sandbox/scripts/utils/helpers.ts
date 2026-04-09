@@ -54,8 +54,7 @@ export async function ensureMinimumBalance(
 
 /**
  * Build env vars for indexer/server from deployment results. All IDs come from the
- * deployment map. Pass firstCheckpoint from the caller if needed (e.g.
- * fetch token tx once in deploy-all for testnet).
+ * deployment map.
  */
 export function getDeploymentEnv(
     deployedPackages: Map<string, DeploymentResult>,
