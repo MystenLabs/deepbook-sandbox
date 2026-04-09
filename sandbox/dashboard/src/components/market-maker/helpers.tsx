@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { RefreshCw } from "lucide-react";
+import { Info, RefreshCw } from "lucide-react";
 import { CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 /* ------------------------------------------------------------------ */
 /*  Card wrappers                                                      */
@@ -22,16 +23,32 @@ export function CardWithPlus({ children }: { children: ReactNode }) {
 export function StatCard({
     label,
     isLoading,
+    tooltip,
     children,
 }: {
     label: string;
     isLoading: boolean;
+    tooltip?: string;
     children: ReactNode;
 }) {
     return (
         <CardWithPlus>
             <CardContent className="py-4">
-                <div className="text-xs text-zinc-500">{label}</div>
+                <div className="flex items-center gap-1 text-xs text-zinc-500">
+                    {label}
+                    {tooltip && (
+                        <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Info className="h-3 w-3 cursor-help text-zinc-600" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>{tooltip}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    )}
+                </div>
                 {isLoading ? (
                     <Skeleton className="mt-1 h-6 w-24 bg-zinc-800" />
                 ) : (

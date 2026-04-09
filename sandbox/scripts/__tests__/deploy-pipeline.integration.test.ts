@@ -34,6 +34,7 @@ import {
     configureAndStartLocalnetServices,
     startOracleService,
     startMarketMaker,
+    startService,
 } from "../utils/docker-compose";
 import { MoveDeployer, type DeploymentResult } from "../utils/deployer";
 import { ensureMinimumBalance, getDeploymentEnv } from "../utils/helpers";
@@ -274,12 +275,6 @@ describe("deploy-all pipeline (localnet)", () => {
             timeoutMs: 120_000,
             label: "DeepBook server",
         });
-
-        // Faucet service should respond
-        await waitForUrl("http://127.0.0.1:9009/", {
-            timeoutMs: 60_000,
-            label: "DeepBook faucet",
-        });
     }, 600_000);
 
     // ----------------------------------------------------------------
@@ -392,11 +387,17 @@ describe("deploy-all pipeline (localnet)", () => {
     // Phase 9: Start market maker
     // ----------------------------------------------------------------
     test("starts market maker", async () => {
+        // Generate a dedicated MM keypair (same as deploy-all)
+        const mmKeypair = Ed25519Keypair.generate();
+        const mmAddress = mmKeypair.getPublicKey().toSuiAddress();
+        await ensureMinimumBalance(client, mmAddress, FAUCET_HOST);
+
         updateEnvFile(SANDBOX_ROOT, {
             DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
             POOL_ID: pools.DEEP_SUI.poolId,
             BASE_COIN_TYPE: pools.DEEP_SUI.baseCoinType,
             DEPLOYER_ADDRESS: signerAddress,
+            MM_PRIVATE_KEY: mmKeypair.getSecretKey(),
         });
 
         await startMarketMaker(SANDBOX_ROOT);
@@ -405,6 +406,20 @@ describe("deploy-all pipeline (localnet)", () => {
         await waitForUrl("http://127.0.0.1:3001/health", {
             timeoutMs: 60_000,
             label: "Market maker",
+        });
+    }, 120_000);
+
+    // ----------------------------------------------------------------
+    // Phase 9b: Start API service
+    // (BalanceManagers are now created by users from the dashboard via
+    //  the on-chain registry — no env var or seed BM required.)
+    // ----------------------------------------------------------------
+    test("starts API service", async () => {
+        await startService("deepbook-sandbox-api", SANDBOX_ROOT);
+
+        await waitForUrl("http://127.0.0.1:9009/", {
+            timeoutMs: 60_000,
+            label: "DeepBook sandbox API",
         });
     }, 120_000);
 

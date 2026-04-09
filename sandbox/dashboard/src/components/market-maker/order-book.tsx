@@ -105,9 +105,9 @@ export function OrderBook({
 
                         {/* Asks (high to low) */}
                         <div className="space-y-0">
-                            {data.asks.map((row) => (
+                            {data.asks.map((row, i) => (
                                 <OrderRow
-                                    key={row.price}
+                                    key={`ask-${i}`}
                                     row={row}
                                     maxCumulative={maxCumulative}
                                     pair={pair}
@@ -138,9 +138,9 @@ export function OrderBook({
 
                         {/* Bids (high to low) */}
                         <div className="space-y-0">
-                            {data.bids.map((row) => (
+                            {data.bids.map((row, i) => (
                                 <OrderRow
-                                    key={row.price}
+                                    key={`bid-${i}`}
                                     row={row}
                                     maxCumulative={maxCumulative}
                                     pair={pair}

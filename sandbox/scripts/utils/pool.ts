@@ -173,6 +173,17 @@ export class PoolCreator {
 
         tx.setGasBudget(200_000_000);
 
+        // Initialise the registry's BalanceManager owner→IDs map.
+        // When the deepbook package is published, the Registry's init function creates the Registry as a
+        // shared object but doesn't initialize the BM map. The map only exists if someone with the admin cap calls
+        // init_balance_manager_map. Without that call, register_balance_manager aborts because it tries to
+        // dynamic_field::borrow_mut a field that doesn't exist. And without register_balance_manager,
+        // getBalanceManagerIds(owner) always returns an empty array, so the dashboard can't discover any BMs
+        tx.moveCall({
+            target: `${deepbookPkg!.packageId}::registry::init_balance_manager_map`,
+            arguments: [tx.object(registry.objectId), tx.object(adminCap.objectId)],
+        });
+
         // Call create_pool_admin
         tx.moveCall({
             target: `${deepbookPkg!.packageId}::pool::create_pool_admin`,

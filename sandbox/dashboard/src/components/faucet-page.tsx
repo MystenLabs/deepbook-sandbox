@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
 import { useState, useEffect } from "react";
-import { useCurrentAccount, useSuiClientContext, useSuiClientQuery } from "@mysten/dapp-kit";
+import { useCurrentAccount, useCurrentNetwork } from "@mysten/dapp-kit-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Copy, Check, ExternalLink } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useWalletBalances } from "@/components/trading/hooks";
 
-const FAUCET_URL = "/api/faucet/faucet";
-const MIST_PER_SUI = 1_000_000_000;
+const FAUCET_URL = "/api/faucet";
 
 type Token = "SUI" | "DEEP";
 
@@ -26,31 +26,29 @@ async function requestFaucet(address: string, token: Token) {
 }
 
 export function FaucetPage() {
+    const network = useCurrentNetwork();
     const account = useCurrentAccount();
-    const address = account!.address;
-    const { network } = useSuiClientContext();
     const queryClient = useQueryClient();
+
+    const address = account?.address ?? null;
+    const { data: walletData, isLoading: balanceLoading } = useWalletBalances(address);
+
+    const suiBalanceStr = walletData?.balances?.SUI ?? "0";
+    const deepBalanceStr = walletData?.balances?.DEEP ?? "0";
 
     const [copied, setCopied] = useState(false);
 
-    const { data: allBalances, isLoading: balanceLoading } = useSuiClientQuery("getAllBalances", {
-        owner: address,
-    });
-
-    const suiBalance = allBalances?.find((b) => b.coinType === "0x2::sui::SUI");
-    const deepBalance = allBalances?.find((b) => b.coinType.endsWith("::deep::DEEP"));
-
     const suiFaucet = useMutation({
-        mutationFn: () => requestFaucet(address, "SUI"),
+        mutationFn: () => requestFaucet(address!, "SUI"),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: [network, "getAllBalances"] });
+            queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
         },
     });
 
     const deepFaucet = useMutation({
-        mutationFn: () => requestFaucet(address, "DEEP"),
+        mutationFn: () => requestFaucet(address!, "DEEP"),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: [network, "getAllBalances"] });
+            queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
         },
     });
 
@@ -68,6 +66,7 @@ export function FaucetPage() {
     }, [deepFaucet.status]);
 
     const copyAddress = async () => {
+        if (!address) return;
         await navigator.clipboard.writeText(address);
         setCopied(true);
     };
@@ -78,13 +77,20 @@ export function FaucetPage() {
         return () => clearTimeout(id);
     }, [copied]);
 
+    if (!address) {
+        return (
+            <div className="space-y-4">
+                <h1 className="text-lg font-semibold">Faucet</h1>
+                <p className="text-sm text-zinc-500">Connect your wallet to use the faucet.</p>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-4">
             <div className="space-y-1">
                 <h1 className="text-lg font-semibold">Faucet</h1>
-                <p className="text-xs text-muted-foreground">
-                    Request testnet tokens for your connected wallet
-                </p>
+                <p className="text-xs text-muted-foreground">Request tokens for your wallet</p>
             </div>
 
             {/* Address row */}
@@ -110,7 +116,7 @@ export function FaucetPage() {
                         <Row label="Balance">
                             <BalanceValue
                                 loading={balanceLoading}
-                                value={formatBalance(suiBalance?.totalBalance, "SUI")}
+                                value={`${parseFloat(suiBalanceStr).toFixed(4)} SUI`}
                             />
                         </Row>
                         <Button
@@ -134,7 +140,7 @@ export function FaucetPage() {
                         <Row label="Balance">
                             <BalanceValue
                                 loading={balanceLoading}
-                                value={formatBalance(deepBalance?.totalBalance, "DEEP")}
+                                value={`${parseFloat(deepBalanceStr).toFixed(4)} DEEP`}
                             />
                         </Row>
                         <Button
@@ -220,11 +226,6 @@ function BalanceValue({ loading, value }: { loading: boolean; value: string }) {
     ) : (
         <span className="text-sm font-medium text-zinc-200">{value}</span>
     );
-}
-
-function formatBalance(balance: string | undefined, symbol: string) {
-    if (!balance) return `0.0000 ${symbol}`;
-    return `${(Number(balance) / MIST_PER_SUI).toFixed(4)} ${symbol}`;
 }
 
 function truncateAddress(addr: string) {

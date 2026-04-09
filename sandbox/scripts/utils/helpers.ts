@@ -1,5 +1,7 @@
 import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import { requestSuiFromFaucetV2 } from "@mysten/sui/faucet";
+import { Transaction, coinWithBalance } from "@mysten/sui/transactions";
+import type { Keypair } from "@mysten/sui/cryptography";
 import type { DeploymentResult } from "./deployer";
 import log from "./logger";
 
@@ -76,4 +78,52 @@ export function getDeploymentEnv(
     };
     if (options.firstCheckpoint) env.FIRST_CHECKPOINT = options.firstCheckpoint;
     return env;
+}
+
+export interface TransferCoinOptions {
+    client: SuiGrpcClient;
+    signer: Keypair;
+    coinType: string;
+    amount: bigint | number;
+    recipient: string;
+    /** Short label for log lines (e.g. "DEEP", "USDC"). Defaults to coinType. */
+    label?: string;
+}
+
+/**
+ * Transfer a fixed amount of a coin from `signer` to `recipient`. Splits a
+ * fresh coin via `coinWithBalance` (does not consume the gas coin). On
+ * failure logs a warning and returns false rather than throwing — preserves
+ * the existing best-effort semantics in deploy-all.
+ */
+export async function transferCoin({
+    client,
+    signer,
+    coinType,
+    amount,
+    recipient,
+    label,
+}: TransferCoinOptions): Promise<boolean> {
+    const tag = label ?? coinType;
+    const tx = new Transaction();
+    const coin = coinWithBalance({
+        balance: amount,
+        type: coinType,
+        useGasCoin: false,
+    })(tx);
+    tx.transferObjects([coin], recipient);
+
+    const result = await client.signAndExecuteTransaction({
+        transaction: tx,
+        signer,
+        include: { effects: true },
+    });
+
+    if (result.$kind === "FailedTransaction") {
+        log.warn(`Failed to transfer ${tag} to ${recipient}`);
+        return false;
+    }
+    await client.waitForTransaction({ digest: result.Transaction!.digest });
+    log.success(`Transferred ${amount} ${tag} to ${recipient}`);
+    return true;
 }

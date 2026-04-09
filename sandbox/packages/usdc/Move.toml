@@ -7,7 +7,7 @@ edition = "2024"         # edition = "legacy" to use legacy (pre-2024) Move
 [dependencies]
 
 [environments]
-localnet = "f2fc6241"
+localnet = "65L69Car1kHNJTjTpPRLLj8wdRcQeQoDkUBj9VGNRT81"
 
 # Read more about the package management system options:
 # https://docs.sui.io/guides/developer/sui-101/move-package-management

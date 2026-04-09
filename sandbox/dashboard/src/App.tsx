@@ -1,15 +1,17 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
-import { ConnectButton } from "@mysten/dapp-kit";
+import { ConnectButton } from "@mysten/dapp-kit-react/ui";
+import { WalletPopover } from "@/components/wallet-popover";
 import { cn } from "@/lib/utils";
-import { RequireWallet } from "@/components/require-wallet";
 import { FaucetPage } from "@/components/faucet-page";
 import { HealthPage } from "@/components/health-page";
 import { MarketMakerPage } from "@/components/market-maker";
 import { DeploymentPage } from "@/components/deployment-page";
+import { TradingPage } from "@/components/trading";
 
 const navLinks = [
     { to: "/", label: "Health" },
     { to: "/market-maker", label: "Market Maker" },
+    { to: "/trading", label: "Trading" },
     { to: "/faucet", label: "Faucet" },
     { to: "/deployment", label: "Deployment" },
 ] as const;
@@ -57,7 +59,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                     </nav>
 
                     {/* Right */}
-                    <div className="ml-auto">
+                    <div className="ml-auto flex items-center gap-2">
+                        <WalletPopover />
                         <ConnectButton />
                     </div>
                 </div>
@@ -74,14 +77,8 @@ export default function App() {
                 <Routes>
                     <Route path="/" element={<HealthPage />} />
                     <Route path="/market-maker" element={<MarketMakerPage />} />
-                    <Route
-                        path="/faucet"
-                        element={
-                            <RequireWallet>
-                                <FaucetPage />
-                            </RequireWallet>
-                        }
-                    />
+                    <Route path="/trading" element={<TradingPage />} />
+                    <Route path="/faucet" element={<FaucetPage />} />
                     <Route path="/deployment" element={<DeploymentPage />} />
                 </Routes>
             </Layout>

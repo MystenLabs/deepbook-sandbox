@@ -15,13 +15,14 @@ import {
     configureAndStartLocalnetServices,
     startOracleService,
     startMarketMaker,
+    startService,
     startDashboard,
     DASHBOARD_PORT,
 } from "./utils/docker-compose";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
 import { updateEnvFile, validateEnvFile } from "./utils/env";
-import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
+import { ensureMinimumBalance, getDeploymentEnv, transferCoin } from "./utils/helpers";
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
 import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
@@ -225,6 +226,20 @@ async function main() {
             log.success("Oracle service started");
         }
 
+        // Generate a dedicated keypair for the market maker so it
+        // doesn't share gas coins or BalanceManagers with the deployer/dev.
+        log.spin("Generating market maker keypair...");
+        const mmKeypair = Ed25519Keypair.generate();
+        const mmAddress = mmKeypair.getPublicKey().toSuiAddress();
+        const mmPrivateKey = mmKeypair.getSecretKey(); // bech32 suiprivkey1...
+        log.detail(`Market maker signer: ${mmAddress}`);
+
+        await ensureMinimumBalance(client, mmAddress, getFaucetUrl(network));
+        updateEnvFile(sandboxRoot, {
+            MM_PRIVATE_KEY: mmPrivateKey,
+        });
+        log.success("Market maker keypair funded and saved to .env");
+
         // Phase 5: Create DEEP/SUI, SUI/USDC deepbook pools and SUI, USDC margin pools
         log.phase("Phase 5/6: Creating DEEP/SUI and SUI/USDC pools");
         const { pools } = await poolCreator.createDeepbookPools(deployedPackages);
@@ -279,6 +294,36 @@ async function main() {
         await fs.mkdir(deploymentsDir, { recursive: true });
         await fs.writeFile(deploymentPath, JSON.stringify(manifest, null, 2));
         log.success(`Deployment manifest: ${deploymentPath}`);
+
+        // Fund MM with DEEP and USDC tokens (transfer from deployer)
+        if (network === "localnet") {
+            const tokenPkgId = deployedPackages.get("token")!.packageId;
+            const usdcPkgId = deployedPackages.get("usdc")!.packageId;
+
+            log.spin("Transferring DEEP and USDC to market maker...");
+            await transferCoin({
+                client,
+                signer,
+                recipient: mmAddress,
+                coinType: `${tokenPkgId}::deep::DEEP`,
+                amount: 10_000_000_000, // 10,000 DEEP (6 decimals)
+                label: "DEEP",
+            });
+            await transferCoin({
+                client,
+                signer,
+                recipient: mmAddress,
+                coinType: `${usdcPkgId}::usdc::USDC`,
+                amount: 10_000_000_000, // 10,000 USDC (6 decimals)
+                label: "USDC",
+            });
+        }
+
+        // Start API service. Users create their own BalanceManager from the
+        // dashboard via the on-chain registry — no env var or seed BM needed.
+        log.spin("Starting API service...");
+        await startService("deepbook-sandbox-api", sandboxRoot);
+        log.success("API service started");
 
         // Phase 6: Start market maker (localnet only)
         if (network === "localnet") {

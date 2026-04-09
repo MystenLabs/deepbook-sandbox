@@ -109,7 +109,7 @@ jobs:
           docker pull "$SERVER_IMAGE"
 
           # Build Node.js services locally (fast, no caching needed)
-          docker compose --env-file .env.test --profile localnet build market-maker oracle-service deepbook-faucet
+          docker compose --env-file .env.test --profile localnet build market-maker oracle-service deepbook-sandbox-api
         working-directory: sandbox
 
       - name: Run integration test (${{ matrix.test }})

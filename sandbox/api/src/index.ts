@@ -13,7 +13,7 @@ const app = new Hono();
 
 app.get("/", (c) =>
     c.json({
-        service: "deepbook sandbox - faucet",
+        service: "deepbook sandbox - api",
         network: config.network,
         deployer: signer.getPublicKey().toSuiAddress(),
     }),
@@ -33,7 +33,7 @@ app.get("/manifest", async (c) => {
 
 app.route("/", faucetRoutes(config, client, signer));
 
-console.log(`Faucet listening on port ${config.port} (network: ${config.network})`);
+console.log(`API listening on port ${config.port} (network: ${config.network})`);
 console.log(`Deployer address: ${signer.getPublicKey().toSuiAddress()}`);
 
 serve({ fetch: app.fetch, port: config.port });

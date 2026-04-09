@@ -49,6 +49,30 @@
     }
 }
 
+/*
+ * dApp Kit connect modal theming.
+ * dApp Kit reads var(--background) etc. but our Tailwind setup stores raw HSL
+ * components (e.g. "240 10% 3.9%") which aren't valid CSS colors.
+ * Override with real color values on the dApp Kit elements.
+ */
+mysten-dapp-kit-connect-button,
+mysten-dapp-kit-connect-modal {
+    --background: #18181b;
+    --foreground: #fafafa;
+    --primary: #27272a;
+    --primary-foreground: #fafafa;
+    --secondary: #27272a;
+    --secondary-foreground: #fafafa;
+    --border: #3f3f46;
+    --accent: #27272a;
+    --accent-foreground: #fafafa;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
+    --popover: #18181b;
+    --popover-foreground: #fafafa;
+    --ring: #a1a1aa;
+}
+
 @layer base {
     * {
         @apply border-border;
