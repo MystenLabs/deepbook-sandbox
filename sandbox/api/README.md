@@ -104,7 +104,7 @@ docker compose --profile remote up -d
 ### Local development
 
 ```bash
-cd sandbox/faucet
+cd sandbox/api
 cp .env.example .env  # configure env vars
 pnpm install
 pnpm dev

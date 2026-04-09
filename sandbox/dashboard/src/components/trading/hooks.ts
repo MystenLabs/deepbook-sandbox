@@ -1,9 +1,17 @@
 /**
  * Trading hooks — all operations use the DeepBook SDK directly.
  *
- * WRITE operations: build transaction with SDK, sign via Dev Wallet.
+ * WRITE operations: build transaction with SDK, sign via Dev Wallet (dapp-kit).
  * READ operations: query via SDK client (no backend API).
- * Only the BM ID and manifest come from the backend.
+ *
+ * Sources of truth:
+ *   - Manifest (deepbook package + registry IDs, pools, coin types):
+ *     fetched once from `/api/manifest` and cached for the session.
+ *   - User's BalanceManager: discovered on-chain via
+ *     `client.deepbook.getBalanceManagerIds(address)`, which reads the
+ *     deepbook Registry's owner→BM map. No env var, no localStorage,
+ *     no backend lookup.
+ *   - Wallet balances, BM balances, mid price, open orders: live SDK queries.
  */
 
 import { useCallback } from "react";
