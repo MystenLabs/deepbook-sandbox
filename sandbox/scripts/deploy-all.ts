@@ -22,7 +22,7 @@ import {
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
 import { updateEnvFile, validateEnvFile } from "./utils/env";
-import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
+import { ensureMinimumBalance, getDeploymentEnv, transferCoin } from "./utils/helpers";
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
 import { setupPythOracles, type PythOracleIds } from "./utils/oracle";
@@ -299,53 +299,24 @@ async function main() {
         if (network === "localnet") {
             const tokenPkgId = deployedPackages.get("token")!.packageId;
             const usdcPkgId = deployedPackages.get("usdc")!.packageId;
-            const deepType = `${tokenPkgId}::deep::DEEP`;
-            const usdcType = `${usdcPkgId}::usdc::USDC`;
 
             log.spin("Transferring DEEP and USDC to market maker...");
-            const { Transaction, coinWithBalance } = await import("@mysten/sui/transactions");
-
-            // Transfer DEEP
-            const tx1 = new Transaction();
-            const deepCoin = coinWithBalance({
-                balance: 10_000_000_000, // 10,000 DEEP (6 decimals)
-                type: deepType,
-                useGasCoin: false,
-            })(tx1);
-            tx1.transferObjects([deepCoin], mmAddress);
-
-            const r1 = await client.signAndExecuteTransaction({
-                transaction: tx1,
+            await transferCoin({
+                client,
                 signer,
-                include: { effects: true },
+                recipient: mmAddress,
+                coinType: `${tokenPkgId}::deep::DEEP`,
+                amount: 10_000_000_000, // 10,000 DEEP (6 decimals)
+                label: "DEEP",
             });
-            if (r1.$kind === "FailedTransaction") {
-                log.warn("Failed to transfer DEEP to market maker");
-            } else {
-                await client.waitForTransaction({ digest: r1.Transaction!.digest });
-                log.success(`Transferred 10,000 DEEP to market maker (${mmAddress})`);
-            }
-
-            // Transfer USDC
-            const tx2 = new Transaction();
-            const usdcCoin = coinWithBalance({
-                balance: 10_000_000_000, // 10,000 USDC (6 decimals)
-                type: usdcType,
-                useGasCoin: false,
-            })(tx2);
-            tx2.transferObjects([usdcCoin], mmAddress);
-
-            const r2 = await client.signAndExecuteTransaction({
-                transaction: tx2,
+            await transferCoin({
+                client,
                 signer,
-                include: { effects: true },
+                recipient: mmAddress,
+                coinType: `${usdcPkgId}::usdc::USDC`,
+                amount: 10_000_000_000, // 10,000 USDC (6 decimals)
+                label: "USDC",
             });
-            if (r2.$kind === "FailedTransaction") {
-                log.warn("Failed to transfer USDC to market maker");
-            } else {
-                await client.waitForTransaction({ digest: r2.Transaction!.digest });
-                log.success(`Transferred 10,000 USDC to market maker (${mmAddress})`);
-            }
         }
 
         // Start API service. Users create their own BalanceManager from the

@@ -180,7 +180,7 @@ export class PoolCreator {
         // dynamic_field::borrow_mut a field that doesn't exist. And without register_balance_manager,
         // getBalanceManagerIds(owner) always returns an empty array, so the dashboard can't discover any BMs
         tx.moveCall({
-            target: `${deepbookPDokg!.packageId}::registry::init_balance_manager_map`,
+            target: `${deepbookPkg!.packageId}::registry::init_balance_manager_map`,
             arguments: [tx.object(registry.objectId), tx.object(adminCap.objectId)],
         });
 
