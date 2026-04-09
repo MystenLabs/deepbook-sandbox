@@ -1,25 +1,20 @@
 import path from "path";
 import fs from "fs/promises";
-import {
-    getClient,
-    getFaucetUrl,
-    getRpcUrl,
-    getSigner,
-    hasPrivateKey,
-} from "./utils/config";
+import { getClient, getFaucetUrl, getRpcUrl, getSigner, hasPrivateKey } from "./utils/config";
 import {
     getSandboxRoot,
     startLocalnet,
     configureAndStartLocalnetServices,
     startOracleService,
     startMarketMaker,
+    startService,
     startDashboard,
     DASHBOARD_PORT,
 } from "./utils/docker-compose";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
 import { updateEnvFile, validateEnvFile } from "./utils/env";
-import { ensureMinimumBalance, getDeploymentEnv } from "./utils/helpers";
+import { ensureMinimumBalance, getDeploymentEnv, transferCoin } from "./utils/helpers";
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
 import { setupPythOracles } from "./utils/oracle";
@@ -189,6 +184,20 @@ async function main() {
         await startOracleService(sandboxRoot);
         log.success("Oracle service started");
 
+        // Generate a dedicated keypair for the market maker so it
+        // doesn't share gas coins or BalanceManagers with the deployer/dev.
+        log.spin("Generating market maker keypair...");
+        const mmKeypair = Ed25519Keypair.generate();
+        const mmAddress = mmKeypair.getPublicKey().toSuiAddress();
+        const mmPrivateKey = mmKeypair.getSecretKey(); // bech32 suiprivkey1...
+        log.detail(`Market maker signer: ${mmAddress}`);
+
+        await ensureMinimumBalance(client, mmAddress, getFaucetUrl());
+        updateEnvFile(sandboxRoot, {
+            MM_PRIVATE_KEY: mmPrivateKey,
+        });
+        log.success("Market maker keypair funded and saved to .env");
+
         // Phase 5: Create DEEP/SUI, SUI/USDC deepbook pools and SUI, USDC margin pools
         log.phase("Phase 5/6: Creating DEEP/SUI and SUI/USDC pools");
         const { pools } = await poolCreator.createDeepbookPools(deployedPackages);
@@ -244,44 +253,72 @@ async function main() {
         await fs.writeFile(deploymentPath, JSON.stringify(manifest, null, 2));
         log.success(`Deployment manifest: ${deploymentPath}`);
 
+        // Fund MM with DEEP and USDC tokens (transfer from deployer)
+        const tokenPkgId = deployedPackages.get("token")!.packageId;
+        const usdcPkgId = deployedPackages.get("usdc")!.packageId;
+
+        log.spin("Transferring DEEP and USDC to market maker...");
+        await transferCoin({
+            client,
+            signer,
+            recipient: mmAddress,
+            coinType: `${tokenPkgId}::deep::DEEP`,
+            amount: 10_000_000_000, // 10,000 DEEP (6 decimals)
+            label: "DEEP",
+        });
+        await transferCoin({
+            client,
+            signer,
+            recipient: mmAddress,
+            coinType: `${usdcPkgId}::usdc::USDC`,
+            amount: 10_000_000_000, // 10,000 USDC (6 decimals)
+            label: "USDC",
+        });
+
+        // Start API service. Users create their own BalanceManager from the
+        // dashboard via the on-chain registry — no env var or seed BM needed.
+        log.spin("Starting API service...");
+        await startService("deepbook-sandbox-api", sandboxRoot);
+        log.success("API service started");
+
         // Phase 6: Start market maker
         log.phase("Phase 6/6: Starting market maker");
 
-            // Build multi-pool config for the market maker
-            const mmPools: PoolConfig[] = [
-                {
-                    poolId: pools.DEEP_SUI.poolId,
-                    baseCoinType: pools.DEEP_SUI.baseCoinType,
-                    quoteCoinType: pools.DEEP_SUI.quoteCoinType,
-                    basePriceInfoObjectId: pythOracleIds?.deepPriceInfoObjectId,
-                    quotePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
-                    tickSize: 1_000_000n, // 0.001 SUI
-                    lotSize: 1_000_000n, // 1 DEEP
-                    minSize: 10_000_000n, // 10 DEEP
-                    orderSizeBase: 10_000_000n, // 10 DEEP per order
-                    fallbackMidPrice: 100_000_000n, // 0.1 SUI
-                    baseDepositAmount: 1_000_000_000n, // 1000 DEEP
-                    quoteDepositAmount: 100_000_000_000n, // 100 SUI
-                    baseDecimals: 6,
-                    quoteDecimals: 9,
-                },
-                {
-                    poolId: pools.SUI_USDC.poolId,
-                    baseCoinType: pools.SUI_USDC.baseCoinType,
-                    quoteCoinType: pools.SUI_USDC.quoteCoinType,
-                    basePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
-                    quotePriceInfoObjectId: pythOracleIds?.usdcPriceInfoObjectId,
-                    tickSize: 1_000n, // 0.001 USDC
-                    lotSize: 100_000_000n, // 0.1 SUI
-                    minSize: 1_000_000_000n, // 1 SUI
-                    orderSizeBase: 1_000_000_000n, // 1 SUI per order
-                    fallbackMidPrice: 3_500_000n, // 3.5 USDC
-                    baseDepositAmount: 100_000_000_000n, // 100 SUI
-                    quoteDepositAmount: 500_000_000n, // 500 USDC
-                    baseDecimals: 9,
-                    quoteDecimals: 6,
-                },
-            ];
+        // Build multi-pool config for the market maker
+        const mmPools: PoolConfig[] = [
+            {
+                poolId: pools.DEEP_SUI.poolId,
+                baseCoinType: pools.DEEP_SUI.baseCoinType,
+                quoteCoinType: pools.DEEP_SUI.quoteCoinType,
+                basePriceInfoObjectId: pythOracleIds?.deepPriceInfoObjectId,
+                quotePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
+                tickSize: 1_000_000n, // 0.001 SUI
+                lotSize: 1_000_000n, // 1 DEEP
+                minSize: 10_000_000n, // 10 DEEP
+                orderSizeBase: 10_000_000n, // 10 DEEP per order
+                fallbackMidPrice: 100_000_000n, // 0.1 SUI
+                baseDepositAmount: 1_000_000_000n, // 1000 DEEP
+                quoteDepositAmount: 100_000_000_000n, // 100 SUI
+                baseDecimals: 6,
+                quoteDecimals: 9,
+            },
+            {
+                poolId: pools.SUI_USDC.poolId,
+                baseCoinType: pools.SUI_USDC.baseCoinType,
+                quoteCoinType: pools.SUI_USDC.quoteCoinType,
+                basePriceInfoObjectId: pythOracleIds?.suiPriceInfoObjectId,
+                quotePriceInfoObjectId: pythOracleIds?.usdcPriceInfoObjectId,
+                tickSize: 1_000n, // 0.001 USDC
+                lotSize: 100_000_000n, // 0.1 SUI
+                minSize: 1_000_000_000n, // 1 SUI
+                orderSizeBase: 1_000_000_000n, // 1 SUI per order
+                fallbackMidPrice: 3_500_000n, // 3.5 USDC
+                baseDepositAmount: 100_000_000_000n, // 100 SUI
+                quoteDepositAmount: 500_000_000n, // 500 USDC
+                baseDecimals: 9,
+                quoteDecimals: 6,
+            },
+        ];
 
         updateEnvFile(sandboxRoot, {
             DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
@@ -299,9 +336,7 @@ async function main() {
 
         log.spin("Building and starting dashboard...");
         await startDashboard(sandboxRoot);
-        log.success(
-            `Dashboard running — open http://127.0.0.1:${DASHBOARD_PORT} in your browser`,
-        );
+        log.success(`Dashboard running — open http://127.0.0.1:${DASHBOARD_PORT} in your browser`);
 
         // Build summary — only user-facing URLs and key identifiers
         const summaryEntries: Array<{ label: string; value: string }> = [

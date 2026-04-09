@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useMarketMakerOrders, useOraclePrices, REFETCH_INTERVAL } from "./hooks";
+import { useMarketMakerOrders, useOraclePrices, usePoolDetails, REFETCH_INTERVAL } from "./hooks";
 import { PoolSelector } from "./pool-selector";
 import { OrderBook } from "./order-book";
 import { DepthChart } from "./depth-chart";
@@ -24,6 +24,9 @@ export function MarketMakerPage() {
         pairByIndexRef.current.set(clampedIndex, pool.pair);
     }
     const pair = pool?.pair ?? pairByIndexRef.current.get(clampedIndex) ?? "DEEP/SUI";
+
+    const poolKey = pair.replace("/", "_"); // "DEEP/SUI" → "DEEP_SUI"
+    const poolDetails = usePoolDetails(poolKey);
 
     // Keep the last non-empty pool data *per pair* so the UI stays stable
     // during MM rebalance cycles (which briefly return 0 orders).
@@ -74,6 +77,8 @@ export function MarketMakerPage() {
                 pool={displayPool}
                 config={orders.data?.config}
                 oraclePrices={oracle.data?.prices}
+                poolDetails={poolDetails.data}
+                poolDetailsLoading={poolDetails.isLoading}
                 pair={pair}
                 isLoading={orders.isLoading}
             />

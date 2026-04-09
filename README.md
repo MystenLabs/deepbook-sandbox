@@ -79,15 +79,17 @@ pnpm deploy-all
 
 When you see `DeepBook Sandbox Ready!`, everything is running:
 
-| Endpoint                     | URL                          |
-| ---------------------------- | ---------------------------- |
-| Dashboard                    | http://localhost:5173        |
-| Sui RPC                      | http://localhost:9000        |
-| Sui Faucet (native)          | http://localhost:9123        |
-| DeepBook Faucet (SUI + DEEP) | http://localhost:9009        |
-| DeepBook REST API            | http://localhost:9008        |
-| Oracle Status                | http://localhost:9010        |
-| Market Maker Health          | http://localhost:3001/health |
+
+| Endpoint                     | URL                                                          |
+| ---------------------------- | ------------------------------------------------------------ |
+| Dashboard                    | [http://localhost:5173](http://localhost:5173)               |
+| Sui RPC                      | [http://localhost:9000](http://localhost:9000)               |
+| Sui Faucet (native)          | [http://localhost:9123](http://localhost:9123)               |
+| DeepBook Faucet (SUI + DEEP) | [http://localhost:9009](http://localhost:9009)               |
+| DeepBook REST API            | [http://localhost:9008](http://localhost:9008)               |
+| Oracle Status                | [http://localhost:9010](http://localhost:9010)               |
+| Market Maker Health          | [http://localhost:3001/health](http://localhost:3001/health) |
+
 
 Verify it works:
 
@@ -129,16 +131,18 @@ When you run `pnpm deploy-all`, here's the full sequence:
 
 ## 6. The Dashboard
 
-The web dashboard is a React app served by an nginx container as part of the Docker stack. It starts automatically with `pnpm deploy-all` and is available at http://localhost:5173.
+The web dashboard is a React app served by an nginx container as part of the Docker stack. It starts automatically with `pnpm deploy-all` and is available at [http://localhost:5173](http://localhost:5173).
 
-The dashboard has four pages:
+The dashboard has five pages:
 
 - **Health** — Real-time status of all services (Sui node, indexer, oracle, market maker, faucet), auto-refreshes every 10 seconds
 - **Market Maker** — Order book bar chart, active bid/ask levels, and grid configuration
+- **Trading** — Connect a wallet, create your own on-chain Balance Manager with one click, deposit/withdraw funds, and place market or limit orders against the live pools. The first time you connect a wallet you'll see a "Create Balance Manager" button — clicking it bundles `balance_manager::new` + `register_balance_manager` + `public_share_object` into a single PTB so the BM is registered in the deepbook Registry and discovered automatically on every future visit. Includes inline SDK code snippets that mirror what each action would look like in your own integration.
 - **Faucet** — Connect a Sui wallet and request SUI or DEEP tokens
 - **Deployment** — Browse deployed package IDs, pool addresses, and Pyth oracle objects with explorer links
 
 Nginx proxies API requests to the sandbox services:
+
 
 | Path            | Target           | Service          |
 | --------------- | ---------------- | ---------------- |
@@ -147,6 +151,7 @@ Nginx proxies API requests to the sandbox services:
 | `/api/mm`       | `localhost:3001` | Market maker     |
 | `/api/faucet`   | `localhost:9009` | Faucet           |
 | `/api/deepbook` | `localhost:9008` | DeepBook server  |
+
 
 ## 7. Building Your Own Contracts on DeepBook
 
@@ -162,6 +167,7 @@ cp -r sandbox/packages/example_contract sandbox/packages/my_contract
 
 Your `Move.toml` can reference any of these local dependencies:
 
+
 | Dependency           | Path                                          | Description                                            |
 | -------------------- | --------------------------------------------- | ------------------------------------------------------ |
 | `token`              | `../../.external-packages/token`              | DEEP token definition                                  |
@@ -170,6 +176,7 @@ Your `Move.toml` can reference any of these local dependencies:
 | `margin_liquidation` | `../../.external-packages/margin_liquidation` | Margin liquidation logic                               |
 | `pyth`               | `../pyth`                                     | Pyth oracle price feeds                                |
 | `usdc`               | `../usdc`                                     | USDC coin type                                         |
+
 
 > **Note:** The `.external-packages/` directory is created automatically by `pnpm deploy-all`. Your contract won't build until you've run it at least once.
 
@@ -235,7 +242,7 @@ curl http://localhost:9009/
 curl http://localhost:9009/manifest
 ```
 
-You can also request tokens from the dashboard's Faucet tab at http://localhost:5173 (requires a connected Sui wallet).
+You can also request tokens from the dashboard's Faucet tab at [http://localhost:5173](http://localhost:5173) (requires a connected Sui wallet).
 
 ## 9. Day-to-Day Workflow
 
@@ -279,16 +286,18 @@ cd sandbox
 pnpm down
 ```
 
-| What                                                            | Destroyed?                    |
-| --------------------------------------------------------------- | ----------------------------- |
-| Docker containers                                               | Yes — all stopped and removed |
-| Docker volumes (chain data, postgres)                           | Yes — wiped clean             |
-| Auto-generated .env keys (package IDs, oracle IDs, pool IDs)    | Yes — cleaned                 |
-| User-set .env values (SUI_TOOLS_IMAGE, MM_\* settings)          | No — preserved                |
-| Deployment manifest (deployments/localnet.json)                 | No — kept for reference       |
-| Pub.localnet.toml                                               | Yes — removed                 |
-| Your source code                                                | Never                         |
-| Dashboard code/config                                           | Never                         |
+
+| What                                                         | Destroyed?                    |
+| ------------------------------------------------------------ | ----------------------------- |
+| Docker containers                                            | Yes — all stopped and removed |
+| Docker volumes (chain data, postgres)                        | Yes — wiped clean             |
+| Auto-generated .env keys (package IDs, oracle IDs, pool IDs) | Yes — cleaned                 |
+| User-set .env values (SUI*TOOLS_IMAGE, MM* settings)         | No — preserved                |
+| Deployment manifest (deployments/localnet.json)              | No — kept for reference       |
+| Pub.localnet.toml                                            | Yes — removed                 |
+| Your source code                                             | Never                         |
+| Dashboard code/config                                        | Never                         |
+
 
 > **Note:** By default, `FORCE_REGENESIS=true` means the Sui node wipes chain state on every restart. Set it to empty in `.env` if you want data to persist across `deploy-all` runs.
 
@@ -334,9 +343,12 @@ bunx prettier-move -c *.move --write
 
 **Contract won't build: "unresolved dependency"** — You haven't run `pnpm deploy-all` yet. The `.external-packages/` directory (which your `Move.toml` references) is created by the deploy script. Run `pnpm deploy-all` first, then build your contract.
 
+**"Create Balance Manager" fails with `dynamic_field::borrow_mut: dynamic field does not exist`** — Your local chain was deployed before this branch added the one-time admin call that initializes the deepbook Registry's owner→BM map. The dashboard's BM creation flow calls `register_balance_manager`, which reads that map; without it the move call aborts. Fix: `pnpm down -v && pnpm deploy-all` to redeploy with the new pool-creation PTB that includes `init_balance_manager_map`.
+
 ---
 
 ## Appendix A: All Commands
+
 
 | Command                                     | Description                                                                           |
 | ------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -357,9 +369,11 @@ bunx prettier-move -c *.move --write
 | `curl http://localhost:9091/metrics`        | View market maker Prometheus metrics                                                  |
 | `curl http://localhost:9009/manifest`       | View full deployment manifest (package IDs, pools, oracles)                           |
 
+
 ## Appendix B: Configuration Reference
 
 All variables from `sandbox/.env.example`. For localnet, you don't need to set any of these — `deploy-all` auto-detects and auto-generates everything.
+
 
 | Variable                    | Required                        | Default                                            | Description                                                               |
 | --------------------------- | ------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------- |
@@ -394,18 +408,21 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `FAUCET_IMAGE`              | No                              | `mysten/deepbook-sandbox-faucet:...-arm64`         | Faucet Docker image override                                              |
 | `ORACLE_SERVICE_IMAGE`      | No                              | `mysten/deepbook-sandbox-oracle-service:...-arm64` | Oracle service Docker image override                                      |
 
+
 ## Appendix C: Docker Services Reference
 
-| Service            | Container Name          | Profile              | Ports (host:container) | Description                                        |
-| ------------------ | ----------------------- | -------------------- | ---------------------- | -------------------------------------------------- |
-| `postgres`         | `deepbook-postgres`     | (always)             | 5432:5432              | PostgreSQL 16 database for the indexer             |
-| `sui-localnet`     | `sui-localnet`          | `localnet`           | 9000:9000, 9123:9123   | Full Sui node with built-in faucet                 |
-| `market-maker`     | `deepbook-market-maker` | `localnet`           | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools    |
-| `deepbook-indexer` | `deepbook-indexer`      | `localnet`           | 9184:9184              | Reads checkpoints, writes events to Postgres       |
-| `deepbook-server`  | `deepbook-server`       | `localnet`           | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |
-| `deepbook-faucet`  | `deepbook-faucet`       | `localnet`           | 9009:9009              | Distributes SUI (proxied) and DEEP tokens          |
-| `oracle-service`   | `oracle-service`        | `localnet`           | 9010:9010              | Updates Pyth price feeds every 10 seconds          |
-| `dashboard`        | `deepbook-dashboard`    | `localnet`           | 5173:80                | Web UI for monitoring and interacting with sandbox |
+
+| Service            | Container Name          | Profile    | Ports (host:container) | Description                                        |
+| ------------------ | ----------------------- | ---------- | ---------------------- | -------------------------------------------------- |
+| `postgres`         | `deepbook-postgres`     | (always)   | 5432:5432              | PostgreSQL 16 database for the indexer             |
+| `sui-localnet`     | `sui-localnet`          | `localnet` | 9000:9000, 9123:9123   | Full Sui node with built-in faucet                 |
+| `market-maker`     | `deepbook-market-maker` | `localnet` | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools    |
+| `deepbook-indexer` | `deepbook-indexer`      | `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres       |
+| `deepbook-server`  | `deepbook-server`       | `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |
+| `deepbook-faucet`  | `deepbook-faucet`       | `localnet` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens          |
+| `oracle-service`   | `oracle-service`        | `localnet` | 9010:9010              | Updates Pyth price feeds every 10 seconds          |
+| `dashboard`        | `deepbook-dashboard`    | `localnet` | 5173:80                | Web UI for monitoring and interacting with sandbox |
+
 
 ## Appendix D: Data Flows
 
@@ -446,6 +463,7 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 
 ## Appendix F: Important Files
 
+
 | File                                      | Description                                                                             |
 | ----------------------------------------- | --------------------------------------------------------------------------------------- |
 | `sandbox/docker-compose.yml`              | Defines all Docker services, profiles, ports, and volumes                               |
@@ -462,13 +480,14 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `sandbox/scripts/utils/oracle.ts`         | Pyth oracle setup (PriceInfoObject creation)                                            |
 | `sandbox/scripts/oracle-service/index.ts` | Oracle service entry point — fetches Pyth prices, submits update txs                    |
 | `sandbox/scripts/market-maker/index.ts`   | Market maker entry point — grid strategy, order placement                               |
-| `sandbox/faucet/src/index.ts`             | Faucet HTTP server (Hono)                                                               |
-| `sandbox/faucet/src/routes/faucet.ts`     | POST /faucet endpoint — validates requests, dispatches SUI or DEEP                      |
+| `sandbox/api/src/index.ts`                | Sandbox API HTTP server (Hono) — faucet routes + `/manifest` endpoint                   |
+| `sandbox/api/src/routes/faucet.ts`        | POST /faucet endpoint — validates requests, dispatches SUI or DEEP                      |
 | `sandbox/dashboard/src/App.tsx`           | Dashboard React app — Health, Market Maker, Faucet, Deployment pages                    |
 | `sandbox/packages/example_contract/`      | Template for custom Move contracts that depend on DeepBook                              |
 | `sandbox/deployments/localnet.json`       | Generated deployment manifest with all addresses and IDs                                |
 | `sandbox/Pub.localnet.toml`               | Generated publish manifest for Sui CLI dependency resolution                            |
 | `external/deepbook/`                      | Git submodule — DeepBook V3 Move smart contracts and Rust crates                        |
+
 
 ## Appendix G: Submodule Note
 
@@ -494,6 +513,7 @@ git commit -m "Update deepbook submodule"
 
 This repository uses [pre-commit](https://pre-commit.com/) to check code quality and formatting before commits:
 
+
 | Hook                     | Purpose                                            |
 | ------------------------ | -------------------------------------------------- |
 | **check-merge-conflict** | Prevents committing merge conflict markers         |
@@ -504,6 +524,7 @@ This repository uses [pre-commit](https://pre-commit.com/) to check code quality
 | **mixed-line-ending**    | Normalizes line endings (LF)                       |
 | **editorconfig-checker** | Validates files match `.editorconfig` rules        |
 | **prettier**             | Checks formatting (4-space indent, 100-char width) |
+
 
 Activate the hooks after installing `pre-commit`:
 

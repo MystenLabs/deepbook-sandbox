@@ -81,8 +81,8 @@ curl -X POST http://localhost:9009/faucet \
 | `PRIVATE_KEY`           | Yes      | —                          | Bech32-encoded Sui private key (deployer wallet) |
 | `DEEP_TOKEN_PACKAGE_ID` | Yes      | —                          | Package ID of the deployed DEEP token            |
 | `RPC_URL`               | No       | `http://sui-localnet:9000` | Sui RPC endpoint                                 |
-| `PORT`                  | No       | `9009`              | Server listen port                               |
-| `MAX_DEEP_PER_REQUEST`  | No       | `10000`             | Maximum DEEP tokens per request                  |
+| `PORT`                  | No       | `9009`                     | Server listen port                               |
+| `MAX_DEEP_PER_REQUEST`  | No       | `10000`                    | Maximum DEEP tokens per request                  |
 
 ## Running
 
@@ -98,7 +98,7 @@ docker compose --profile localnet up -d
 ### Local development
 
 ```bash
-cd sandbox/faucet
+cd sandbox/api
 cp .env.example .env  # configure env vars
 pnpm install
 pnpm dev

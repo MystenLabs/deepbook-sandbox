@@ -64,7 +64,7 @@ export function DeploymentPage() {
     const manifest = useQuery<DeploymentManifest>({
         queryKey: ["deployment-manifest"],
         queryFn: async () => {
-            const r = await fetch("/api/faucet/manifest");
+            const r = await fetch("/api/manifest");
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return r.json();
         },

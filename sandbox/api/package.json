@@ -1,5 +1,5 @@
 {
-    "name": "deepbook-faucet",
+    "name": "deepbook-sandbox-api",
     "version": "1.0.0",
     "type": "module",
     "private": true,
@@ -11,7 +11,9 @@
     },
     "dependencies": {
         "@hono/node-server": "^1.13.0",
+        "@mysten/deepbook-v3": "^1.1.5",
         "@mysten/sui": "^2.5.0",
+        "@radix-ui/react-tooltip": "^1.2.8",
         "dotenv": "^17.2.3",
         "hono": "^4.6.0",
         "zod": "^4.3.6"
