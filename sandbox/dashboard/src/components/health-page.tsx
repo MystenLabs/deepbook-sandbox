@@ -1,10 +1,21 @@
 import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentClient } from "@mysten/dapp-kit-react";
-import { Box, Activity, ArrowLeftRight, Droplets, RefreshCw, Server } from "lucide-react";
+import {
+    Box,
+    Activity,
+    ArrowLeftRight,
+    Droplets,
+    Play,
+    RefreshCw,
+    RotateCcw,
+    Server,
+    Square,
+} from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 /* ------------------------------------------------------------------ */
 /*  Types (matching actual service responses)                         */
@@ -208,6 +219,11 @@ export function HealthPage() {
                                 isFetching={oracle.isFetching}
                                 onRefresh={() => oracle.refetch()}
                             />
+                            <ServiceActions
+                                service="oracle-service"
+                                queryKey="oracle-health"
+                                isDown={oracle.isError}
+                            />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -267,6 +283,11 @@ export function HealthPage() {
                                 isFetching={mm.isFetching}
                                 onRefresh={() => mm.refetch()}
                             />
+                            <ServiceActions
+                                service="market-maker"
+                                queryKey="mm-health"
+                                isDown={mm.isError}
+                            />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -297,7 +318,10 @@ export function HealthPage() {
                     </CardContent>
                 </GridCard>
 
-                {/* Faucet */}
+                {/* Faucet — status only; the api drives /services routes so we
+                    can't offer actions for itself (stop/start are non-recoverable
+                    from the UI, and the refresh/restart buttons are hidden to
+                    keep the card minimal). */}
                 <GridCard>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="flex items-center gap-2 text-sm font-medium text-zinc-200">
@@ -310,10 +334,6 @@ export function HealthPage() {
                                 isError={faucet.isError}
                             />
                             <StatusBadge isLoading={faucet.isLoading} isError={faucet.isError} />
-                            <RefreshButton
-                                isFetching={faucet.isFetching}
-                                onRefresh={() => faucet.refetch()}
-                            />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -360,6 +380,11 @@ export function HealthPage() {
                                 isFetching={server.isFetching}
                                 onRefresh={() => server.refetch()}
                             />
+                            <ServiceActions
+                                service="deepbook-server"
+                                queryKey="server-health"
+                                isDown={server.isError}
+                            />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -405,13 +430,120 @@ export function HealthPage() {
 
 function RefreshButton({ isFetching, onRefresh }: { isFetching: boolean; onRefresh: () => void }) {
     return (
-        <button
-            onClick={onRefresh}
-            disabled={isFetching}
-            className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
-        >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-        </button>
+        <TooltipProvider delayDuration={200}>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <button
+                        onClick={onRefresh}
+                        disabled={isFetching}
+                        aria-label="Refresh"
+                        className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
+                    >
+                        <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+                    </button>
+                </TooltipTrigger>
+                <TooltipContent>Refresh</TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+    );
+}
+
+type ControllableService =
+    | "oracle-service"
+    | "market-maker"
+    | "deepbook-sandbox-api"
+    | "deepbook-server";
+
+type ServiceAction = "start" | "stop" | "restart";
+
+// The api service runs the /services routes themselves, so it can't receive a
+// /start once it's been stopped — there's nothing alive to handle the request.
+// `docker restart` still works because the daemon completes it after the
+// container dies mid-request, so Restart remains available.
+const SELF_CONTROLLED = new Set<ControllableService>(["deepbook-sandbox-api"]);
+
+function ServiceActions({
+    service,
+    queryKey,
+    isDown,
+}: {
+    service: ControllableService;
+    queryKey: string;
+    isDown: boolean;
+}) {
+    const qc = useQueryClient();
+
+    // Self-restart of deepbook-sandbox-api kills the container mid-request, so
+    // the fetch can legitimately reject — treat it as a successful kick anyway
+    // and let the health query reflect the real state on its next poll.
+    const post = async (action: ServiceAction) => {
+        try {
+            await fetch(`/api/services/${service}/${action}`, { method: "POST" });
+        } catch {
+            /* self-targeting restart drops the connection — expected */
+        }
+    };
+
+    // Docker takes 1–3s to actually flip container state after our 202. A single
+    // refetch on settle lands too early and sees stale "healthy". Burst a few
+    // delayed invalidations so the UI reflects reality within ~2s of the click.
+    const kickHealthQuery = () => {
+        qc.invalidateQueries({ queryKey: [queryKey] });
+        setTimeout(() => qc.invalidateQueries({ queryKey: [queryKey] }), 1500);
+        setTimeout(() => qc.invalidateQueries({ queryKey: [queryKey] }), 4000);
+    };
+
+    const primary = useMutation({
+        mutationFn: (action: "start" | "stop") => post(action),
+        onSettled: kickHealthQuery,
+    });
+    const restart = useMutation({
+        mutationFn: () => post("restart"),
+        onSettled: kickHealthQuery,
+    });
+
+    const busy = primary.isPending || restart.isPending;
+    const primaryAction: "start" | "stop" = isDown ? "start" : "stop";
+    const PrimaryIcon = isDown ? Play : Square;
+    const primaryLabel = isDown ? "Start service" : "Stop service";
+
+    const showPrimary = !SELF_CONTROLLED.has(service);
+
+    return (
+        <TooltipProvider delayDuration={200}>
+            {showPrimary && (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <button
+                            onClick={() => primary.mutate(primaryAction)}
+                            disabled={busy}
+                            aria-label={primaryLabel}
+                            className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
+                        >
+                            <PrimaryIcon
+                                className={`h-3.5 w-3.5 ${primary.isPending ? "animate-pulse" : ""}`}
+                            />
+                        </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{primaryLabel}</TooltipContent>
+                </Tooltip>
+            )}
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <button
+                        onClick={() => restart.mutate()}
+                        disabled={busy}
+                        aria-label="Restart service"
+                        className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
+                    >
+                        <RotateCcw
+                            className={`h-3.5 w-3.5 ${restart.isPending ? "animate-spin" : ""}`}
+                        />
+                    </button>
+                </TooltipTrigger>
+                <TooltipContent>Restart service</TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
     );
 }
 

@@ -33,18 +33,19 @@ deepbook-sandbox/
 │   │   ├── nginx.conf     # Reverse-proxy config (replicates Vite dev proxy)
 │   │   ├── package.json
 │   │   └── src/           # React app source (Health, Market Maker, Trading, Faucet, Deployment)
-│   ├── api/               # Sandbox API service (TypeScript/Hono) — faucet + manifest
-│   │   ├── Dockerfile
+│   ├── api/               # Sandbox API service (TypeScript/Hono) — faucet + manifest + service control
+│   │   ├── Dockerfile     # Runtime image installs docker-cli for /services routes
 │   │   ├── package.json
 │   │   ├── tsconfig.json
 │   │   └── src/
-│   │       ├── index.ts           # Server entry, /manifest endpoint, faucet route mount
+│   │       ├── index.ts           # Server entry, /manifest endpoint, faucet + services routes
 │   │       ├── config.ts          # Env validation, signer/client factories
 │   │       ├── services/
 │   │       │   ├── sui-faucet.ts  # Proxies to Sui's built-in faucet
 │   │       │   └── deep-faucet.ts # Signs DEEP transfers from deployer
 │   │       └── routes/
-│   │           └── faucet.ts      # POST /faucet endpoint
+│   │           ├── faucet.ts      # POST /faucet endpoint
+│   │           └── services.ts    # POST /services/:name/{stop,restart} — docker control via mounted socket
 │   └── scripts/
 │       ├── deploy-all.ts      # Deploy DeepBook to localnet
 │       ├── down.ts            # Full teardown (containers, volumes, .env)
