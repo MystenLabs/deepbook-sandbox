@@ -24,7 +24,7 @@ A one-command local sandbox for DeepBook V3. It spins up a private Sui localnet,
 | :9123 Faucet| |  :9010     | |  :3001    | |  :9009       | |   API            |
 +------+------+ +------+-----+ +--+--------+ +---+----------+ +---+--------------+
        |               |           |              |                 |
-       |          Pyth prices  place orders   SUI + DEEP        +--v----+
+       |          Pyth prices  place orders   SUI+DEEP+USDC     +--v----+
        |               |           |          distribution      |Postgres|
        |               |           |              |             | :5432  |
        +---------------+-----------+--------------+-------------+-------+
@@ -42,7 +42,7 @@ A one-command local sandbox for DeepBook V3. It spins up a private Sui localnet,
             +--------+
 ```
 
-The **Sui Localnet** container runs a Sui local network. The **deploy-all** script publishes all Move smart contracts (token, deepbook, margin, pyth, usdc) to this chain, then starts the supporting services. The **Oracle Service** pushes real Pyth Network prices for SUI and DEEP every 10 seconds. The **Market Maker** maintains a grid of buy/sell orders so the pools have liquidity. The **Indexer** reads blockchain checkpoints and writes events into **PostgreSQL**, and the **DeepBook Server** exposes that data as a REST API. The **Faucet** distributes both SUI (proxied to the native Sui faucet) and DEEP tokens (signed transfers from the deployer).
+The **Sui Localnet** container runs a Sui local network. The **deploy-all** script publishes all Move smart contracts (token, deepbook, margin, pyth, usdc) to this chain, then starts the supporting services. The **Oracle Service** pushes real Pyth Network prices for SUI and DEEP every 10 seconds. The **Market Maker** maintains a grid of buy/sell orders so the pools have liquidity. The **Indexer** reads blockchain checkpoints and writes events into **PostgreSQL**, and the **DeepBook Server** exposes that data as a REST API. The **Faucet** distributes SUI (proxied to the native Sui faucet), along with DEEP and USDC tokens (signed transfers from the deployer).
 
 ## 3. Prerequisites
 
@@ -79,15 +79,15 @@ pnpm deploy-all
 
 When you see `DeepBook Sandbox Ready!`, everything is running:
 
-| Endpoint                     | URL                                                          |
-| ---------------------------- | ------------------------------------------------------------ |
-| Dashboard                    | [http://localhost:5173](http://localhost:5173)               |
-| Sui RPC                      | [http://localhost:9000](http://localhost:9000)               |
-| Sui Faucet (native)          | [http://localhost:9123](http://localhost:9123)               |
-| DeepBook Faucet (SUI + DEEP) | [http://localhost:9009](http://localhost:9009)               |
-| DeepBook REST API            | [http://localhost:9008](http://localhost:9008)               |
-| Oracle Status                | [http://localhost:9010](http://localhost:9010)               |
-| Market Maker Health          | [http://localhost:3001/health](http://localhost:3001/health) |
+| Endpoint                            | URL                                                          |
+| ----------------------------------- | ------------------------------------------------------------ |
+| Dashboard                           | [http://localhost:5173](http://localhost:5173)               |
+| Sui RPC                             | [http://localhost:9000](http://localhost:9000)               |
+| Sui Faucet (native)                 | [http://localhost:9123](http://localhost:9123)               |
+| DeepBook Faucet (SUI + DEEP + USDC) | [http://localhost:9009](http://localhost:9009)               |
+| DeepBook REST API                   | [http://localhost:9008](http://localhost:9008)               |
+| Oracle Status                       | [http://localhost:9010](http://localhost:9010)               |
+| Market Maker Health                 | [http://localhost:3001/health](http://localhost:3001/health) |
 
 Verify it works:
 
@@ -120,7 +120,7 @@ When you run `pnpm deploy-all`, here's the full sequence:
 5. **Faucet funding** — Requests SUI from the built-in faucet so the deployer has gas for publishing.
 6. **Move deployment** — Publishes six packages in dependency order: `token` (the DEEP coin), `deepbook` (the core order book), `pyth` (oracle contracts), `usdc` (stablecoin type), `deepbook_margin` (margin trading), and `margin_liquidation`. Each uses `sui client test-publish --build-env localnet`.
 7. **Env file update** — All package IDs, object IDs, and `FIRST_CHECKPOINT=0` are written to `sandbox/.env`.
-8. **Indexer + server + faucet start** — The indexer and server images are built from source (Rust compilation — takes a few minutes the first time). Then `deepbook-indexer`, `deepbook-server`, and `deepbook-faucet` containers start with `--force-recreate` so they pick up the new env vars. With `--quick`, the Rust build is skipped and pre-built Docker Hub images are used instead.
+8. **Indexer + server + api start** — The indexer and server images are built from source (Rust compilation — takes a few minutes the first time). Then `deepbook-indexer`, `deepbook-server`, and `deepbook-sandbox-api` containers start with `--force-recreate` so they pick up the new env vars. With `--quick`, the Rust build is skipped and pre-built Docker Hub images are used instead.
 9. **Pyth oracle setup** — Creates PriceInfoObjects on-chain for SUI ($1.00), DEEP ($0.02), and USDC ($1.00). Generates a separate Ed25519 keypair for the oracle service (separate from the deployer to avoid gas coin conflicts), funds it via faucet, and saves `ORACLE_PRIVATE_KEY` to `.env`.
 10. **Oracle service start** — Starts the `oracle-service` container, which begins fetching 24-hour-old historical prices from `benchmarks.pyth.network` and submitting update transactions every 10 seconds.
 11. **Pool creation** — Creates a DEEP/SUI pool and a SUI/USDC pool on-chain via the DeepBook contract. Also creates SUI and USDC margin pools and registers the SUI/USDC pool for margin trading.
@@ -136,7 +136,7 @@ The dashboard has five pages:
 - **Health** — Real-time status of all services (Sui node, indexer, oracle, market maker, faucet), auto-refreshes every 10 seconds
 - **Market Maker** — Order book bar chart, active bid/ask levels, and grid configuration
 - **Trading** — Connect a wallet, create your own on-chain Balance Manager with one click, deposit/withdraw funds, and place market or limit orders against the live pools. The first time you connect a wallet you'll see a "Create Balance Manager" button — clicking it bundles `balance_manager::new` + `register_balance_manager` + `public_share_object` into a single PTB so the BM is registered in the deepbook Registry and discovered automatically on every future visit. Includes inline SDK code snippets that mirror what each action would look like in your own integration.
-- **Faucet** — Connect a Sui wallet and request SUI or DEEP tokens
+- **Faucet** — Connect a Sui wallet and request SUI, DEEP, or USDC tokens
 - **Deployment** — Browse deployed package IDs, pool addresses, and Pyth oracle objects with explorer links
 
 Nginx proxies API requests to the sandbox services:
@@ -206,7 +206,7 @@ The `--pubfile-path` flag tells the Sui CLI where to find the already-published 
 
 ## 8. Using the Faucet
 
-The faucet service on port 9009 distributes both SUI and DEEP tokens. It's separate from the native Sui faucet (port 9123) because DEEP tokens require a signed transfer from the deployer's TreasuryCap.
+The faucet service on port 9009 distributes SUI, DEEP, and USDC tokens. It's separate from the native Sui faucet (port 9123) because DEEP and USDC tokens require a signed transfer from the deployer's wallet.
 
 **Request DEEP tokens** (default: 1000 DEEP, max: 10000 per request):
 
@@ -214,6 +214,14 @@ The faucet service on port 9009 distributes both SUI and DEEP tokens. It's separ
 curl -X POST http://localhost:9009/faucet \
   -H "Content-Type: application/json" \
   -d '{"address":"0x<your-address>","token":"DEEP","amount":1000}'
+```
+
+**Request USDC tokens** (default: 1000 USDC, max: 10000 per request):
+
+```bash
+curl -X POST http://localhost:9009/faucet \
+  -H "Content-Type: application/json" \
+  -d '{"address":"0x<your-address>","token":"USDC","amount":1000}'
 ```
 
 **Request SUI tokens** (proxied to the native Sui faucet):
@@ -374,6 +382,7 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `DEEPBOOK_PACKAGE_ID`       | No (auto-populated)             | —                                                  | Deployed DeepBook package address                                         |
 | `DEEP_TOKEN_PACKAGE_ID`     | No (auto-populated)             | —                                                  | DEEP token package address                                                |
 | `DEEP_TREASURY_ID`          | No (auto-populated)             | —                                                  | DEEP TreasuryCap object ID                                                |
+| `USDC_TOKEN_PACKAGE_ID`     | No (auto-populated)             | —                                                  | USDC token package address                                                |
 | `MARGIN_PACKAGE_ID`         | No (auto-populated)             | —                                                  | Margin trading package address                                            |
 | `PYTH_PACKAGE_ID`           | No (auto-populated)             | —                                                  | Pyth oracle package address                                               |
 | `POOL_ID`                   | No (auto-populated)             | —                                                  | DEEP/SUI pool object ID                                                   |
@@ -394,27 +403,27 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `MARKET_MAKER_IMAGE`        | No                              | `mysten/deepbook-sandbox-market-maker:...-arm64`   | Market maker Docker image override                                        |
 | `INDEXER_IMAGE`             | No                              | `mysten/deepbookv3-sandbox-indexer:...-arm64`      | Indexer Docker image override                                             |
 | `SERVER_IMAGE`              | No                              | `mysten/deepbookv3-server:...-arm64`               | DeepBook server Docker image override                                     |
-| `FAUCET_IMAGE`              | No                              | `mysten/deepbook-sandbox-faucet:...-arm64`         | Faucet Docker image override                                              |
+| `API_IMAGE`                 | No                              | `mysten/deepbook-sandbox-api:...-arm64`            | Sandbox API (faucet + manifest + service control) Docker image override   |
 | `ORACLE_SERVICE_IMAGE`      | No                              | `mysten/deepbook-sandbox-oracle-service:...-arm64` | Oracle service Docker image override                                      |
 
 ## Appendix C: Docker Services Reference
 
-| Service            | Container Name          | Profile    | Ports (host:container) | Description                                        |
-| ------------------ | ----------------------- | ---------- | ---------------------- | -------------------------------------------------- |
-| `postgres`         | `deepbook-postgres`     | (always)   | 5432:5432              | PostgreSQL 16 database for the indexer             |
-| `sui-localnet`     | `sui-localnet`          | `localnet` | 9000:9000, 9123:9123   | Full Sui node with built-in faucet                 |
-| `market-maker`     | `deepbook-market-maker` | `localnet` | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools    |
-| `deepbook-indexer` | `deepbook-indexer`      | `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres       |
-| `deepbook-server`  | `deepbook-server`       | `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data        |
-| `deepbook-faucet`  | `deepbook-faucet`       | `localnet` | 9009:9009              | Distributes SUI (proxied) and DEEP tokens          |
-| `oracle-service`   | `oracle-service`        | `localnet` | 9010:9010              | Updates Pyth price feeds every 10 seconds          |
-| `dashboard`        | `deepbook-dashboard`    | `localnet` | 5173:80                | Web UI for monitoring and interacting with sandbox |
+| Service                | Container Name          | Profile    | Ports (host:container) | Description                                                                  |
+| ---------------------- | ----------------------- | ---------- | ---------------------- | ---------------------------------------------------------------------------- |
+| `postgres`             | `deepbook-postgres`     | (always)   | 5432:5432              | PostgreSQL 16 database for the indexer                                       |
+| `sui-localnet`         | `sui-localnet`          | `localnet` | 9000:9000, 9123:9123   | Full Sui node with built-in faucet                                           |
+| `market-maker`         | `deepbook-market-maker` | `localnet` | 3001:3000, 9091:9090   | Grid market maker for DEEP/SUI + SUI/USDC pools                              |
+| `deepbook-indexer`     | `deepbook-indexer`      | `localnet` | 9184:9184              | Reads checkpoints, writes events to Postgres                                 |
+| `deepbook-server`      | `deepbook-server`       | `localnet` | 9008:9008, 9185:9184   | REST API for querying indexed DeepBook data                                  |
+| `deepbook-sandbox-api` | `deepbook-sandbox-api`  | `localnet` | 9009:9009              | Sandbox API — faucet (SUI proxied, DEEP, USDC), `/manifest`, service control |
+| `oracle-service`       | `oracle-service`        | `localnet` | 9010:9010              | Updates Pyth price feeds every 10 seconds                                    |
+| `dashboard`            | `deepbook-dashboard`    | `localnet` | 5173:80                | Web UI for monitoring and interacting with sandbox                           |
 
 ## Appendix D: Data Flows
 
 **Price flow:** Pyth Network API (`benchmarks.pyth.network`) -> Oracle Service -> on-chain PriceInfoObjects -> Market Maker (reads mid-price) -> DeepBook Pool (places orders at grid levels)
 
-**Token flow (faucet):** User request -> Faucet service (:9009) -> SUI: proxied to Sui's built-in faucet (:9123) | DEEP: signed transfer from deployer's TreasuryCap
+**Token flow (faucet):** User request -> Faucet service (:9009) -> SUI: proxied to Sui's built-in faucet (:9123) | DEEP / USDC: signed transfer from the deployer's wallet
 
 **Indexing flow:** Sui Localnet (checkpoints written to shared volume) -> Indexer (reads checkpoint files) -> PostgreSQL (:5432) -> DeepBook Server (:9008, REST API)
 
@@ -466,7 +475,7 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 | `sandbox/scripts/oracle-service/index.ts` | Oracle service entry point — fetches Pyth prices, submits update txs                    |
 | `sandbox/scripts/market-maker/index.ts`   | Market maker entry point — grid strategy, order placement                               |
 | `sandbox/api/src/index.ts`                | Sandbox API HTTP server (Hono) — faucet routes + `/manifest` endpoint                   |
-| `sandbox/api/src/routes/faucet.ts`        | POST /faucet endpoint — validates requests, dispatches SUI or DEEP                      |
+| `sandbox/api/src/routes/faucet.ts`        | POST /faucet endpoint — validates requests, dispatches SUI, DEEP, or USDC               |
 | `sandbox/dashboard/src/App.tsx`           | Dashboard React app — Health, Market Maker, Faucet, Deployment pages                    |
 | `sandbox/packages/example_contract/`      | Template for custom Move contracts that depend on DeepBook                              |
 | `sandbox/deployments/localnet.json`       | Generated deployment manifest with all addresses and IDs                                |

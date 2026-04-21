@@ -3,10 +3,10 @@ import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction, coinWithBalance } from "@mysten/sui/transactions";
 import { tryAcquire, release } from "./signing-lock.js";
 
-export async function requestDeep(
+export async function requestUsdc(
     client: SuiGrpcClient,
     signer: Keypair,
-    deepType: string,
+    usdcType: string,
     recipient: string,
     amount: number,
 ): Promise<{ success: boolean; digest?: string; error?: string }> {
@@ -22,7 +22,7 @@ export async function requestDeep(
 
         const coin = coinWithBalance({
             balance: amount,
-            type: deepType,
+            type: usdcType,
             useGasCoin: false,
         })(tx);
 

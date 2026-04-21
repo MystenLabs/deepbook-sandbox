@@ -244,6 +244,7 @@ describe("deploy-all pipeline (localnet)", () => {
         expect(envContent).toContain("DEEPBOOK_PACKAGE_ID=");
         expect(envContent).toContain("DEEP_TOKEN_PACKAGE_ID=");
         expect(envContent).toContain("DEEP_TREASURY_ID=");
+        expect(envContent).toContain("USDC_TOKEN_PACKAGE_ID=");
         expect(envContent).toContain("DEEPBOOK_MARGIN_PACKAGE_ID=");
         expect(envContent).toContain("FIRST_CHECKPOINT=0");
     }, 10_000);

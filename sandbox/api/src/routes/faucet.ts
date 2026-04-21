@@ -5,15 +5,18 @@ import { z } from "zod";
 import type { FaucetConfig } from "../config.js";
 import { requestSui } from "../services/sui-faucet.js";
 import { requestDeep } from "../services/deep-faucet.js";
+import { requestUsdc } from "../services/usdc-faucet.js";
 
 const DEEP_DECIMALS = 6;
 const DEFAULT_DEEP_AMOUNT = 1000;
+const USDC_DECIMALS = 6;
+const DEFAULT_USDC_AMOUNT = 1000;
 
 const bodySchema = z.object({
     address: z
         .string()
         .regex(/^0x[0-9a-fA-F]{64}$/, "Invalid Sui address (expected 0x + 64 hex chars)"),
-    token: z.enum(["SUI", "DEEP"]),
+    token: z.enum(["SUI", "DEEP", "USDC"]),
     amount: z.number().positive().int().optional(),
 });
 
@@ -40,19 +43,36 @@ export function faucetRoutes(config: FaucetConfig, client: SuiGrpcClient, signer
             return c.json(result, result.success ? 200 : 502);
         }
 
-        const deepAmount = amount ?? DEFAULT_DEEP_AMOUNT;
-        if (deepAmount > config.maxDeepPerRequest) {
+        if (token === "DEEP") {
+            const deepAmount = amount ?? DEFAULT_DEEP_AMOUNT;
+            if (deepAmount > config.maxDeepPerRequest) {
+                return c.json(
+                    {
+                        success: false,
+                        error: `Amount exceeds maximum of ${config.maxDeepPerRequest} DEEP per request`,
+                    },
+                    400,
+                );
+            }
+
+            const baseUnits = deepAmount * 10 ** DEEP_DECIMALS;
+            const result = await requestDeep(client, signer, config.deepType, address, baseUnits);
+            return c.json(result, result.success ? 200 : 500);
+        }
+
+        const usdcAmount = amount ?? DEFAULT_USDC_AMOUNT;
+        if (usdcAmount > config.maxUsdcPerRequest) {
             return c.json(
                 {
                     success: false,
-                    error: `Amount exceeds maximum of ${config.maxDeepPerRequest} DEEP per request`,
+                    error: `Amount exceeds maximum of ${config.maxUsdcPerRequest} USDC per request`,
                 },
                 400,
             );
         }
 
-        const baseUnits = deepAmount * 10 ** DEEP_DECIMALS;
-        const result = await requestDeep(client, signer, config.deepType, address, baseUnits);
+        const baseUnits = usdcAmount * 10 ** USDC_DECIMALS;
+        const result = await requestUsdc(client, signer, config.usdcType, address, baseUnits);
         return c.json(result, result.success ? 200 : 500);
     });
 

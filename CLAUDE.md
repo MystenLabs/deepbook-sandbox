@@ -41,8 +41,10 @@ deepbook-sandbox/
 │   │       ├── index.ts           # Server entry, /manifest endpoint, faucet + services routes
 │   │       ├── config.ts          # Env validation, signer/client factories
 │   │       ├── services/
-│   │       │   ├── sui-faucet.ts  # Proxies to Sui's built-in faucet
-│   │       │   └── deep-faucet.ts # Signs DEEP transfers from deployer
+│   │       │   ├── sui-faucet.ts    # Proxies to Sui's built-in faucet
+│   │       │   ├── deep-faucet.ts   # Signs DEEP transfers from deployer
+│   │       │   ├── usdc-faucet.ts   # Signs USDC transfers from deployer
+│   │       │   └── signing-lock.ts  # Shared lock serializing deployer signs
 │   │       └── routes/
 │   │           ├── faucet.ts      # POST /faucet endpoint
 │   │           └── services.ts    # POST /services/:name/{stop,restart} — docker control via mounted socket
@@ -93,7 +95,7 @@ Services in the stack:
 | **Market Maker**     | `localnet` | Automated market maker for DEEP/SUI + SUI/USDC     | 3001 (health), 9091 (metrics) |
 | **DeepBook Indexer** | `localnet` | Indexes DeepBook events from checkpoints           | 9184 (metrics)                |
 | **DeepBook Server**  | `localnet` | REST API for querying indexed data                 | 9008                          |
-| **DeepBook Faucet**  | `localnet` | Distributes SUI (proxied) and DEEP tokens          | 9009                          |
+| **DeepBook Faucet**  | `localnet` | Distributes SUI (proxied), DEEP, and USDC tokens   | 9009                          |
 | **Oracle Service**   | `localnet` | Updates Pyth price feeds for DEEP/SUI every 10s    | 9010 (status)                 |
 | **Dashboard**        | `localnet` | Web UI for monitoring and interacting with sandbox | 5173 (HTTP)                   |
 
