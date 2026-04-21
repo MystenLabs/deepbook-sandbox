@@ -13,6 +13,10 @@ RUN pnpm run build
 FROM node:22-alpine
 RUN corepack enable
 
+# docker-cli lets the container drive `docker stop|restart` against the host
+# daemon via the mounted /var/run/docker.sock — used by /services routes.
+RUN apk add --no-cache docker-cli
+
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --prod

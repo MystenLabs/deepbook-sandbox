@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { loadConfig, getClient, getSigner } from "./config.js";
 import { faucetRoutes } from "./routes/faucet.js";
+import { servicesRoutes } from "./routes/services.js";
 
 const config = loadConfig();
 const client = getClient(config.rpcUrl);
@@ -32,6 +33,7 @@ app.get("/manifest", async (c) => {
 });
 
 app.route("/", faucetRoutes(config, client, signer));
+app.route("/", servicesRoutes());
 
 console.log(`API listening on port ${config.port} (network: localnet)`);
 console.log(`Deployer address: ${signer.getPublicKey().toSuiAddress()}`);
