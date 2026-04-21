@@ -3,6 +3,10 @@
 // root-equivalent on the host, so exposing this API on anything other than a
 // loopback interface would be remote code execution. The hardcoded allowlist
 // below is the only defence — keep it that way.
+//
+// The api container itself (deepbook-sandbox-api) is intentionally NOT in the
+// allowlist: it's the process handling these requests, so any action that kills
+// it leaves nothing alive to bring it back. Recover via the host CLI instead.
 
 import { execFile } from "node:child_process";
 import { Hono } from "hono";
@@ -13,7 +17,6 @@ import { Hono } from "hono";
 const CONTAINER_BY_SERVICE: Record<string, string> = {
     "oracle-service": "oracle-service",
     "market-maker": "deepbook-market-maker",
-    "deepbook-sandbox-api": "deepbook-sandbox-api",
     "deepbook-server": "deepbook-server",
 };
 
@@ -21,8 +24,6 @@ type Action = "start" | "stop" | "restart";
 
 const COMMAND_TIMEOUT_MS = 30_000;
 
-// Fire-and-forget so the HTTP response leaves before docker can kill the api
-// container itself (restarting deepbook-sandbox-api is a self-targeting case).
 function runDockerCommand(action: Action, container: string): void {
     execFile(
         "docker",

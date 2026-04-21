@@ -448,19 +448,9 @@ function RefreshButton({ isFetching, onRefresh }: { isFetching: boolean; onRefre
     );
 }
 
-type ControllableService =
-    | "oracle-service"
-    | "market-maker"
-    | "deepbook-sandbox-api"
-    | "deepbook-server";
+type ControllableService = "oracle-service" | "market-maker" | "deepbook-server";
 
 type ServiceAction = "start" | "stop" | "restart";
-
-// The api service runs the /services routes themselves, so it can't receive a
-// /start once it's been stopped — there's nothing alive to handle the request.
-// `docker restart` still works because the daemon completes it after the
-// container dies mid-request, so Restart remains available.
-const SELF_CONTROLLED = new Set<ControllableService>(["deepbook-sandbox-api"]);
 
 function ServiceActions({
     service,
@@ -473,14 +463,11 @@ function ServiceActions({
 }) {
     const qc = useQueryClient();
 
-    // Self-restart of deepbook-sandbox-api kills the container mid-request, so
-    // the fetch can legitimately reject — treat it as a successful kick anyway
-    // and let the health query reflect the real state on its next poll.
     const post = async (action: ServiceAction) => {
         try {
             await fetch(`/api/services/${service}/${action}`, { method: "POST" });
         } catch {
-            /* self-targeting restart drops the connection — expected */
+            /* network errors surface via the next health poll; nothing to do here */
         }
     };
 
@@ -507,27 +494,23 @@ function ServiceActions({
     const PrimaryIcon = isDown ? Play : Square;
     const primaryLabel = isDown ? "Start service" : "Stop service";
 
-    const showPrimary = !SELF_CONTROLLED.has(service);
-
     return (
         <TooltipProvider delayDuration={200}>
-            {showPrimary && (
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <button
-                            onClick={() => primary.mutate(primaryAction)}
-                            disabled={busy}
-                            aria-label={primaryLabel}
-                            className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
-                        >
-                            <PrimaryIcon
-                                className={`h-3.5 w-3.5 ${primary.isPending ? "animate-pulse" : ""}`}
-                            />
-                        </button>
-                    </TooltipTrigger>
-                    <TooltipContent>{primaryLabel}</TooltipContent>
-                </Tooltip>
-            )}
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <button
+                        onClick={() => primary.mutate(primaryAction)}
+                        disabled={busy}
+                        aria-label={primaryLabel}
+                        className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
+                    >
+                        <PrimaryIcon
+                            className={`h-3.5 w-3.5 ${primary.isPending ? "animate-pulse" : ""}`}
+                        />
+                    </button>
+                </TooltipTrigger>
+                <TooltipContent>{primaryLabel}</TooltipContent>
+            </Tooltip>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <button
