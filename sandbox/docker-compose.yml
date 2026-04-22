@@ -241,9 +241,11 @@ services:
     environment:
       PRIVATE_KEY: ${PRIVATE_KEY:-}
       DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
+      USDC_TOKEN_PACKAGE_ID: ${USDC_TOKEN_PACKAGE_ID:-}
       RPC_URL: ${RPC_URL:-}
       PORT: 9009
       MAX_DEEP_PER_REQUEST: 10000
+      MAX_USDC_PER_REQUEST: 10000
     ports:
       - "9009:9009"
     volumes:

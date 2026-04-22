@@ -61,6 +61,7 @@ export function getDeploymentEnv(
     options?: DeploymentEnvOptions,
 ): Record<string, string> {
     const token = deployedPackages.get("token");
+    const usdc = deployedPackages.get("usdc");
     const deepbook = deployedPackages.get("deepbook");
     const margin = deployedPackages.get("deepbook_margin");
 
@@ -73,6 +74,7 @@ export function getDeploymentEnv(
         DEEPBOOK_PACKAGE_ID: deepbook.packageId,
         DEEP_TOKEN_PACKAGE_ID: token.packageId,
         DEEP_TREASURY_ID: deepTreasuryId,
+        USDC_TOKEN_PACKAGE_ID: usdc.packageId,
         DEEPBOOK_MARGIN_PACKAGE_ID: margin.packageId,
     };
     if (options.firstCheckpoint) env.FIRST_CHECKPOINT = options.firstCheckpoint;

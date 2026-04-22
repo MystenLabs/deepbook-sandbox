@@ -11,7 +11,7 @@ import { useWalletBalances } from "@/components/trading/hooks";
 
 const FAUCET_URL = "/api/faucet";
 
-type Token = "SUI" | "DEEP";
+type Token = "SUI" | "DEEP" | "USDC";
 
 async function requestFaucet(address: string, token: Token) {
     const res = await fetch(FAUCET_URL, {
@@ -35,6 +35,7 @@ export function FaucetPage() {
 
     const suiBalanceStr = walletData?.balances?.SUI ?? "0";
     const deepBalanceStr = walletData?.balances?.DEEP ?? "0";
+    const usdcBalanceStr = walletData?.balances?.USDC ?? "0";
 
     const [copied, setCopied] = useState(false);
 
@@ -52,6 +53,13 @@ export function FaucetPage() {
         },
     });
 
+    const usdcFaucet = useMutation({
+        mutationFn: () => requestFaucet(address!, "USDC"),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
+        },
+    });
+
     // Auto-dismiss feedback after 5s
     useEffect(() => {
         if (suiFaucet.isIdle || suiFaucet.isPending) return;
@@ -64,6 +72,12 @@ export function FaucetPage() {
         const id = setTimeout(() => deepFaucet.reset(), 5000);
         return () => clearTimeout(id);
     }, [deepFaucet.status]);
+
+    useEffect(() => {
+        if (usdcFaucet.isIdle || usdcFaucet.isPending) return;
+        const id = setTimeout(() => usdcFaucet.reset(), 5000);
+        return () => clearTimeout(id);
+    }, [usdcFaucet.status]);
 
     const copyAddress = async () => {
         if (!address) return;
@@ -105,7 +119,7 @@ export function FaucetPage() {
                 </button>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
                 {/* SUI Card */}
                 <LinesCard>
                     <CardHeader className="flex flex-row items-center gap-3 pb-2">
@@ -151,6 +165,30 @@ export function FaucetPage() {
                             {deepFaucet.isPending ? "Requesting..." : "Request DEEP"}
                         </Button>
                         <FaucetFeedback faucet={deepFaucet} token="DEEP" network={network} />
+                    </CardContent>
+                </LinesCard>
+
+                {/* USDC Card */}
+                <LinesCard>
+                    <CardHeader className="flex flex-row items-center gap-3 pb-2">
+                        <img src="/svg/usdc.svg" alt="USDC" className="h-8 w-8 rounded-full" />
+                        <CardTitle className="text-sm font-medium text-zinc-200">USDC</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        <Row label="Balance">
+                            <BalanceValue
+                                loading={balanceLoading}
+                                value={`${parseFloat(usdcBalanceStr).toFixed(4)} USDC`}
+                            />
+                        </Row>
+                        <Button
+                            onClick={() => usdcFaucet.mutate()}
+                            disabled={usdcFaucet.isPending}
+                            className="w-full"
+                        >
+                            {usdcFaucet.isPending ? "Requesting..." : "Request USDC"}
+                        </Button>
+                        <FaucetFeedback faucet={usdcFaucet} token="USDC" network={network} />
                     </CardContent>
                 </LinesCard>
             </div>

@@ -4,21 +4,25 @@ import type { Keypair } from "@mysten/sui/cryptography";
 import { z } from "zod";
 import type { FaucetConfig } from "../config.js";
 import { requestSui } from "../services/sui-faucet.js";
-import { requestDeep } from "../services/deep-faucet.js";
+import { requestCoin } from "../services/coin-faucet.js";
 
-const DEEP_DECIMALS = 6;
-const DEFAULT_DEEP_AMOUNT = 1000;
+const DEFAULT_AMOUNT = 1000;
 
 const bodySchema = z.object({
     address: z
         .string()
         .regex(/^0x[0-9a-fA-F]{64}$/, "Invalid Sui address (expected 0x + 64 hex chars)"),
-    token: z.enum(["SUI", "DEEP"]),
+    token: z.enum(["SUI", "DEEP", "USDC"]),
     amount: z.number().positive().int().optional(),
 });
 
 export function faucetRoutes(config: FaucetConfig, client: SuiGrpcClient, signer: Keypair): Hono {
     const app = new Hono();
+
+    const coins = {
+        DEEP: { type: config.deepType, decimals: 6, max: config.maxDeepPerRequest },
+        USDC: { type: config.usdcType, decimals: 6, max: config.maxUsdcPerRequest },
+    } as const;
 
     app.post("/faucet", async (c) => {
         let body: unknown;
@@ -40,19 +44,20 @@ export function faucetRoutes(config: FaucetConfig, client: SuiGrpcClient, signer
             return c.json(result, result.success ? 200 : 502);
         }
 
-        const deepAmount = amount ?? DEFAULT_DEEP_AMOUNT;
-        if (deepAmount > config.maxDeepPerRequest) {
+        const { type, decimals, max } = coins[token];
+        const whole = amount ?? DEFAULT_AMOUNT;
+        if (whole > max) {
             return c.json(
                 {
                     success: false,
-                    error: `Amount exceeds maximum of ${config.maxDeepPerRequest} DEEP per request`,
+                    error: `Amount exceeds maximum of ${max} ${token} per request`,
                 },
                 400,
             );
         }
 
-        const baseUnits = deepAmount * 10 ** DEEP_DECIMALS;
-        const result = await requestDeep(client, signer, config.deepType, address, baseUnits);
+        const baseUnits = whole * 10 ** decimals;
+        const result = await requestCoin(client, signer, type, address, baseUnits);
         return c.json(result, result.success ? 200 : 500);
     });
 
