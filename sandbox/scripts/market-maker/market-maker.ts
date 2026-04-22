@@ -24,20 +24,18 @@ export interface MarketMakerContext {
     config: MarketMakerConfig;
 }
 
-/** Per-pool runtime state. */
+/**
+ * Per-pool runtime state. Each pool owns a dedicated BalanceManager so that
+ * collateral for one pool's grid cannot starve another pool's placement.
+ */
 interface PoolState {
     pool: PoolConfig;
     label: string;
+    bmId: string;
     orderManager: OrderManager;
     hasBaseBalance: boolean;
+    hasQuoteBalance: boolean;
     lastMidPrice: bigint | null;
-}
-
-/** Per-coin funding plan aggregated across all pools. */
-interface CoinPlan {
-    amount: bigint;
-    decimals: number;
-    label: string;
 }
 
 export class MarketMaker {
@@ -46,16 +44,7 @@ export class MarketMaker {
     private config: MarketMakerConfig;
     private manifest: DeploymentManifest;
 
-    private balanceManagerId: string | null = null;
     private bmService: BalanceManagerService | null = null;
-    /**
-     * Per-coin target balance in the BM, summed across every pool that uses it.
-     * Populated during initialize() and consulted each cycle by topUpBeforeCycle()
-     * to replenish drift caused by organic fills.
-     */
-    private depositPlan: Map<string, CoinPlan> = new Map();
-    /** Coins that succeeded their initial deposit — the only ones eligible for top-up. */
-    private depositedCoins: Set<string> = new Set();
     private poolStates: PoolState[] = [];
     private healthServer: HealthServer | null = null;
     private metricsServer: MetricsServer | null = null;
@@ -73,69 +62,50 @@ export class MarketMaker {
     }
 
     /**
-     * Initialize the market maker: create BalanceManager, deposit funds, start servers.
+     * Initialize the market maker: create one BalanceManager per pool, deposit
+     * funds, start servers. Per-pool BMs isolate each pool's collateral so a
+     * drained SUI/USDC cannot starve a DEEP/SUI rebalance (the failure mode
+     * the previous shared-BM design had).
      */
     async initialize(): Promise<void> {
         log.phase("Initializing Market Maker");
         log.resetSteps();
 
         const packageId = this.manifest.packages.deepbook.packageId;
-
-        // Create BalanceManager (shared across all pools)
-        log.step("Creating BalanceManager...");
         this.bmService = new BalanceManagerService(this.client, this.signer, packageId);
-        const bmInfo = await this.bmService.createBalanceManager();
-        this.balanceManagerId = bmInfo.balanceManagerId;
-        log.success(`Created: ${this.balanceManagerId}`);
-        log.detail(explorerObjectUrl(this.balanceManagerId, this.manifest.network.type));
 
-        // Wait for object to be available on localnet
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        // Build the per-coin funding plan: sum (not max) each coin's deposit across
-        // every pool that uses it. Taking the max leaves the BM short whenever a
-        // coin is used by more than one pool (e.g. SUI as quote in DEEP/SUI and
-        // base in SUI/USDC) — the two pools' locks compete for the same balance.
-        this.depositPlan = new Map();
         for (const pool of this.manifest.pools) {
+            const label = pairLabel(pool.baseCoinType, pool.quoteCoinType);
             const baseLabel = pool.baseCoinType.split("::").pop()?.toUpperCase() ?? "BASE";
             const quoteLabel = pool.quoteCoinType.split("::").pop()?.toUpperCase() ?? "QUOTE";
 
-            const existingBase = this.depositPlan.get(pool.baseCoinType);
-            this.depositPlan.set(pool.baseCoinType, {
-                amount: (existingBase?.amount ?? 0n) + pool.baseDepositAmount,
-                decimals: pool.baseDecimals,
-                label: baseLabel,
-            });
+            log.phase(`Setting up ${label}`);
 
-            const existingQuote = this.depositPlan.get(pool.quoteCoinType);
-            this.depositPlan.set(pool.quoteCoinType, {
-                amount: (existingQuote?.amount ?? 0n) + pool.quoteDepositAmount,
-                decimals: pool.quoteDecimals,
-                label: quoteLabel,
-            });
-        }
+            // Dedicated BalanceManager for this pool
+            log.step(`Creating BalanceManager...`);
+            const bmInfo = await this.bmService.createBalanceManager();
+            const bmId = bmInfo.balanceManagerId;
+            log.success(`Created: ${bmId}`);
+            log.detail(explorerObjectUrl(bmId, this.manifest.network.type));
 
-        // Deposit each unique coin type up to its planned target
-        for (const [coinType, { amount, decimals, label }] of this.depositPlan) {
-            log.step(`Depositing ${label}...`);
-            try {
-                await this.bmService.deposit(this.balanceManagerId, coinType, amount);
-                log.success(`Deposited: ${formatAmount(amount, decimals)} ${label}`);
-                this.depositedCoins.add(coinType);
-            } catch (e) {
-                log.warn(
-                    `${label} deposit failed. Pools needing ${label} as base will run bid-only.`,
-                );
-            }
-            // Wait for deposit to propagate before next coin
             await new Promise((resolve) => setTimeout(resolve, 2000));
-        }
 
-        // Initialize per-pool state
-        for (const pool of this.manifest.pools) {
-            const label = pairLabel(pool.baseCoinType, pool.quoteCoinType);
-            log.step(`Setting up pool: ${label}`);
+            // Fund base and quote independently — a missing coin degrades this
+            // pool to one-sided quoting without affecting any other pool.
+            const hasBaseBalance = await this.depositInitial(
+                bmId,
+                pool.baseCoinType,
+                pool.baseDepositAmount,
+                pool.baseDecimals,
+                baseLabel,
+            );
+            const hasQuoteBalance = await this.depositInitial(
+                bmId,
+                pool.quoteCoinType,
+                pool.quoteDepositAmount,
+                pool.quoteDecimals,
+                quoteLabel,
+            );
 
             const orderManager = new OrderManager(
                 this.client,
@@ -144,23 +114,22 @@ export class MarketMaker {
                 pool.poolId,
                 pool.baseCoinType,
                 pool.quoteCoinType,
-                this.balanceManagerId,
+                bmId,
                 this.manifest.network.type,
             );
-
-            const hasBaseBalance = this.depositedCoins.has(pool.baseCoinType);
 
             this.poolStates.push({
                 pool,
                 label,
+                bmId,
                 orderManager,
                 hasBaseBalance,
+                hasQuoteBalance,
                 lastMidPrice: null,
             });
 
-            if (!hasBaseBalance) {
-                log.warn(`${label}: no base balance — running bid-only mode`);
-            }
+            if (!hasBaseBalance) log.warn(`${label}: no base — asks disabled`);
+            if (!hasQuoteBalance) log.warn(`${label}: no quote — bids disabled`);
             log.success(`${label} ready`);
         }
 
@@ -252,16 +221,10 @@ export class MarketMaker {
 
     /**
      * Execute a single rebalance cycle across all pools (sequentially).
+     * Per-pool BM isolation means failure on one pool cannot starve another.
      */
     private async rebalance(): Promise<void> {
         if (this.isShuttingDown) return;
-
-        // Organic fills shift the BM's coin composition over time (a filled bid
-        // burns quote and gains base; a filled ask does the reverse). Cancel/
-        // replace preserves totals only for the side that didn't fill, so after
-        // enough trading the BM can no longer back its full grid. Top up from
-        // the signer wallet back to the planned target before placing orders.
-        await this.topUpBeforeCycle();
 
         for (const state of this.poolStates) {
             if (this.isShuttingDown) return;
@@ -270,41 +233,97 @@ export class MarketMaker {
     }
 
     /**
-     * Check the BM's balance for every planned coin and deposit the deficit
-     * from the signer wallet. Best-effort: failures are logged but do not
-     * abort the cycle — the subsequent rebalance will surface the issue
-     * through its own error path.
+     * Deposit a coin into a BalanceManager during initialization. Returns
+     * true on success, false if the wallet can't supply the coin (the pool
+     * will then run in reduced-side mode).
      */
-    private async topUpBeforeCycle(): Promise<void> {
-        if (!this.bmService || !this.balanceManagerId) return;
+    private async depositInitial(
+        bmId: string,
+        coinType: string,
+        amount: bigint,
+        decimals: number,
+        label: string,
+    ): Promise<boolean> {
+        if (!this.bmService) return false;
+        log.step(`Depositing ${label}...`);
+        try {
+            await this.bmService.deposit(bmId, coinType, amount);
+            log.success(`Deposited: ${formatAmount(amount, decimals)} ${label}`);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            return true;
+        } catch (e) {
+            log.warn(`${label} deposit failed`);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            return false;
+        }
+    }
 
-        for (const [coinType, { amount: target, decimals, label }] of this.depositPlan) {
-            // Skip coins whose initial deposit failed — the signer wallet almost
-            // certainly still can't supply them, and retrying every cycle just
-            // spams the logs.
-            if (!this.depositedCoins.has(coinType)) continue;
+    /**
+     * Top up a pool's BM from the signer wallet so drift from organic fills
+     * doesn't starve the next rebalance. Best-effort: failures are logged
+     * but never abort the cycle.
+     */
+    private async topUpPool(state: PoolState): Promise<void> {
+        if (!this.bmService) return;
+        const { pool, bmId, label } = state;
 
-            let have: bigint;
-            try {
-                have = await this.bmService.getBalance(this.balanceManagerId, coinType);
-            } catch (error) {
-                log.loopError(`${label} balance query failed`, error);
-                continue;
-            }
-            if (have >= target) continue;
+        const baseLabel = pool.baseCoinType.split("::").pop()?.toUpperCase() ?? "BASE";
+        const quoteLabel = pool.quoteCoinType.split("::").pop()?.toUpperCase() ?? "QUOTE";
 
-            const deficit = target - have;
-            log.loopDetail(
-                `${label} top-up: BM has ${formatAmount(have, decimals)}, ` +
-                    `target ${formatAmount(target, decimals)} — depositing ${formatAmount(deficit, decimals)}`,
+        if (state.hasBaseBalance) {
+            await this.topUpCoin(
+                bmId,
+                label,
+                pool.baseCoinType,
+                pool.baseDepositAmount,
+                pool.baseDecimals,
+                baseLabel,
             );
+        }
+        if (state.hasQuoteBalance) {
+            await this.topUpCoin(
+                bmId,
+                label,
+                pool.quoteCoinType,
+                pool.quoteDepositAmount,
+                pool.quoteDecimals,
+                quoteLabel,
+            );
+        }
+    }
 
-            try {
-                await this.bmService.deposit(this.balanceManagerId, coinType, deficit);
-            } catch (error) {
-                log.warn(`${label} top-up failed — rebalance may abort on insufficient balance`);
-                log.loopError(`${label} top-up error`, error);
-            }
+    private async topUpCoin(
+        bmId: string,
+        poolLabel: string,
+        coinType: string,
+        target: bigint,
+        decimals: number,
+        coinLabel: string,
+    ): Promise<void> {
+        if (!this.bmService) return;
+
+        let have: bigint;
+        try {
+            have = await this.bmService.getBalance(bmId, coinType);
+        } catch (error) {
+            log.loopError(`${poolLabel} ${coinLabel} balance query failed`, error);
+            return;
+        }
+        if (have >= target) return;
+
+        const deficit = target - have;
+        log.loopDetail(
+            `${poolLabel} ${coinLabel} top-up: BM has ${formatAmount(have, decimals)}, ` +
+                `target ${formatAmount(target, decimals)} — depositing ${formatAmount(deficit, decimals)}`,
+        );
+
+        try {
+            await this.bmService.deposit(bmId, coinType, deficit);
+        } catch (error) {
+            log.warn(
+                `${poolLabel} ${coinLabel} top-up failed — rebalance may abort on insufficient balance`,
+            );
+            log.loopError(`${poolLabel} ${coinLabel} top-up error`, error);
         }
     }
 
@@ -347,19 +366,25 @@ export class MarketMaker {
                 );
             }
 
-            // Cancel all existing orders
+            // Cancel all existing orders first — this releases locked
+            // collateral back into the BM's free balance, which the next
+            // step (topUpPool) will then see when computing deficits.
+            // `balance_manager::balance` reports only unlocked funds, so
+            // topping up before cancel would over-deposit every cycle.
             if (orderManager.getActiveOrderCount() > 0) {
                 await orderManager.cancelAllOrders();
             }
+
+            // Replenish drift from organic fills (must come AFTER cancel).
+            await this.topUpPool(state);
 
             // Calculate new grid levels
             const gridParams = buildGridParams(this.config, pool);
             let levels = calculateGridLevels(gridParams, midPrice);
 
-            // Filter out asks if no base balance
-            if (!state.hasBaseBalance) {
-                levels = levels.filter((l) => l.isBid);
-            }
+            // Drop asks if no base balance, bids if no quote balance.
+            if (!state.hasBaseBalance) levels = levels.filter((l) => l.isBid);
+            if (!state.hasQuoteBalance) levels = levels.filter((l) => !l.isBid);
 
             const bids = levels.filter((l) => l.isBid);
             const asks = levels.filter((l) => !l.isBid);
@@ -423,14 +448,17 @@ export class MarketMaker {
     }
 
     /**
-     * Get current readiness status.
+     * Get current readiness status. With per-pool BMs, "balanceManager" is
+     * true when every pool has its own BM initialized.
      */
     private getReadinessStatus(): ReadinessStatus {
+        const allBmsReady =
+            this.poolStates.length > 0 && this.poolStates.every((s) => s.bmId !== "");
         return {
             ready: this.isReady,
             timestamp: new Date().toISOString(),
             checks: {
-                balanceManager: this.balanceManagerId !== null,
+                balanceManager: allBmsReady,
                 pools: this.poolStates.length,
             },
         };
