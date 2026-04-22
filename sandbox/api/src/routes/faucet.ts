@@ -4,13 +4,9 @@ import type { Keypair } from "@mysten/sui/cryptography";
 import { z } from "zod";
 import type { FaucetConfig } from "../config.js";
 import { requestSui } from "../services/sui-faucet.js";
-import { requestDeep } from "../services/deep-faucet.js";
-import { requestUsdc } from "../services/usdc-faucet.js";
+import { requestCoin } from "../services/coin-faucet.js";
 
-const DEEP_DECIMALS = 6;
-const DEFAULT_DEEP_AMOUNT = 1000;
-const USDC_DECIMALS = 6;
-const DEFAULT_USDC_AMOUNT = 1000;
+const DEFAULT_AMOUNT = 1000;
 
 const bodySchema = z.object({
     address: z
@@ -22,6 +18,11 @@ const bodySchema = z.object({
 
 export function faucetRoutes(config: FaucetConfig, client: SuiGrpcClient, signer: Keypair): Hono {
     const app = new Hono();
+
+    const coins = {
+        DEEP: { type: config.deepType, decimals: 6, max: config.maxDeepPerRequest },
+        USDC: { type: config.usdcType, decimals: 6, max: config.maxUsdcPerRequest },
+    } as const;
 
     app.post("/faucet", async (c) => {
         let body: unknown;
@@ -43,36 +44,20 @@ export function faucetRoutes(config: FaucetConfig, client: SuiGrpcClient, signer
             return c.json(result, result.success ? 200 : 502);
         }
 
-        if (token === "DEEP") {
-            const deepAmount = amount ?? DEFAULT_DEEP_AMOUNT;
-            if (deepAmount > config.maxDeepPerRequest) {
-                return c.json(
-                    {
-                        success: false,
-                        error: `Amount exceeds maximum of ${config.maxDeepPerRequest} DEEP per request`,
-                    },
-                    400,
-                );
-            }
-
-            const baseUnits = deepAmount * 10 ** DEEP_DECIMALS;
-            const result = await requestDeep(client, signer, config.deepType, address, baseUnits);
-            return c.json(result, result.success ? 200 : 500);
-        }
-
-        const usdcAmount = amount ?? DEFAULT_USDC_AMOUNT;
-        if (usdcAmount > config.maxUsdcPerRequest) {
+        const { type, decimals, max } = coins[token];
+        const whole = amount ?? DEFAULT_AMOUNT;
+        if (whole > max) {
             return c.json(
                 {
                     success: false,
-                    error: `Amount exceeds maximum of ${config.maxUsdcPerRequest} USDC per request`,
+                    error: `Amount exceeds maximum of ${max} ${token} per request`,
                 },
                 400,
             );
         }
 
-        const baseUnits = usdcAmount * 10 ** USDC_DECIMALS;
-        const result = await requestUsdc(client, signer, config.usdcType, address, baseUnits);
+        const baseUnits = whole * 10 ** decimals;
+        const result = await requestCoin(client, signer, type, address, baseUnits);
         return c.json(result, result.success ? 200 : 500);
     });
 

@@ -42,9 +42,7 @@ deepbook-sandbox/
 │   │       ├── config.ts          # Env validation, signer/client factories
 │   │       ├── services/
 │   │       │   ├── sui-faucet.ts    # Proxies to Sui's built-in faucet
-│   │       │   ├── deep-faucet.ts   # Signs DEEP transfers from deployer
-│   │       │   ├── usdc-faucet.ts   # Signs USDC transfers from deployer
-│   │       │   └── signing-lock.ts  # Shared lock serializing deployer signs
+│   │       │   └── coin-faucet.ts   # Generic: signs DEEP/USDC transfers from deployer (owns signing lock)
 │   │       └── routes/
 │   │           ├── faucet.ts      # POST /faucet endpoint
 │   │           └── services.ts    # POST /services/:name/{stop,restart} — docker control via mounted socket

@@ -1,31 +1,33 @@
 import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction, coinWithBalance } from "@mysten/sui/transactions";
-import { tryAcquire, release } from "./signing-lock.js";
 
-export async function requestDeep(
+// Serializes signing from the deployer wallet. Concurrent signs race on the
+// deployer's gas coin / object versions, so all coin transfers share this lock.
+let signing = false;
+
+export async function requestCoin(
     client: SuiGrpcClient,
     signer: Keypair,
-    deepType: string,
+    coinType: string,
     recipient: string,
     amount: number,
 ): Promise<{ success: boolean; digest?: string; error?: string }> {
-    if (!tryAcquire()) {
+    if (signing) {
         return {
             success: false,
             error: "Another faucet request is in progress, try again shortly",
         };
     }
 
+    signing = true;
     try {
         const tx = new Transaction();
-
         const coin = coinWithBalance({
             balance: amount,
-            type: deepType,
+            type: coinType,
             useGasCoin: false,
         })(tx);
-
         tx.transferObjects([coin], recipient);
 
         const result = await client.signAndExecuteTransaction({
@@ -43,9 +45,8 @@ export async function requestDeep(
 
         const digest = result.Transaction!.digest;
         await client.waitForTransaction({ digest });
-
         return { success: true, digest };
     } finally {
-        release();
+        signing = false;
     }
 }
