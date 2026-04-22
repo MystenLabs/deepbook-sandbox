@@ -14,7 +14,12 @@ import {
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { MoveDeployer } from "./utils/deployer";
 import { updateEnvFile, validateEnvFile } from "./utils/env";
-import { ensureMinimumBalance, getDeploymentEnv, transferCoin } from "./utils/helpers";
+import {
+    ensureMinimumBalance,
+    ensureSuiBalanceAtLeast,
+    getDeploymentEnv,
+    transferCoin,
+} from "./utils/helpers";
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
 import { setupPythOracles } from "./utils/oracle";
@@ -192,7 +197,15 @@ async function main() {
         const mmPrivateKey = mmKeypair.getSecretKey(); // bech32 suiprivkey1...
         log.detail(`Market maker signer: ${mmAddress}`);
 
-        await ensureMinimumBalance(client, mmAddress, getFaucetUrl());
+        // Scaled-up BM deposits require ~5,000 SUI across both pools (DEEP/SUI
+        // bids + SUI/USDC asks with 100-SUI per-level grid) plus gas and drift
+        // top-ups. A single faucet call only yields ~1000 SUI, so loop.
+        await ensureSuiBalanceAtLeast(
+            client,
+            mmAddress,
+            getFaucetUrl(),
+            6_000_000_000_000n, // 6,000 SUI
+        );
         updateEnvFile(sandboxRoot, {
             MM_PRIVATE_KEY: mmPrivateKey,
         });
@@ -263,7 +276,7 @@ async function main() {
             signer,
             recipient: mmAddress,
             coinType: `${tokenPkgId}::deep::DEEP`,
-            amount: 10_000_000_000, // 10,000 DEEP (6 decimals)
+            amount: 500_000_000_000, // 500,000 DEEP (6 decimals)
             label: "DEEP",
         });
         await transferCoin({
@@ -271,7 +284,7 @@ async function main() {
             signer,
             recipient: mmAddress,
             coinType: `${usdcPkgId}::usdc::USDC`,
-            amount: 10_000_000_000, // 10,000 USDC (6 decimals)
+            amount: 500_000_000_000, // 500,000 USDC (6 decimals)
             label: "USDC",
         });
 
@@ -295,10 +308,10 @@ async function main() {
                 tickSize: 1_000_000n, // 0.001 SUI
                 lotSize: 1_000_000n, // 1 DEEP
                 minSize: 10_000_000n, // 10 DEEP
-                orderSizeBase: 10_000_000n, // 10 DEEP per order
+                orderSizeBase: 1_000_000_000n, // 1,000 DEEP per order
                 fallbackMidPrice: 100_000_000n, // 0.1 SUI
-                baseDepositAmount: 1_000_000_000n, // 1000 DEEP
-                quoteDepositAmount: 100_000_000_000n, // 100 SUI
+                baseDepositAmount: 60_000_000_000n, // 60,000 DEEP
+                quoteDepositAmount: 1_500_000_000_000n, // 1,500 SUI
                 baseDecimals: 6,
                 quoteDecimals: 9,
             },
@@ -311,10 +324,10 @@ async function main() {
                 tickSize: 1_000n, // 0.001 USDC
                 lotSize: 100_000_000n, // 0.1 SUI
                 minSize: 1_000_000_000n, // 1 SUI
-                orderSizeBase: 1_000_000_000n, // 1 SUI per order
+                orderSizeBase: 100_000_000_000n, // 100 SUI per order
                 fallbackMidPrice: 3_500_000n, // 3.5 USDC
-                baseDepositAmount: 100_000_000_000n, // 100 SUI
-                quoteDepositAmount: 500_000_000n, // 500 USDC
+                baseDepositAmount: 3_500_000_000_000n, // 3,500 SUI
+                quoteDepositAmount: 25_000_000_000n, // 25,000 USDC
                 baseDecimals: 9,
                 quoteDecimals: 6,
             },

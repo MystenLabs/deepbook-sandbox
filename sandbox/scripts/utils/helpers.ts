@@ -53,6 +53,38 @@ export async function ensureMinimumBalance(
 }
 
 /**
+ * Hit the localnet faucet in a loop until the recipient holds at least
+ * `targetMist` of SUI. Each faucet call yields ~1000 SUI; use this when you
+ * need more than a single call can provide (e.g. funding the MM with
+ * thousands of SUI for scaled-up BM deposits).
+ */
+export async function ensureSuiBalanceAtLeast(
+    client: SuiGrpcClient,
+    recipient: string,
+    faucetHost: string,
+    targetMist: bigint,
+    maxCalls = 10,
+): Promise<void> {
+    for (let i = 0; i < maxCalls; i++) {
+        const { balance } = await client.getBalance({ owner: recipient });
+        if (BigInt(balance.balance) >= targetMist) {
+            log.success(`Has ${balance.balance} MIST balance (target ${targetMist})`);
+            return;
+        }
+        await requestFaucetWithRetry(faucetHost, recipient, 3);
+        await new Promise((r) => setTimeout(r, 2000));
+    }
+    const final = await client.getBalance({ owner: recipient });
+    if (BigInt(final.balance.balance) < targetMist) {
+        log.warn(
+            `Faucet loop ended with ${final.balance.balance} MIST (target ${targetMist}). Continuing anyway.`,
+        );
+    } else {
+        log.success(`Has ${final.balance.balance} MIST balance (target ${targetMist})`);
+    }
+}
+
+/**
  * Build env vars for indexer/server from deployment results. All IDs come from the
  * deployment map.
  */
