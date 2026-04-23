@@ -73,12 +73,29 @@ Response:
   "status": "healthy",
   "timestamp": "2025-01-15T10:30:00.000Z",
   "uptime": 60000,
+  "pools": {
+    "DEEP_SUI": { "orders": 60, "lastError": null },
+    "SUI_USDC": { "orders": 60, "lastError": null }
+  },
   "details": {
-    "activeOrders": 10,
-    "totalOrdersPlaced": 50,
+    "activeOrders": 120,
+    "totalOrdersPlaced": 300,
     "totalRebalances": 5,
     "errors": 0
   }
+}
+```
+
+`status` flips to `"unhealthy"` (HTTP 503) when any pool has an unresolved rebalance error. `lastError` holds the error message from the most recent failure and clears on the next successful rebalance for that pool. Example when DEEP/SUI fails but SUI/USDC keeps quoting:
+
+```json
+{
+  "status": "unhealthy",
+  "pools": {
+    "DEEP_SUI": { "orders": 0, "lastError": "MoveAbort in balance_manager::withdraw_with_proof, code 3" },
+    "SUI_USDC": { "orders": 60, "lastError": null }
+  },
+  ...
 }
 ```
 
