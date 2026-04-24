@@ -10,6 +10,7 @@ import { explorerObjectUrl, formatAmount, pairLabel } from "./types";
 import {
     HealthServer,
     type HealthStatus,
+    type PoolHealth,
     type ReadinessStatus,
     type OrdersResponse,
     type PoolOrdersResponse,
@@ -31,6 +32,9 @@ interface PoolState {
     orderManager: OrderManager;
     hasBaseBalance: boolean;
     lastMidPrice: bigint | null;
+    /** Error message from the most recent rebalance failure; cleared on next
+     * successful rebalance. Drives per-pool visibility in /health. */
+    lastError: string | null;
 }
 
 export class MarketMaker {
@@ -143,6 +147,7 @@ export class MarketMaker {
                 orderManager,
                 hasBaseBalance,
                 lastMidPrice: null,
+                lastError: null,
             });
 
             if (!hasBaseBalance) {
@@ -320,6 +325,9 @@ export class MarketMaker {
             await orderManager.placeOrders(levels);
             log.loopSuccess(`${label}: ${bids.length} bids + ${asks.length} asks`);
 
+            // Clear any previous rebalance error — this cycle succeeded.
+            state.lastError = null;
+
             // Update metrics with total active orders across all pools
             const totalActiveOrders = this.poolStates.reduce(
                 (sum, s) => sum + s.orderManager.getActiveOrderCount(),
@@ -327,6 +335,7 @@ export class MarketMaker {
             );
             updateMetrics({ rebalance: true, activeOrders: totalActiveOrders });
         } catch (error) {
+            state.lastError = error instanceof Error ? error.message : String(error);
             log.loopError(`${label} rebalance error`, error);
             updateMetrics({ error: true });
         }
@@ -345,16 +354,35 @@ export class MarketMaker {
     }
 
     /**
-     * Get current health status.
+     * Get current health status. Per-pool breakdown under `pools` surfaces
+     * silent failures where one pool's rebalance aborts while others keep
+     * running — aggregate counters alone hide that case. Overall `status`
+     * flips to "unhealthy" when any pool has an unresolved rebalance error.
      */
     private getHealthStatus(): HealthStatus {
         const metrics = getMetrics();
+
+        const pools: Record<string, PoolHealth> = {};
+        let anyPoolError = false;
+        for (const state of this.poolStates) {
+            // Normalize "DEEP/SUI" → "DEEP_SUI" for consumer friendliness.
+            const key = state.label.replace(/\//g, "_");
+            pools[key] = {
+                orders: state.orderManager.getActiveOrderCount(),
+                lastError: state.lastError,
+            };
+            if (state.lastError !== null) anyPoolError = true;
+        }
+
+        const status: "healthy" | "unhealthy" =
+            this.isRunning && !anyPoolError ? "healthy" : "unhealthy";
+
         return {
-            status: this.isRunning ? "healthy" : "unhealthy",
+            status,
             timestamp: new Date().toISOString(),
             uptime: this.healthServer?.getUptime() || 0,
+            pools,
             details: {
-                pools: this.poolStates.map((s) => s.label),
                 activeOrders: metrics.activeOrders,
                 totalOrdersPlaced: metrics.ordersPlacedTotal,
                 totalRebalances: metrics.rebalancesTotal,

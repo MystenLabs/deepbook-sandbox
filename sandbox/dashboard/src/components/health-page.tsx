@@ -35,10 +35,17 @@ interface OracleResponse {
     prices: { sui: string | null; deep: string | null };
 }
 
+interface PoolHealth {
+    orders: number;
+    lastError: string | null;
+}
+
 interface MarketMakerResponse {
     status: "healthy" | "unhealthy";
     timestamp: string;
     uptime: number;
+    /** Per-pool view keyed by "BASE_QUOTE" (e.g. "DEEP_SUI"). */
+    pools?: Record<string, PoolHealth>;
     details: {
         activeOrders: number;
         totalOrdersPlaced: number;
@@ -315,6 +322,40 @@ export function HealthPage() {
                                 value={mm.data ? formatUptime(mm.data.uptime) : undefined}
                             />
                         </MetricRow>
+                        {mm.data?.pools && Object.keys(mm.data.pools).length > 0 && (
+                            <div className="space-y-1 border-t border-zinc-800 pt-2">
+                                {Object.entries(mm.data.pools).map(([pair, p]) => (
+                                    <div key={pair} className="flex items-start gap-2 text-xs">
+                                        <span
+                                            className={
+                                                p.lastError ? "text-red-400" : "text-green-400"
+                                            }
+                                            aria-hidden
+                                        >
+                                            ●
+                                        </span>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between gap-2">
+                                                <span className="font-medium text-zinc-200">
+                                                    {pair}
+                                                </span>
+                                                <span className="text-zinc-400">
+                                                    {p.orders} orders
+                                                </span>
+                                            </div>
+                                            {p.lastError && (
+                                                <div
+                                                    className="mt-0.5 text-red-300 break-words"
+                                                    title={p.lastError}
+                                                >
+                                                    {p.lastError}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </CardContent>
                 </GridCard>
 

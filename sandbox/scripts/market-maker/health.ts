@@ -1,10 +1,19 @@
 import http from "node:http";
 import log from "../utils/logger";
 
+/** Per-pool health breakdown. `lastError` is null when the most recent
+ * rebalance for this pool succeeded. */
+export interface PoolHealth {
+    orders: number;
+    lastError: string | null;
+}
+
 export interface HealthStatus {
     status: "healthy" | "unhealthy";
     timestamp: string;
     uptime: number;
+    /** Per-pool view keyed by "BASE_QUOTE" (e.g. "DEEP_SUI", "SUI_USDC"). */
+    pools: Record<string, PoolHealth>;
     details?: Record<string, unknown>;
 }
 
