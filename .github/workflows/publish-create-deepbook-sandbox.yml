@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: 'Version bump'
+        description: "Version bump"
         required: true
         type: choice
         options: [patch, minor, major]
@@ -30,13 +30,15 @@ jobs:
           fetch-depth: 0
 
       - uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # pin@v3.0.0
+        with:
+          package_json_file: packages/create-deepbook-sandbox/package.json
 
       - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # pin@v4.0.2
         with:
-          node-version: '24'
-          cache: 'pnpm'
+          node-version: "24"
+          cache: "pnpm"
           cache-dependency-path: packages/create-deepbook-sandbox/pnpm-lock.yaml
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: "https://registry.npmjs.org"
 
       - run: pnpm install --frozen-lockfile
 
