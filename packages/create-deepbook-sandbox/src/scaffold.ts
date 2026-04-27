@@ -37,7 +37,17 @@ export function scaffold(targetDir: string): void {
 	console.log(`\nCloning deepbook-sandbox@${tag} into ${fullPath}...\n`);
 	execFileSync(
 		'git',
-		['clone', '--recurse-submodules', '--branch', tag, '--', REPO_URL, fullPath],
+		[
+			'-c',
+			'advice.detachedHead=false',
+			'clone',
+			'--recurse-submodules',
+			'--branch',
+			tag,
+			'--',
+			REPO_URL,
+			fullPath,
+		],
 		{ stdio: 'inherit' },
 	);
 }
