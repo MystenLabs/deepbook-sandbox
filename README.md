@@ -502,6 +502,10 @@ git commit -m "Update deepbook submodule"
 
 ## Appendix H: Contributing
 
+### Mysten SDK version pins
+
+`@mysten/sui` and `@mysten/deepbook-v3` are pinned in four `package.json` files (`sandbox/`, `sandbox/api/`, `sandbox/dashboard/`, `examples/sandbox/`). When bumping either SDK, **bump it in every file at once and regenerate every lockfile** so all subprojects resolve to the same exact versions. Mismatched pins cause type drift between subprojects and let `pnpm install` resolve to different exacts depending on which directory you run it in.
+
 ### Pre-commit hooks
 
 This repository uses [pre-commit](https://pre-commit.com/) to check code quality and formatting before commits:
