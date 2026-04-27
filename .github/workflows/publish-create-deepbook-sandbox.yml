@@ -1,0 +1,80 @@
+name: Publish create-deepbook-sandbox
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump"
+        required: true
+        type: choice
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: publish-create-deepbook-sandbox
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/create-deepbook-sandbox
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # Pin v4.1.1
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # pin@v3.0.0
+        with:
+          package_json_file: packages/create-deepbook-sandbox/package.json
+
+      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # pin@v4.0.2
+        with:
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: packages/create-deepbook-sandbox/pnpm-lock.yaml
+          registry-url: "https://registry.npmjs.org"
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm build
+
+      - name: Bump version on release branch
+        id: bump
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          npm version ${{ inputs.bump }} --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+          BRANCH="release/create-deepbook-sandbox-${VERSION}"
+          git checkout -b "$BRANCH"
+          git add package.json
+          git commit -m "create-deepbook-sandbox v${VERSION}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - run: npm publish --provenance --access public
+
+      - name: Push release branch
+        working-directory: ${{ github.workspace }}
+        run: git push --set-upstream origin "${{ steps.bump.outputs.branch }}"
+
+      - name: Open release PR
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: release create-deepbook-sandbox v$VERSION" \
+            --body "Automated release PR. \`npm publish\` already completed for v$VERSION. Merging this syncs \`package.json\` on \`main\` with what was published to npm."

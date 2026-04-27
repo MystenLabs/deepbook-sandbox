@@ -21,6 +21,7 @@
 		"web3"
 	],
 	"type": "module",
+	"packageManager": "pnpm@10.17.0",
 	"engines": {
 		"node": ">=18"
 	},
