@@ -1,11 +1,12 @@
-import type { ReactNode } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCurrentClient } from "@mysten/dapp-kit-react";
 import {
     Box,
     Activity,
     ArrowLeftRight,
     Droplets,
+    Loader2,
     Play,
     RefreshCw,
     RotateCcw,
@@ -73,7 +74,7 @@ interface ServerStatusResponse {
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
-const REFETCH_INTERVAL = 10_000;
+const REFETCH_INTERVAL = 3_000;
 
 /* ------------------------------------------------------------------ */
 /*  HealthPage                                                        */
@@ -162,6 +163,8 @@ export function HealthPage() {
         retry: false,
     });
 
+    const mmUptimeValue = mm.data ? formatUptime(mm.data.uptime) : undefined;
+
     return (
         <div className="space-y-4">
             <div className="space-y-1">
@@ -226,11 +229,7 @@ export function HealthPage() {
                                 isFetching={oracle.isFetching}
                                 onRefresh={() => oracle.refetch()}
                             />
-                            <ServiceActions
-                                service="oracle-service"
-                                queryKey="oracle-health"
-                                isDown={oracle.isError}
-                            />
+                            <ServiceActions service="oracle-service" isDown={oracle.isError} />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -290,39 +289,35 @@ export function HealthPage() {
                                 isFetching={mm.isFetching}
                                 onRefresh={() => mm.refetch()}
                             />
-                            <ServiceActions
-                                service="market-maker"
-                                queryKey="mm-health"
-                                isDown={mm.isError}
-                            />
+                            <ServiceActions service="market-maker" isDown={mm.isError} />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
                         <MetricRow label="Active Orders">
                             <MetricValue
                                 isLoading={mm.isLoading}
-                                value={mm.data?.details.activeOrders}
+                                value={mm.isError ? 0 : mm.data?.details.activeOrders}
                             />
                         </MetricRow>
                         <MetricRow label="Total Orders">
                             <MetricValue
                                 isLoading={mm.isLoading}
-                                value={mm.data?.details.totalOrdersPlaced}
+                                value={mm.isError ? 0 : mm.data?.details.totalOrdersPlaced}
                             />
                         </MetricRow>
                         <MetricRow label="Rebalances">
                             <MetricValue
                                 isLoading={mm.isLoading}
-                                value={mm.data?.details.totalRebalances}
+                                value={mm.isError ? 0 : mm.data?.details.totalRebalances}
                             />
                         </MetricRow>
                         <MetricRow label="Uptime">
                             <MetricValue
                                 isLoading={mm.isLoading}
-                                value={mm.data ? formatUptime(mm.data.uptime) : undefined}
+                                value={mm.isError ? formatUptime(0) : mmUptimeValue}
                             />
                         </MetricRow>
-                        {mm.data?.pools && Object.keys(mm.data.pools).length > 0 && (
+                        {!mm.isError && mm.data?.pools && Object.keys(mm.data.pools).length > 0 && (
                             <div className="space-y-1 border-t border-zinc-800 pt-2">
                                 {Object.entries(mm.data.pools).map(([pair, p]) => (
                                     <div key={pair} className="flex items-start gap-2 text-xs">
@@ -421,11 +416,7 @@ export function HealthPage() {
                                 isFetching={server.isFetching}
                                 onRefresh={() => server.refetch()}
                             />
-                            <ServiceActions
-                                service="deepbook-server"
-                                queryKey="server-health"
-                                isDown={server.isError}
-                            />
+                            <ServiceActions service="deepbook-server" isDown={server.isError} />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -493,16 +484,45 @@ type ControllableService = "oracle-service" | "market-maker" | "deepbook-server"
 
 type ServiceAction = "start" | "stop" | "restart";
 
-function ServiceActions({
-    service,
-    queryKey,
-    isDown,
-}: {
-    service: ControllableService;
-    queryKey: string;
-    isDown: boolean;
-}) {
-    const qc = useQueryClient();
+// Failsafe to clear pendingAction if the service never reaches the expected
+// state (e.g. crash on boot). Long enough for slow Docker on a cold start.
+const PENDING_ACTION_TIMEOUT_MS = 15_000;
+
+type PendingAction = "starting" | "stopping" | "restarting" | null;
+
+function ServiceActions({ service, isDown }: { service: ControllableService; isDown: boolean }) {
+    const [pending, setPending] = useState<PendingAction>(null);
+    // For "restarting" we need to observe the full up→down→up cycle before
+    // clearing; just checking !isDown would clear immediately because the
+    // service is up at click time.
+    const [restartSawDown, setRestartSawDown] = useState(false);
+    const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // React-recommended "store information from previous renders" pattern
+    // (https://react.dev/reference/react/useState#storing-information-from-previous-renders)
+    // — re-evaluate `pending` when `isDown` flips, without an Effect.
+    const [prevIsDown, setPrevIsDown] = useState(isDown);
+    if (prevIsDown !== isDown) {
+        setPrevIsDown(isDown);
+        if (pending === "stopping" && isDown) {
+            setPending(null);
+        } else if (pending === "starting" && !isDown) {
+            setPending(null);
+        } else if (pending === "restarting") {
+            if (isDown && !restartSawDown) {
+                setRestartSawDown(true);
+            } else if (!isDown && restartSawDown) {
+                setPending(null);
+                setRestartSawDown(false);
+            }
+        }
+    }
+
+    useEffect(() => {
+        return () => {
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        };
+    }, []);
 
     const post = async (action: ServiceAction) => {
         try {
@@ -512,42 +532,62 @@ function ServiceActions({
         }
     };
 
-    // Docker takes 1–3s to actually flip container state after our 202. A single
-    // refetch on settle lands too early and sees stale "healthy". Burst a few
-    // delayed invalidations so the UI reflects reality within ~2s of the click.
-    const kickHealthQuery = () => {
-        qc.invalidateQueries({ queryKey: [queryKey] });
-        setTimeout(() => qc.invalidateQueries({ queryKey: [queryKey] }), 1500);
-        setTimeout(() => qc.invalidateQueries({ queryKey: [queryKey] }), 4000);
+    const beginPending = (next: Exclude<PendingAction, null>) => {
+        setRestartSawDown(false);
+        setPending(next);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => setPending(null), PENDING_ACTION_TIMEOUT_MS);
     };
 
     const primary = useMutation({
         mutationFn: (action: "start" | "stop") => post(action),
-        onSettled: kickHealthQuery,
     });
     const restart = useMutation({
         mutationFn: () => post("restart"),
-        onSettled: kickHealthQuery,
     });
 
-    const busy = primary.isPending || restart.isPending;
-    const primaryAction: "start" | "stop" = isDown ? "start" : "stop";
-    const PrimaryIcon = isDown ? Play : Square;
-    const primaryLabel = isDown ? "Start service" : "Stop service";
+    const handlePrimary = () => {
+        const action: "start" | "stop" = isDown ? "start" : "stop";
+        beginPending(isDown ? "starting" : "stopping");
+        primary.mutate(action);
+    };
+
+    const handleRestart = () => {
+        beginPending("restarting");
+        restart.mutate();
+    };
+
+    const busy = pending !== null || primary.isPending || restart.isPending;
+
+    let PrimaryIcon = isDown ? Play : Square;
+    let primaryLabel = isDown ? "Start service" : "Stop service";
+    let primaryAnimate = "";
+
+    if (pending === "starting") {
+        PrimaryIcon = Loader2;
+        primaryLabel = "Starting…";
+        primaryAnimate = "animate-spin";
+    } else if (pending === "stopping") {
+        PrimaryIcon = Loader2;
+        primaryLabel = "Stopping…";
+        primaryAnimate = "animate-spin";
+    }
+
+    const RestartIcon = pending === "restarting" ? Loader2 : RotateCcw;
+    const restartLabel = pending === "restarting" ? "Restarting…" : "Restart service";
+    const restartAnimate = pending === "restarting" ? "animate-spin" : "";
 
     return (
         <TooltipProvider delayDuration={200}>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <button
-                        onClick={() => primary.mutate(primaryAction)}
+                        onClick={handlePrimary}
                         disabled={busy}
                         aria-label={primaryLabel}
                         className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
                     >
-                        <PrimaryIcon
-                            className={`h-3.5 w-3.5 ${primary.isPending ? "animate-pulse" : ""}`}
-                        />
+                        <PrimaryIcon className={`h-3.5 w-3.5 ${primaryAnimate}`} />
                     </button>
                 </TooltipTrigger>
                 <TooltipContent>{primaryLabel}</TooltipContent>
@@ -555,17 +595,15 @@ function ServiceActions({
             <Tooltip>
                 <TooltipTrigger asChild>
                     <button
-                        onClick={() => restart.mutate()}
+                        onClick={handleRestart}
                         disabled={busy}
-                        aria-label="Restart service"
+                        aria-label={restartLabel}
                         className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
                     >
-                        <RotateCcw
-                            className={`h-3.5 w-3.5 ${restart.isPending ? "animate-spin" : ""}`}
-                        />
+                        <RestartIcon className={`h-3.5 w-3.5 ${restartAnimate}`} />
                     </button>
                 </TooltipTrigger>
-                <TooltipContent>Restart service</TooltipContent>
+                <TooltipContent>{restartLabel}</TooltipContent>
             </Tooltip>
         </TooltipProvider>
     );
