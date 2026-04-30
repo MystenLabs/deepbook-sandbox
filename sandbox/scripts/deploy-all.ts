@@ -23,6 +23,7 @@ import {
 import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "./utils/keygen";
 import { PoolCreator } from "./utils/pool";
 import { setupPythOracles } from "./utils/oracle";
+import { createBalanceManagerForOwner } from "./utils/balance-manager";
 import { serializePoolConfigs, type PoolConfig } from "./market-maker/types";
 import { Keypair } from "@mysten/sui/cryptography";
 import log, { c } from "./utils/logger";
@@ -297,6 +298,29 @@ async function main() {
         // Phase 6: Start market maker
         log.phase("Phase 6/6: Starting market maker");
 
+        // Pre-create one BalanceManager per pool, owned by the MM signer.
+        // Persisting these via MM_POOLS lets the MM container reuse them across
+        // restarts — without this, every MM restart creates fresh BMs and tries
+        // to draw a full deposit from the (already-drained) wallet, producing
+        // one-sided liquidity or EBalanceManagerBalanceTooLow aborts.
+        const deepbookPkgId = deployedPackages.get("deepbook")!.packageId;
+        log.spin("Creating market maker BalanceManagers...");
+        const deepSuiBmId = await createBalanceManagerForOwner(
+            client,
+            signer,
+            deepbookPkgId,
+            mmAddress,
+        );
+        log.detail(`DEEP/SUI BM: ${deepSuiBmId}`);
+        const suiUsdcBmId = await createBalanceManagerForOwner(
+            client,
+            signer,
+            deepbookPkgId,
+            mmAddress,
+        );
+        log.detail(`SUI/USDC BM: ${suiUsdcBmId}`);
+        log.success("Created MM BalanceManagers");
+
         // Build multi-pool config for the market maker
         const mmPools: PoolConfig[] = [
             {
@@ -314,6 +338,7 @@ async function main() {
                 quoteDepositAmount: 1_500_000_000_000n, // 1,500 SUI
                 baseDecimals: 6,
                 quoteDecimals: 9,
+                bmId: deepSuiBmId,
             },
             {
                 poolId: pools.SUI_USDC.poolId,
@@ -330,6 +355,7 @@ async function main() {
                 quoteDepositAmount: 25_000_000_000n, // 25,000 USDC
                 baseDecimals: 9,
                 quoteDecimals: 6,
+                bmId: suiUsdcBmId,
             },
         ];
 

@@ -42,6 +42,10 @@ export interface PoolConfig {
     quoteDepositAmount: bigint;
     baseDecimals: number;
     quoteDecimals: number;
+    /** Pre-created BalanceManager owned by the MM signer. Persisted by
+     * `deploy-all` so MM restarts reuse it instead of creating a fresh one
+     * (which would re-trigger the wallet drain → one-sided liquidity bug). */
+    bmId?: string;
 }
 
 export interface DeploymentManifest {
@@ -129,6 +133,7 @@ export function parsePoolConfigs(json: string): PoolConfig[] {
         quoteDepositAmount: BigInt(p.quoteDepositAmount as string),
         baseDecimals: p.baseDecimals as number,
         quoteDecimals: p.quoteDecimals as number,
+        bmId: p.bmId as string | undefined,
     }));
 }
 
