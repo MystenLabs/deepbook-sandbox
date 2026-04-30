@@ -1,7 +1,7 @@
 import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Keypair } from "@mysten/sui/cryptography";
 import { Transaction } from "@mysten/sui/transactions";
-import { normalizeStructTag } from "@mysten/sui/utils";
+import { normalizeStructTag, normalizeSuiAddress } from "@mysten/sui/utils";
 
 export interface BalanceManagerInfo {
     balanceManagerId: string;
@@ -129,6 +129,41 @@ export class BalanceManagerService {
         }
 
         return result.Transaction!.digest;
+    }
+
+    /**
+     * Read the BalanceManager's `owner` field by simulating
+     * `balance_manager::owner(bm)`. Returns null if the object can't be read
+     * (e.g. it's been deleted or the ID is wrong) so the caller can decide
+     * whether to recreate or fail.
+     */
+    async getOwner(balanceManagerId: string): Promise<string | null> {
+        const tx = new Transaction();
+        tx.setSender(this.signer.getPublicKey().toSuiAddress());
+        tx.moveCall({
+            target: `${this.packageId}::balance_manager::owner`,
+            arguments: [tx.object(balanceManagerId)],
+        });
+
+        const result = await this.client.simulateTransaction({
+            transaction: tx,
+            checksEnabled: false,
+            include: { commandResults: true },
+        });
+
+        if (result.$kind === "FailedTransaction") {
+            return null;
+        }
+
+        const bytes = result.commandResults?.[0]?.returnValues?.[0]?.bcs;
+        if (!bytes || bytes.length !== 32) {
+            return null;
+        }
+
+        const hex = Array.from(bytes)
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+        return normalizeSuiAddress(`0x${hex}`);
     }
 
     /**

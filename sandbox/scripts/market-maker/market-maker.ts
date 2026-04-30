@@ -78,6 +78,8 @@ export class MarketMaker {
         const packageId = this.manifest.packages.deepbook.packageId;
         this.bmService = new BalanceManagerService(this.client, this.signer, packageId);
 
+        const signerAddress = this.signer.getPublicKey().toSuiAddress();
+
         for (const pool of this.manifest.pools) {
             const label = pairLabel(pool.baseCoinType, pool.quoteCoinType);
             const baseLabel = pool.baseCoinType.split("::").pop()?.toUpperCase() ?? "BASE";
@@ -85,25 +87,53 @@ export class MarketMaker {
 
             log.phase(`Setting up ${label}`);
 
-            // Dedicated BalanceManager for this pool
-            log.step(`Creating BalanceManager...`);
-            const bmInfo = await this.bmService.createBalanceManager();
-            const bmId = bmInfo.balanceManagerId;
-            log.success(`Created: ${bmId}`);
+            // Reuse the pre-created BM from MM_POOLS if present (the deploy
+            // script provisions one per pool). Otherwise fall back to creating
+            // a fresh one — but warn loudly, because that path is what caused
+            // the wallet-drain / one-sided liquidity bug on restart.
+            let bmId: string;
+            if (pool.bmId) {
+                const owner = await this.bmService.getOwner(pool.bmId);
+                if (owner === null) {
+                    throw new Error(
+                        `${label}: persisted BM ${pool.bmId} not found on-chain. ` +
+                            `If the localnet was wiped, re-run \`pnpm deploy-all\` to provision a new BM.`,
+                    );
+                }
+                if (owner !== signerAddress) {
+                    throw new Error(
+                        `${label}: persisted BM ${pool.bmId} is owned by ${owner}, ` +
+                            `but the MM signer is ${signerAddress}. Refusing to use someone else's BM.`,
+                    );
+                }
+                bmId = pool.bmId;
+                log.step(`Reusing BalanceManager: ${bmId}`);
+            } else {
+                log.warn(
+                    `${label}: no bmId in MM_POOLS — creating a fresh BalanceManager. ` +
+                        `Re-run \`pnpm deploy-all\` to persist a stable BM.`,
+                );
+                const bmInfo = await this.bmService.createBalanceManager();
+                bmId = bmInfo.balanceManagerId;
+                log.success(`Created: ${bmId}`);
+            }
             log.detail(explorerObjectUrl(bmId, this.manifest.network.type));
 
             await new Promise((resolve) => setTimeout(resolve, 2000));
 
             // Fund base and quote independently — a missing coin degrades this
             // pool to one-sided quoting without affecting any other pool.
-            const hasBaseBalance = await this.depositInitial(
+            // Deficit-based: only deposit (target − currentBalance) so a restart
+            // with a still-funded BM doesn't try to draw a fresh `target` from
+            // the (already drained) wallet.
+            const hasBaseBalance = await this.depositToTarget(
                 bmId,
                 pool.baseCoinType,
                 pool.baseDepositAmount,
                 pool.baseDecimals,
                 baseLabel,
             );
-            const hasQuoteBalance = await this.depositInitial(
+            const hasQuoteBalance = await this.depositToTarget(
                 bmId,
                 pool.quoteCoinType,
                 pool.quoteDepositAmount,
@@ -238,26 +268,49 @@ export class MarketMaker {
     }
 
     /**
-     * Deposit a coin into a BalanceManager during initialization. Returns
-     * true on success, false if the wallet can't supply the coin (the pool
-     * will then run in reduced-side mode).
+     * Bring the BM's balance for `coinType` up to `target`, depositing only
+     * the deficit (target − currentBalance). Returns true if the BM holds at
+     * least `target` after the call (i.e. this side can quote), false if the
+     * wallet can't cover the deficit (the pool will then run reduced-side).
+     *
+     * On a fresh BM the deficit equals `target`, matching the old "deposit
+     * full target" behavior. On restart the BM still holds last run's funds,
+     * the deficit is ≈0, and no wallet draw happens.
      */
-    private async depositInitial(
+    private async depositToTarget(
         bmId: string,
         coinType: string,
-        amount: bigint,
+        target: bigint,
         decimals: number,
         label: string,
     ): Promise<boolean> {
         if (!this.bmService) return false;
-        log.step(`Depositing ${label}...`);
+
+        let have: bigint;
         try {
-            await this.bmService.deposit(bmId, coinType, amount);
-            log.success(`Deposited: ${formatAmount(amount, decimals)} ${label}`);
+            have = await this.bmService.getBalance(bmId, coinType);
+        } catch (e) {
+            log.warn(`${label} balance query failed — assuming empty`);
+            have = 0n;
+        }
+
+        if (have >= target) {
+            log.step(`${label}: BM already has ${formatAmount(have, decimals)} (≥ target)`);
+            return true;
+        }
+
+        const deficit = target - have;
+        log.step(
+            `Depositing ${label}: BM has ${formatAmount(have, decimals)}, ` +
+                `target ${formatAmount(target, decimals)} → deposit ${formatAmount(deficit, decimals)}`,
+        );
+        try {
+            await this.bmService.deposit(bmId, coinType, deficit);
+            log.success(`Deposited: ${formatAmount(deficit, decimals)} ${label}`);
             await new Promise((resolve) => setTimeout(resolve, 2000));
             return true;
         } catch (e) {
-            log.warn(`${label} deposit failed`);
+            log.warn(`${label} deposit failed — pool will run reduced-side`);
             await new Promise((resolve) => setTimeout(resolve, 2000));
             return false;
         }
