@@ -376,9 +376,10 @@ export class MarketMaker {
             // step (topUpPool) will then see when computing deficits.
             // `balance_manager::balance` reports only unlocked funds, so
             // topping up before cancel would over-deposit every cycle.
-            if (orderManager.getActiveOrderCount() > 0) {
-                await orderManager.cancelAllOrders();
-            }
+            // Always ask DeepBook to cancel by BalanceManager. The in-memory
+            // tracker can be behind the chain if a previous place transaction
+            // committed but the client timed out while confirming it.
+            await orderManager.cancelAllOrders();
 
             // Replenish drift from organic fills (must come AFTER cancel).
             await this.topUpPool(state);
