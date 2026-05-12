@@ -27,6 +27,11 @@ import { serializePoolConfigs, type PoolConfig } from "./market-maker/types";
 import { Keypair } from "@mysten/sui/cryptography";
 import log, { c } from "./utils/logger";
 
+function persistEnv(sandboxRoot: string, updates: Record<string, string>): void {
+    updateEnvFile(sandboxRoot, updates);
+    Object.assign(process.env, updates);
+}
+
 async function main() {
     const quick = process.argv.includes("--quick");
     const sandboxRoot = getSandboxRoot();
@@ -70,8 +75,7 @@ async function main() {
             defaults.FORCE_REGENESIS = "true";
         }
         if (Object.keys(defaults).length > 0) {
-            updateEnvFile(sandboxRoot, defaults);
-            Object.assign(process.env, defaults);
+            persistEnv(sandboxRoot, defaults);
         }
 
         // Start localnet
@@ -109,7 +113,7 @@ async function main() {
                     "Could not import key to host sui CLI (sui binary not found?) — not required for localnet",
                 );
             }
-            updateEnvFile(sandboxRoot, { PRIVATE_KEY: privateKey });
+            persistEnv(sandboxRoot, { PRIVATE_KEY: privateKey });
             log.success("Container key imported");
         }
 
@@ -141,7 +145,7 @@ async function main() {
         const envUpdates = getDeploymentEnv(deployedPackages, {});
         envUpdates.FIRST_CHECKPOINT = "0";
 
-        updateEnvFile(sandboxRoot, envUpdates);
+        persistEnv(sandboxRoot, envUpdates);
         log.success("Updated .env with deployment IDs and FIRST_CHECKPOINT");
 
         // Phase 4: Start indexer and services
@@ -163,7 +167,7 @@ async function main() {
         const pythOracleIds = await setupPythOracles(client, signer, deployedPackages);
 
         const pythPkg = deployedPackages.get("pyth")!;
-        updateEnvFile(sandboxRoot, {
+        persistEnv(sandboxRoot, {
             PYTH_PACKAGE_ID: pythPkg.packageId,
             DEEP_PRICE_INFO_OBJECT_ID: pythOracleIds.deepPriceInfoObjectId,
             SUI_PRICE_INFO_OBJECT_ID: pythOracleIds.suiPriceInfoObjectId,
@@ -180,7 +184,7 @@ async function main() {
         log.detail(`Oracle signer: ${oracleAddress}`);
 
         await ensureMinimumBalance(client, oracleAddress, getFaucetUrl());
-        updateEnvFile(sandboxRoot, {
+        persistEnv(sandboxRoot, {
             ORACLE_PRIVATE_KEY: oraclePrivateKey,
         });
         log.success("Oracle service keypair funded and saved to .env");
@@ -206,7 +210,7 @@ async function main() {
             getFaucetUrl(),
             6_000_000_000_000n, // 6,000 SUI
         );
-        updateEnvFile(sandboxRoot, {
+        persistEnv(sandboxRoot, {
             MM_PRIVATE_KEY: mmPrivateKey,
         });
         log.success("Market maker keypair funded and saved to .env");
@@ -333,7 +337,7 @@ async function main() {
             },
         ];
 
-        updateEnvFile(sandboxRoot, {
+        persistEnv(sandboxRoot, {
             DEEPBOOK_PACKAGE_ID: deployedPackages.get("deepbook")!.packageId,
             DEPLOYER_ADDRESS: signerAddress,
             // Legacy single-pool vars (backward compat for tests and fallback)
