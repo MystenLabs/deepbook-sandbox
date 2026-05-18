@@ -6,12 +6,12 @@ These scripts are **not part of the production sandbox**. They are evaluation ha
 
 ## Backlog mapping
 
-| Folder                 | Ticket             | What it validates                                                         |
-| ---------------------- | ------------------ | ------------------------------------------------------------------------- |
-| `pyth/`                | DBSF-005, DBSF-004 | Real Hermes VAA + `advance-clock` flow against forked Pyth/Wormhole state |
-| `deep/`                | DBSF-001           | `splitCoins + transferObjects` from an impersonated DEEP whale            |
-| `usdc/`                | DBSF-002           | `mint` from an impersonated USDC TreasuryCap owner                        |
-| `deepbook/` _(coming)_ | DBSF-003           | `pool::create_pool_admin` impersonating the `DeepbookAdminCap` holder     |
+| Folder      | Ticket             | What it validates                                                         |
+| ----------- | ------------------ | ------------------------------------------------------------------------- |
+| `pyth/`     | DBSF-005, DBSF-004 | Real Hermes VAA + `advance-clock` flow against forked Pyth/Wormhole state |
+| `deep/`     | DBSF-001           | `splitCoins + transferObjects` from an impersonated DEEP whale            |
+| `usdc/`     | DBSF-002           | `mint` from an impersonated USDC TreasuryCap owner                        |
+| `deepbook/` | DBSF-003           | `pool::create_pool_admin` impersonating the `DeepbookAdminCap` holder     |
 
 See the [migration plan](../../../linear-tickets/defi-bu/deepbook-sandobx-fork-tool/SUI_FORK_MIGRATION_PLAN.md) and the [backlog](../../../linear-tickets/defi-bu/deepbook-sandobx-fork-tool/DEEPBOOK_SANDBOX_FORK_TOOL_BACKLOG.md) for context. (Paths assume both repos are checked out as siblings; adjust as needed.)
 
