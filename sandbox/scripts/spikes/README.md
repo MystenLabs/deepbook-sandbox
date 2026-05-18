@@ -9,7 +9,7 @@ These scripts are **not part of the production sandbox**. They are evaluation ha
 | Folder                 | Ticket             | What it validates                                                         |
 | ---------------------- | ------------------ | ------------------------------------------------------------------------- |
 | `pyth/`                | DBSF-005, DBSF-004 | Real Hermes VAA + `advance-clock` flow against forked Pyth/Wormhole state |
-| `deep/` _(coming)_     | DBSF-001           | `splitCoins + transferObjects` from an impersonated DEEP whale            |
+| `deep/`                | DBSF-001           | `splitCoins + transferObjects` from an impersonated DEEP whale            |
 | `usdc/` _(coming)_     | DBSF-002           | `mint` from an impersonated Circle whitelisted minter                     |
 | `deepbook/` _(coming)_ | DBSF-003           | `pool::create_pool_admin` impersonating the `DeepbookAdminCap` holder     |
 
