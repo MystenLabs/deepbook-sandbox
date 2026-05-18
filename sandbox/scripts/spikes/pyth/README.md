@@ -9,17 +9,17 @@ This spike validates that the deepbook-sandbox can replace its mock `pyth::pyth`
 
 ## Why this works
 
-Wormhole VAA signatures are produced off-chain by guardians and are **not bound to any destination chain**. The signed payload contains an emitter chain, an emitter address, a sequence number, a timestamp, a nonce, the price update bytes, and a consistency level — nothing about *where* the VAA is consumed. As long as the forked `wormhole::State` knows about the guardian set Hermes is currently signing with (which it will, if the fork checkpoint is recent), a fresh Hermes VAA verifies byte-for-byte on the fork the same way it does on mainnet.
+Wormhole VAA signatures are produced off-chain by guardians and are **not bound to any destination chain**. The signed payload contains an emitter chain, an emitter address, a sequence number, a timestamp, a nonce, the price update bytes, and a consistency level — nothing about _where_ the VAA is consumed. As long as the forked `wormhole::State` knows about the guardian set Hermes is currently signing with (which it will, if the fork checkpoint is recent), a fresh Hermes VAA verifies byte-for-byte on the fork the same way it does on mainnet.
 
 See `problem.md` for the longer write-up.
 
 ## Files
 
-| File | What it is |
-|------|------------|
-| `problem.md` | Research notes — establishes the "VAAs are not chain-bound" insight, the high-level Hermes → PTB → fork flow, and the two practical gotchas (clock drift, guardian rotation). No code. |
-| `codex-execution-plan.md` | Operational recipe — locks down the specific mainnet object IDs (Pyth State, Wormhole State, package IDs, SUI/USD `PriceInfoObject`, feed ID), the whale address to impersonate, the 8-step sequence to run the POC, and the critical implementation details that aren't obvious from Pyth's docs (e.g. that `create_authenticated_price_infos_using_accumulator` takes the *full accumulator message bytes* and a *separately-verified* VAA, not `WormholeState`). Includes refresh commands for re-fetching the IDs if Pyth or Wormhole upgrade their packages. |
-| `build-pyth-suiusd-fork-tx.mjs` | The working implementation (~220 lines). Fetches the accumulator update from `hermes.pyth.network/v2/updates/price/latest`, parses out the embedded VAA bytes, builds the PTB with `parse_and_verify` → `create_authenticated_price_infos_using_accumulator` → `splitCoins` (1 MIST fee) → `update_single_price_feed` → `hot_potato_vector::destroy`, serializes unsigned, and submits via `sui client execute-signed-tx` for empty-sig impersonation. |
+| File                            | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `problem.md`                    | Research notes — establishes the "VAAs are not chain-bound" insight, the high-level Hermes → PTB → fork flow, and the two practical gotchas (clock drift, guardian rotation). No code.                                                                                                                                                                                                                                                                                                                                                                            |
+| `codex-execution-plan.md`       | Operational recipe — locks down the specific mainnet object IDs (Pyth State, Wormhole State, package IDs, SUI/USD `PriceInfoObject`, feed ID), the whale address to impersonate, the 8-step sequence to run the POC, and the critical implementation details that aren't obvious from Pyth's docs (e.g. that `create_authenticated_price_infos_using_accumulator` takes the _full accumulator message bytes_ and a _separately-verified_ VAA, not `WormholeState`). Includes refresh commands for re-fetching the IDs if Pyth or Wormhole upgrade their packages. |
+| `build-pyth-suiusd-fork-tx.mjs` | The working implementation (~220 lines). Fetches the accumulator update from `hermes.pyth.network/v2/updates/price/latest`, parses out the embedded VAA bytes, builds the PTB with `parse_and_verify` → `create_authenticated_price_infos_using_accumulator` → `splitCoins` (1 MIST fee) → `update_single_price_feed` → `hot_potato_vector::destroy`, serializes unsigned, and submits via `sui client execute-signed-tx` for empty-sig impersonation.                                                                                                            |
 
 ## Original POC results (2026-05-14, validated by Stefan)
 
@@ -33,7 +33,7 @@ See `problem.md` for the longer write-up.
 
 ### Prerequisites
 
-- `sui-fork` and `sui` binaries from the same monorepo build. Either both on `PATH` or set `SUI_BIN` to the absolute path of the `sui` binary (defaults to `/Users/stefanstanciulescu/src/sui/target/debug/sui` in the script — override before running).
+- `sui-fork` and `sui` binaries from the same monorepo build. Either put both on your `PATH`, or set `SUI_BIN` to the absolute path of the `sui` binary. The script errors with a helpful message if neither is available.
 - Node ≥ 18 (the script uses `fetch` natively).
 
 ### Start the fork
@@ -69,20 +69,20 @@ node build-pyth-suiusd-fork-tx.mjs submit
 
 The script accepts these env vars for retargeting (defaults are the verified mainnet 2026-05-14 values):
 
-| Env var | Default |
-|---------|---------|
-| `SUI_BIN` | `/Users/stefanstanciulescu/src/sui/target/debug/sui` |
-| `PYTH_STATE_ID` | `0x1f9310238ee9298fb703c3419030b35b22bb1cc37113e3bb5007c99aec79e5b8` |
-| `PYTH_PACKAGE_ID` | `0x04e20ddf36af412a4096f9014f4a565af9e812db9a05cc40254846cf6ed0ad91` |
-| `PYTH_TYPE_PREFIX` | `0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e` |
-| `WORMHOLE_STATE_ID` | `0xaeab97f96cf9877fee2883315d459552b2b921edc16d7ceac6eab944dd88919c` |
-| `WORMHOLE_PACKAGE_ID` | `0x5306f64e312b581766351c07af79c72fcb1cd25147157fdc2f8ad76de9a3fb6a` |
+| Env var                | Default                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| `SUI_BIN`              | _(unset — falls back to `sui` on `PATH`; errors if not found)_                 |
+| `PYTH_STATE_ID`        | `0x1f9310238ee9298fb703c3419030b35b22bb1cc37113e3bb5007c99aec79e5b8`           |
+| `PYTH_PACKAGE_ID`      | `0x04e20ddf36af412a4096f9014f4a565af9e812db9a05cc40254846cf6ed0ad91`           |
+| `PYTH_TYPE_PREFIX`     | `0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e`           |
+| `WORMHOLE_STATE_ID`    | `0xaeab97f96cf9877fee2883315d459552b2b921edc16d7ceac6eab944dd88919c`           |
+| `WORMHOLE_PACKAGE_ID`  | `0x5306f64e312b581766351c07af79c72fcb1cd25147157fdc2f8ad76de9a3fb6a`           |
 | `PRICE_INFO_OBJECT_ID` | `0x801dbc2f0053d34734814b2d6df491ce7807a725fe9a01ad74a07e9c51396c37` (SUI/USD) |
-| `PYTH_FEED_ID` | `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744` (SUI/USD) |
-| `SENDER` | `0xb4f42571101827758f55a9b998a1251892402fbd4dce90da3373625298091627` |
-| `CLOCK_OBJECT_ID` | `0x6` |
-| `BASE_UPDATE_FEE` | `1` (MIST) |
-| `GAS_BUDGET` | `200000000` |
+| `PYTH_FEED_ID`         | `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744` (SUI/USD) |
+| `SENDER`               | `0xb4f42571101827758f55a9b998a1251892402fbd4dce90da3373625298091627`           |
+| `CLOCK_OBJECT_ID`      | `0x6`                                                                          |
+| `BASE_UPDATE_FEE`      | `1` (MIST)                                                                     |
+| `GAS_BUDGET`           | `200000000`                                                                    |
 
 To verify the update consumed correctly, run a follow-up PTB:
 
