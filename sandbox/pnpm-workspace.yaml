@@ -1,0 +1,6 @@
+# Approve dependency build scripts (pnpm 10+ blocks them by default).
+# pnpm 11 reads `allowBuilds` from here; the array form (`onlyBuiltDependencies`
+# in package.json) was removed in v11. esbuild ships a native-binary install
+# script, pulled in transitively via tsx/vitest.
+allowBuilds:
+  esbuild: true

@@ -1,0 +1,7 @@
+# Approve dependency build scripts (pnpm 10+ blocks them by default).
+# pnpm 11 reads `allowBuilds` from here. esbuild (via Vite) ships a
+# native-binary install script; protobufjs (via the @mysten/sui gRPC
+# client) ships a build script too.
+allowBuilds:
+  esbuild: true
+  protobufjs: true

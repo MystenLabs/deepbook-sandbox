@@ -1,0 +1,5 @@
+# Approve dependency build scripts (pnpm 10+ blocks them by default).
+# pnpm 11 reads `allowBuilds` from here. esbuild ships a native-binary
+# install script, pulled in transitively via tsx.
+allowBuilds:
+  esbuild: true

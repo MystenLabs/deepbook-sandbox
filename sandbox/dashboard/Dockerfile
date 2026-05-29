@@ -8,7 +8,7 @@ ARG PRIVATE_KEY=""
 ENV PRIVATE_KEY=$PRIVATE_KEY
 
 WORKDIR /app
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 RUN pnpm install
 COPY tsconfig.json tsconfig.app.json tsconfig.node.json ./
 COPY vite.config.ts tailwind.config.ts postcss.config.js ./
