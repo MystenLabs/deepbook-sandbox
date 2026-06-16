@@ -1,0 +1,18 @@
+{
+    "name": "dbsf-031-devstack-funding",
+    "private": true,
+    "type": "module",
+    "description": "DBSF-031 spike — confirm devstack non-SUI coinType funding-strategy authoring API.",
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "devstack": "devstack",
+        "devstack:up": "devstack up"
+    },
+    "devDependencies": {
+        "@mysten-incubation/devstack": "0.1.1",
+        "@mysten/sui": "^2.17.0",
+        "@types/node": "^22",
+        "effect": "4.0.0-beta.65",
+        "typescript": "^5.8.3"
+    }
+}
