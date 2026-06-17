@@ -23,10 +23,11 @@ export interface RequestCoinResult {
 }
 
 // `coinWithBalance` resolves the deployer's owned coins at build time, so an
-// empty treasury surfaces as a thrown "no coins / insufficient balance" error
-// rather than a FailedTransaction. Match both shapes.
+// empty treasury surfaces as a thrown error rather than a FailedTransaction.
+// Match the SDK's "Insufficient balance of <coin>…" build-time throw and the
+// "No coins … found" shortage error.
 function isExhaustedError(message: string): boolean {
-    return /insufficient\s+balance|no valid coins|not enough coins|no coins found/i.test(message);
+    return /insufficient\s+balance|no coins/i.test(message);
 }
 
 // A FailedTransaction's `status.error` is a structured ExecutionError (or a bare
@@ -38,6 +39,16 @@ function stringifyExecutionError(error: unknown): string {
         return error.message;
     }
     return JSON.stringify(error);
+}
+
+// Both failure branches (a FailedTransaction and a thrown build error) classify
+// the same way: exhausted treasury vs. any other fault.
+function classifyFailure(message: string): RequestCoinResult {
+    return {
+        success: false,
+        kind: isExhaustedError(message) ? "exhausted" : "tx_failed",
+        error: message,
+    };
 }
 
 export async function requestCoin(
@@ -73,11 +84,7 @@ export async function requestCoin(
 
         if (result.$kind === "FailedTransaction") {
             const reason = stringifyExecutionError(result.FailedTransaction.status.error);
-            return {
-                success: false,
-                kind: isExhaustedError(reason) ? "exhausted" : "tx_failed",
-                error: `Transaction failed: ${reason}`,
-            };
+            return classifyFailure(`Transaction failed: ${reason}`);
         }
 
         const digest = result.Transaction!.digest;
@@ -85,12 +92,7 @@ export async function requestCoin(
         return { success: true, digest };
     } catch (err) {
         // Build/execution threw (e.g. coinWithBalance found no coins to source).
-        const message = err instanceof Error ? err.message : String(err);
-        return {
-            success: false,
-            kind: isExhaustedError(message) ? "exhausted" : "tx_failed",
-            error: message,
-        };
+        return classifyFailure(err instanceof Error ? err.message : String(err));
     } finally {
         signing = false;
     }
