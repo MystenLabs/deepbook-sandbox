@@ -15,24 +15,24 @@ let signing = false;
 //   - "tx_failed"   — any other transaction/build failure (genuine error)
 export type FaucetFailureKind = "busy" | "exhausted" | "tx_failed";
 
-export interface RequestCoinResult {
-    success: boolean;
-    digest?: string;
-    error?: string;
-    kind?: FaucetFailureKind;
-}
+// Discriminated union on `success` so the invariants hold at the type level: a
+// success carries a digest; a failure always carries a kind + error. This keeps
+// the route from silently mapping an unclassified failure to a 500.
+export type RequestCoinResult =
+    | { success: true; digest: string }
+    | { success: false; kind: FaucetFailureKind; error: string };
 
 // `coinWithBalance` resolves the deployer's owned coins at build time, so an
 // empty treasury surfaces as a thrown error rather than a FailedTransaction.
 // Match the SDK's "Insufficient balance of <coin>…" build-time throw and the
 // "No coins … found" shortage error.
-function isExhaustedError(message: string): boolean {
+export function isExhaustedError(message: string): boolean {
     return /insufficient\s+balance|no coins/i.test(message);
 }
 
 // A FailedTransaction's `status.error` is a structured ExecutionError (or a bare
 // string); flatten it to a human-readable line for matching and reporting.
-function stringifyExecutionError(error: unknown): string {
+export function stringifyExecutionError(error: unknown): string {
     if (error == null) return "unknown error";
     if (typeof error === "string") return error;
     if (typeof error === "object" && "message" in error && typeof error.message === "string") {
@@ -43,7 +43,7 @@ function stringifyExecutionError(error: unknown): string {
 
 // Both failure branches (a FailedTransaction and a thrown build error) classify
 // the same way: exhausted treasury vs. any other fault.
-function classifyFailure(message: string): RequestCoinResult {
+export function classifyFailure(message: string): RequestCoinResult {
     return {
         success: false,
         kind: isExhaustedError(message) ? "exhausted" : "tx_failed",
