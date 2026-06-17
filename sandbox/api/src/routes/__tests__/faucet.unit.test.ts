@@ -40,7 +40,11 @@ describe("POST /faucet status mapping", () => {
     });
 
     test("exhausted -> 503 with redeploy hint", async () => {
-        requestCoin.mockResolvedValue({ success: false, kind: "exhausted", error: "No coins found" });
+        requestCoin.mockResolvedValue({
+            success: false,
+            kind: "exhausted",
+            error: "No coins found",
+        });
         const res = await post({ address: ADDR, token: "DEEP" });
         expect(res.status).toBe(503);
         expect((await res.json()).error).toContain("pnpm deploy-all");
