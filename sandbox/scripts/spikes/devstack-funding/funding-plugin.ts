@@ -1,12 +1,13 @@
-// DBSF-031 — custom non-SUI coinType funding strategy plugin.
+// Devstack funding-strategy spike — custom non-SUI coinType funding strategy plugin.
 //
 // The load-bearing finding (two parts):
 //
 //  1. CONTRIBUTION. `defineFaucetStrategy` is SUI-only, so a non-SUI coin
 //     funding strategy is contributed via the generic `strategyContributor`
 //     under a `coinType:<fullCoinType>` capability key, wrapping an
-//     `AccountFundingStrategy`. This is the exact shape DEEP (DBSF-007) and
-//     USDC (DBSF-010) will follow — only the `request` body differs.
+//     `AccountFundingStrategy`. This is the exact shape the DEEP funding-strategy
+//     plugin and the USDC funding-strategy plugin will follow — only the
+//     `request` body differs.
 //
 //  2. BODY. On a forked mainnet the body CANNOT sign (the impersonated whale
 //     has no key) and CANNOT let the SDK auto-select gas. devstack's own fork
@@ -49,7 +50,8 @@ import {
 export const TARGET_COIN_TYPE =
     "0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270::deep::DEEP";
 
-// Mainnet DEEP whale we impersonate as the funding source (the DBSF-001 donor).
+// Mainnet DEEP whale we impersonate as the funding source (the donor from the
+// DEEP whale-transfer spike).
 const WHALE = "0x9548232f9cebbc1eec56cfb25b99f61e17924b4908248c260c8d70100c59c70d";
 
 type ObjectRef = { objectId: string; version: string; digest: string };
@@ -182,8 +184,9 @@ function deepWhaleStrategy(suiValue: SuiForkValue): AccountFundingStrategy {
                 }
                 const core = suiValue.sdk.core;
 
-                // DBSF-001 PTB: split `amount` off the whale's DEEP coin (a concrete
-                // ref), send it to the recipient. Gas is the whale's SUI coin, also by ref.
+                // DEEP whale-transfer PTB: split `amount` off the whale's DEEP coin (a
+                // concrete ref), send it to the recipient. Gas is the whale's SUI coin,
+                // also by ref.
                 const tx = new Transaction();
                 const [chunk] = tx.splitCoins(tx.objectRef(DEEP_SOURCE_COIN), [
                     tx.pure.u64(amount),

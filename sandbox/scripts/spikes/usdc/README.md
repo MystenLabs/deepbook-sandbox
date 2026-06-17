@@ -2,12 +2,12 @@
 
 This spike validates that empty-signature impersonation on a `sui-fork` mainnet network lets us mint native USDC by "being" the address that owns the USDC `TreasuryCap` object on mainnet. It's load-bearing for the production USDC funding path: USDC is mintable (unlike DEEP), so once we can impersonate the cap owner, the sandbox faucet can produce arbitrary amounts on demand without any donor-drain ceiling.
 
-## Backlog tickets
+## Follow-up work
 
-- **DBSF-002** — this spike (validate the mechanism).
-- **DBSF-009** — formally pick the production USDC minter address(es) and document them. The spike may need an update if Circle's mint path is more constrained than direct `coin::mint`.
-- **DBSF-010** — generalize this pattern into `sandbox/scripts/utils/impersonation.ts` and replace the custom `sandbox/packages/usdc` publish.
-- **DBSF-011** — switch the faucet's USDC path to the same mechanism.
+- **This spike** — validate the mechanism.
+- **Production USDC minter-address decision** — formally pick the production USDC minter address(es) and document them. The spike may need an update if Circle's mint path is more constrained than direct `coin::mint`.
+- **USDC funding-strategy plugin** — generalize this pattern into `sandbox/scripts/utils/impersonation.ts` and replace the custom `sandbox/packages/usdc` publish.
+- **Faucet USDC wiring** — switch the faucet's USDC path to the same mechanism.
 
 ## Why this should work
 
@@ -15,7 +15,7 @@ This spike validates that empty-signature impersonation on a `sui-fork` mainnet 
 
 `sui-fork` accepts transactions with an empty signature list and executes them as the declared sender. Because the USDC `TreasuryCap` is an address-owned object on mainnet, the fork inherits that ownership when the cap is materialized. With the cap as `&mut` input to `0x2::coin::mint<USDC>(cap, amount, ctx)` and the cap's owner declared as sender, sui-fork should execute the mint without ever needing the owner's private key.
 
-**Caveat:** Circle's native USDC on Sui follows the [regulated coin pattern](https://docs.sui.io/guides/developer/stablecoins). The TreasuryCap is currently address-owned, which suggests vanilla `coin::mint` works, but Circle may also expose a gated mint flow (a controller / minter allowlist on top of the cap) that's the _preferred_ path. The spike tries the simplest possible path first; if it fails with a Move abort, we learn what Circle's design actually requires and adjust DBSF-010 accordingly.
+**Caveat:** Circle's native USDC on Sui follows the [regulated coin pattern](https://docs.sui.io/guides/developer/stablecoins). The TreasuryCap is currently address-owned, which suggests vanilla `coin::mint` works, but Circle may also expose a gated mint flow (a controller / minter allowlist on top of the cap) that's the _preferred_ path. The spike tries the simplest possible path first; if it fails with a Move abort, we learn what Circle's design actually requires and adjust the USDC funding-strategy plugin accordingly.
 
 ## Verified mainnet IDs (2026-05-18)
 
@@ -117,7 +117,7 @@ sui client balance 0x00000000000000000000000000000000000000000000000000000000000
   | jq '[.[0][][1][] | select(.coinType | endswith("::usdc::USDC"))]'
 ```
 
-The acceptance criterion for DBSF-002 is: the recipient ends up with a `Coin<USDC>` at the real mainnet USDC package ID equal to `MINT_AMOUNT`, and total USDC supply increases by the same amount (proving a mint, not a transfer). This `sui-fork` build has no JSON-RPC `suix_getTotalSupply`; the script reads supply off the `TreasuryCap`'s `Supply` field (cap `content` BCS, bytes `[32..40]` u64-LE).
+The acceptance criterion for this spike is: the recipient ends up with a `Coin<USDC>` at the real mainnet USDC package ID equal to `MINT_AMOUNT`, and total USDC supply increases by the same amount (proving a mint, not a transfer). This `sui-fork` build has no JSON-RPC `suix_getTotalSupply`; the script reads supply off the `TreasuryCap`'s `Supply` field (cap `content` BCS, bytes `[32..40]` u64-LE).
 
 ## If `mint` aborts
 
@@ -141,7 +141,7 @@ When this spike runs, paste back:
 
 ## POC results
 
-**DBSF-002 finding (2026-06-04) — the configured naive path is disproven; the cap is wrapped.** `inspect` (now via the `sui` CLI / gRPC) against a `sui-fork` mainnet fork shows the `TreasuryCap<USDC>` is **not address-owned** — so `0x2::coin::mint` with `USDC_TREASURY_CAP_OWNER` declared as sender cannot work (you can't impersonate an _object_ as a transaction sender, and an object-owned cap can't be a plain owned input). This is the "Cap is wrapped" branch above, confirmed on-chain.
+**Finding (2026-06-04) — the configured naive path is disproven; the cap is wrapped.** `inspect` (now via the `sui` CLI / gRPC) against a `sui-fork` mainnet fork shows the `TreasuryCap<USDC>` is **not address-owned** — so `0x2::coin::mint` with `USDC_TREASURY_CAP_OWNER` declared as sender cannot work (you can't impersonate an _object_ as a transaction sender, and an object-owned cap can't be a plain owned input). This is the "Cap is wrapped" branch above, confirmed on-chain.
 
 The custody chain (Circle's Sui stablecoin `treasury` framework, package `0xecf47609d7da919ea98e7fd04f6e0648a0a79b337aaad373fa37aac8febf19c8`):
 
@@ -182,11 +182,11 @@ Key object/param reference:
 | master minter (gate for `configure_new_controller`) | `0x41c0c6d67577b39f31a5fe4052314fd3a8b7c7f890676f60e007bd390e397ac1` |
 | DenyList (shared)                                   | `0x0000000000000000000000000000000000000000000000000000000000000403` |
 
-**Fork gotchas hit (carry into DBSF-009/010/011):**
+**Fork gotchas hit (carry into the production USDC funding work):**
 
 - **No enumeration of un-fetched mainnet state.** sui-fork lazily fetches objects on reference _by id_, but can't list an account's un-fetched objects — so on a fresh fork `sui client gas <donor>` is empty and PTB gas auto-selection fails (`Cannot find gas coin`). Reference the donor's SUI coin by a known id. Fork-local objects (e.g. a coin you just created/transferred) _do_ enumerate.
 - **Use `--gas-coin` explicitly.** Even for fork-local coins the owned-coins query is intermittent (`sui client gas <addr>` randomly returns empty / `Failed to query availableRange`). Pass a known coin id via `--gas-coin`, and prefer reading freshly-created coin ids from tx effects over listing.
 - **No dev-inspect / simulate, no dynamic-field listing.** Read state by deriving dynamic-field ids offline (`@mysten/sui`'s `deriveDynamicFieldID`) and `sui client object`, and parse BCS contents directly (TreasuryCap supply = contents `[32..40]` u64-LE).
 - **Same-build CLI required** and **gRPC-not-JSON-RPC** as for the deep spike.
 
-**For DBSF-009/010/011:** generalize this into `sandbox/scripts/utils/impersonation.ts` — derive the master minter from the Treasury, fund it from a SUI donor, run the 2-call configure tx, locate the `MintCap`, then mint per faucet request. The per-mint MintCap can be reused across requests once configured, so steps TX0/TX1 are one-time setup.
+**For the production USDC funding work:** generalize this into `sandbox/scripts/utils/impersonation.ts` — derive the master minter from the Treasury, fund it from a SUI donor, run the 2-call configure tx, locate the `MintCap`, then mint per faucet request. The per-mint MintCap can be reused across requests once configured, so steps TX0/TX1 are one-time setup.

@@ -82,8 +82,8 @@ works.)
    `object_store.get_object(currencyId)` that `get_coin_info_from_registry` uses
    materialize the object from upstream (as the gRPC `GetObject` path already
    does). Then `GetCoinInfo` resolves the real registry entry for migrated coins.
-   This is the same shared-object materialization gap as the DBSF-003 bug
-   (`sandbox/scripts/spikes/deepbook/SUI-FORK-BUG.md`).
+   This is the same shared-object materialization gap as the DeepBook admin-cap
+   spike's bug (`sandbox/scripts/spikes/deepbook/SUI-FORK-BUG.md`).
 2. **And/or implement `RpcIndexes::get_coin_info`** (the index fallback) to read
    coin metadata lazily.
 3. **At minimum, don't `todo!()`-panic** — return `Ok(None)` so `GetCoinInfo`
@@ -97,7 +97,7 @@ works.)
 ## Impact
 
 - Blocks **devstack fork-mode funding of any migrated non-SUI coin** (DEEP,
-  USDC) — the live path for DBSF-007 / DBSF-010. SUI funding is unaffected.
+  USDC) — the live path for the DEEP/USDC funding-strategy plugins. SUI funding is unaffected.
 - Any consumer that reads coin info / balances for such a coin against the fork
   crashes it.
 

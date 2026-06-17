@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
-// DBSF-001 — DEEP whale transfer spike.
+// DEEP whale transfer spike.
 //
 // Validates that empty-signature impersonation on a sui-fork mainnet network
 // lets us splitCoins + transferObjects from a real DEEP holder we don't have
 // the private key for. Load-bearing for the production DEEP funding path
-// (DBSF-007 / DBSF-008): DEEP is fixed-supply with a ProtectedTreasury, so
-// the sandbox cannot mint — it has to transfer from an existing holder.
+// (the DEEP funding-strategy plugin and faucet wiring): DEEP is fixed-supply
+// with a ProtectedTreasury, so the sandbox cannot mint — it has to transfer
+// from an existing holder.
 //
 // Flow:
 //   1. Query the donor's Coin<DEEP> objects via the `sui` CLI, pick the largest.

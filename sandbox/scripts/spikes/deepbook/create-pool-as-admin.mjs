@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-// DBSF-003 — DeepBook admin cap impersonation spike.
+// DeepBook admin cap impersonation spike.
 //
 // Validates that empty-signature impersonation on a sui-fork mainnet network
 // lets us call admin-gated DeepBook entrypoints by "being" the address that
-// owns the DeepbookAdminCap on mainnet. Load-bearing for DBSF-020 — the
-// production sandbox needs `createFreshSandboxPool` for any integration test
+// owns the DeepbookAdminCap on mainnet. Load-bearing for the production
+// sandbox, which needs `createFreshSandboxPool` for any integration test
 // that assumes a clean empty pool, and that helper relies on admin cap
 // impersonation.
 //

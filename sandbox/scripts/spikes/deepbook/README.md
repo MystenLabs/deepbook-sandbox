@@ -2,11 +2,11 @@
 
 This spike validates that empty-signature impersonation on a `sui-fork` mainnet network lets us call admin-gated DeepBook entrypoints by "being" the address that owns the `DeepbookAdminCap` on mainnet. It's load-bearing for the production "create fresh sandbox pool alongside mainnet pools" path: any sandbox integration test that needs a clean empty pool relies on impersonating the admin cap holder and calling `pool::create_pool_admin`.
 
-## Backlog tickets
+## Related work
 
-- **DBSF-003** — this spike (validate the mechanism).
-- **DBSF-016** — pin all mainnet DeepBook IDs (Registry, MarginRegistry, admin caps, target pool IDs) into the manifest.
-- **DBSF-020** — generalize this pattern into `createFreshSandboxPool` for test setups.
+- **This spike** — validate the admin-cap impersonation mechanism.
+- **Manifest pinning** — pin all mainnet DeepBook IDs (Registry, MarginRegistry, admin caps, target pool IDs) into the manifest.
+- **`createFreshSandboxPool`** — generalize this pattern into a reusable helper for test setups.
 
 ## Why this works
 
@@ -176,7 +176,7 @@ sui client tx-block <digest>
 sui client object <new_pool_id> --json
 ```
 
-The acceptance criterion for DBSF-003 is: the tx succeeds, a new shared `Pool<Base, Quote>` object is created on the fork, and the new pool's type carries the real mainnet DeepBook package ID (`0x337f4f…7497`).
+The acceptance criterion for this spike is: the tx succeeds, a new shared `Pool<Base, Quote>` object is created on the fork, and the new pool's type carries the real mainnet DeepBook package ID (`0x337f4f…7497`).
 
 ## If `submit` fails with a Move abort
 
@@ -197,13 +197,13 @@ When this spike runs successfully, paste back:
 - New pool object ID and its full type tag
 - Anything surprising (RPC failures, lazy-fetch latency, cap ownership changes since these docs were written)
 
-These data points unblock DBSF-016 and DBSF-020 with concrete values.
+These data points unblock the manifest-pinning and `createFreshSandboxPool` follow-ups with concrete values.
 
 ## POC results
 
 Run 2026-06-11 against `sui-fork 1.74.0-31537d4d9235`, mainnet, epoch 1155.
 
-**Impersonation mechanism: VALIDATED.** Empty-signature `execute-signed-tx` executes `pool::create_pool_admin<BETH, SUI>` **as the cap owner** (no signature) and runs DeepBook's admin-gated logic — the DBSF-003 hypothesis, proven.
+**Impersonation mechanism: VALIDATED.** Empty-signature `execute-signed-tx` executes `pool::create_pool_admin<BETH, SUI>` **as the cap owner** (no signature) and runs DeepBook's admin-gated logic — this spike's hypothesis, proven.
 
 **Pool creation: VALIDATED on a correctly seeded fork.** With the registry seeded (`--object …`, see "Start the fork"), impersonating the **current** cap owner `0xd0ec0b2…865e`, `create_pool_admin` succeeded — created shared `Pool<BETH, SUI>` and registered it as the **73rd** pool alongside the 72 real mainnet pools (registry `allowed_versions={1,2,3,4,5,6,8}`, `pools.size` 72 → 73). No version hacks needed.
 
@@ -213,4 +213,4 @@ Run 2026-06-11 against `sui-fork 1.74.0-31537d4d9235`, mainnet, epoch 1155.
 
 **Fallback — manual version bump (only if you can't seed, and only for the version gate).** If the fork serves the inner _stale_ (so it doesn't panic, but `allowed_versions` reads `{1}`), you can impersonate the (then genesis) cap owner to call `registry::enable_version(registry, 6, cap)` — it bypasses the version gate by design (`load_value_mut`, comment: _"does not have version restrictions"_) — then `create_pool_admin`. **Caveat:** this operates on the stale, **empty** registry (`pools.size=0`), so it proves pool-creation mechanics but does **not** give you a pool alongside the real mainnet pools. Prefer seeding.
 
-**For DBSF-016/020:** seed the DeepBook Registry objects (above) on any fork the sandbox executes against; pin the **current** cap owner via `inspect` (it has changed once already); the package id `0x337f4f…` (v6) is correct and consistent with `current_version()=6`.
+**For the manifest-pinning and `createFreshSandboxPool` follow-ups:** seed the DeepBook Registry objects (above) on any fork the sandbox executes against; pin the **current** cap owner via `inspect` (it has changed once already); the package id `0x337f4f…` (v6) is correct and consistent with `current_version()=6`.

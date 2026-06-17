@@ -1,5 +1,5 @@
-// DBSF-031 — minimal devstack stack that funds an account with a non-SUI coin
-// type (DEEP) via a custom funding-strategy plugin.
+// Devstack funding-strategy spike — minimal devstack stack that funds an account
+// with a non-SUI coin type (DEEP) via a custom funding-strategy plugin.
 //
 //   sui (fork mainnet)
 //   + our custom coinType funding plugin (funding-plugin.ts). It depends on the
@@ -48,5 +48,5 @@ export default defineDevstack({
             funding: [{ coin: deepCoin, amount: 100_000_000n }], // 100 DEEP (6 dp)
         }),
     ],
-    stackName: "dbsf-031-devstack-funding",
+    stackName: "devstack-funding",
 });

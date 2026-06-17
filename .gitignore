@@ -146,8 +146,9 @@ sandbox/docker/sui_localnet_data/
 sandbox/.external-packages/
 Pub.*.toml
 
-# Generated deployment manifests
-sandbox/deployments/
+# Generated deployment manifests (but keep hand-written docs like fork-impersonation.md)
+sandbox/deployments/*
+!sandbox/deployments/fork-impersonation.md
 
 target/
 .vscode/

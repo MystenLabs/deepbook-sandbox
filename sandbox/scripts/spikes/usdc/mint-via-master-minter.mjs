@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// DBSF-002 — USDC mint via Circle treasury master-minter impersonation.
+// USDC mint via Circle treasury master-minter impersonation.
 //
 // VALIDATED end-to-end on a sui-fork mainnet network: this mints fresh native
 // USDC (total supply increases) using only empty-signature impersonation — no
@@ -28,7 +28,7 @@
 // The master minter address is a fixed mainnet role; it was discovered on the
 // fork by deriving the `MasterMinterKey` dynamic field on the Treasury's Roles
 // `Bag` and reading its address value. The derivation (for when Circle rotates
-// it, or to automate in DBSF-010/011 where the @mysten/sui SDK is available):
+// it, or to automate in the USDC funding-strategy plugin where the @mysten/sui SDK is available):
 //   bag      = Treasury.contents[112..144]  // UID + 2 Tables(40 each) precede roles.data
 //   fieldId  = deriveDynamicFieldID(bag, `${PKG}::roles::MasterMinterKey`, [0x00])
 //   address  = Field<MasterMinterKey, address>.contents[33..65]

@@ -1,8 +1,9 @@
-# Devstack Spike — Non-SUI coinType funding-strategy authoring API (DBSF-031)
+# Devstack Spike — Non-SUI coinType funding-strategy authoring API
 
 Confirms **how a devstack plugin funds an account with a non-SUI coin type**
 (DEEP, USDC) — the load-bearing authoring question for the DEEP/USDC funding
-plugins in Phases 1–2 (DBSF-007 / DBSF-010). Read against
+plugins in Phases 1–2 (the DEEP funding-strategy plugin / the USDC
+funding-strategy plugin). Read against
 `@mysten-incubation/devstack@0.1.1`, on a `mode: 'fork'` mainnet stack.
 
 ## TL;DR
@@ -114,7 +115,7 @@ plugin:
   (pin gas explicitly, supply object inputs as concrete refs, serialize without
   signing). See `funding-plugin.ts`.
 
-> Authoring takeaway for DBSF-007/010: the _public_ surface is sufficient to
+> Authoring takeaway for the DEEP/USDC funding-strategy plugins: the _public_ surface is sufficient to
 > author the plugin, but you re-implement ~30 lines of fork-tx plumbing. Worth
 > asking the devstack/AC team to \*\*export `buildForkImpersonationTransactionBytes`
 >
@@ -123,10 +124,10 @@ plugin:
 
 ### Why DEEP vs USDC
 
-|      | Strategy body (the `request` closure)                                                       | Source mechanism |
-| ---- | ------------------------------------------------------------------------------------------- | ---------------- |
-| DEEP | impersonate the whale → `splitCoins` + `transferObjects` (DEEP is fixed-supply, can't mint) | DBSF-001         |
-| USDC | impersonate the master-minter → Circle `treasury::mint`                                     | DBSF-002         |
+|      | Strategy body (the `request` closure)                                                       | Source mechanism              |
+| ---- | ------------------------------------------------------------------------------------------- | ----------------------------- |
+| DEEP | impersonate the whale → `splitCoins` + `transferObjects` (DEEP is fixed-supply, can't mint) | the DEEP whale-transfer spike |
+| USDC | impersonate the master-minter → Circle `treasury::mint`                                     | the USDC mint spike           |
 
 Both are authored identically — a `strategyContributor({ capabilityKey:
 'coinType:<X>', strategy })` whose body uses the §2 fork-impersonation plumbing —
@@ -149,9 +150,9 @@ and priming the Currency — via `getObject` **or** a no-coin
 `coin_registry::decimals(&Currency)` tx — **self-aborts**, because any reference
 to the coin-typed `Currency` (read or tx-input) trips the same `GetCoinInfo`
 (chicken-and-egg; both verified). This is the same shared-object
-materialization gap as DBSF-003, surfacing through CoinRegistry — a sui-fork gap
+materialization gap as the DeepBook admin-cap spike, surfacing through CoinRegistry — a sui-fork gap
 independent of the devstack authoring API and our plugin, but it **blocks live
-non-SUI funding (DEEP/USDC) on the fork** (DBSF-007/010). Full root-cause,
+non-SUI funding (DEEP/USDC) on the fork** (the DEEP/USDC funding-strategy plugins). Full root-cause,
 evidence, and suggested fix: **[SUI-FORK-NOTES.md](./SUI-FORK-NOTES.md)**.
 
 `.fork-patched/` rebuilds the fork image with `get_coin_info → Ok(None)` (a
@@ -160,13 +161,13 @@ one-line `sed` in the bundled `Dockerfile`) — the validated workaround; see
 
 ## Files
 
-| File                             | What it is                                                                                                                                                                                 |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `devstack.config.ts`             | The stack: `sui({ mode: 'fork', upstream: 'mainnet' })` + the funding plugin + `coin.known(DEEP)` + `account('alice', { funding })`.                                                       |
-| `funding-plugin.ts`              | The custom plugin — `strategyContributor({ capabilityKey: 'coinType:<DEEP>', … })` whose body re-implements the fork-impersonation transfer. The reference shape DBSF-007/010 will follow. |
-| `SUI-FORK-NOTES.md`              | sui-fork bug report (`get_coin_info` `todo!()`) — the blocker for live non-SUI fork funding.                                                                                               |
-| `.fork-patched/`                 | Patched fork-image build context (gitignored) used to validate the transfer past the sui-fork bug.                                                                                         |
-| `package.json` / `tsconfig.json` | Pin `@mysten-incubation/devstack@0.1.1`; `tsc --noEmit` type-checks the config + plugin against the real types.                                                                            |
+| File                             | What it is                                                                                                                                                                                                           |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `devstack.config.ts`             | The stack: `sui({ mode: 'fork', upstream: 'mainnet' })` + the funding plugin + `coin.known(DEEP)` + `account('alice', { funding })`.                                                                                 |
+| `funding-plugin.ts`              | The custom plugin — `strategyContributor({ capabilityKey: 'coinType:<DEEP>', … })` whose body re-implements the fork-impersonation transfer. The reference shape the DEEP/USDC funding-strategy plugins will follow. |
+| `SUI-FORK-NOTES.md`              | sui-fork bug report (`get_coin_info` `todo!()`) — the blocker for live non-SUI fork funding.                                                                                                                         |
+| `.fork-patched/`                 | Patched fork-image build context (gitignored) used to validate the transfer past the sui-fork bug.                                                                                                                   |
+| `package.json` / `tsconfig.json` | Pin `@mysten-incubation/devstack@0.1.1`; `tsc --noEmit` type-checks the config + plugin against the real types.                                                                                                      |
 
 ## Status / how to run
 

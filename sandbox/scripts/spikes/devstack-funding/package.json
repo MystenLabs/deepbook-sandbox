@@ -1,8 +1,8 @@
 {
-    "name": "dbsf-031-devstack-funding",
+    "name": "devstack-funding",
     "private": true,
     "type": "module",
-    "description": "DBSF-031 spike — confirm devstack non-SUI coinType funding-strategy authoring API.",
+    "description": "Devstack funding-strategy spike — confirm devstack non-SUI coinType funding-strategy authoring API.",
     "scripts": {
         "typecheck": "tsc --noEmit",
         "devstack": "devstack",
