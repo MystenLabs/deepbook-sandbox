@@ -58,7 +58,29 @@ export function faucetRoutes(config: FaucetConfig, client: SuiGrpcClient, signer
 
         const baseUnits = whole * 10 ** decimals;
         const result = await requestCoin(client, signer, type, address, baseUnits);
-        return c.json(result, result.success ? 200 : 500);
+
+        if (result.success) {
+            return c.json(result, 200);
+        }
+
+        // Map the failure to a status that reflects whether it's recoverable.
+        // An exhausted treasury and a busy signing lock are expected operational
+        // conditions (503), not server bugs (500) — and the message tells the
+        // caller exactly how to recover.
+        switch (result.kind) {
+            case "exhausted":
+                return c.json(
+                    {
+                        ...result,
+                        error: `The ${token} faucet treasury is exhausted. Redeploy the sandbox with \`pnpm deploy-all\` to refill it. (${result.error})`,
+                    },
+                    503,
+                );
+            case "busy":
+                return c.json(result, 503);
+            default:
+                return c.json(result, 500);
+        }
     });
 
     return app;
