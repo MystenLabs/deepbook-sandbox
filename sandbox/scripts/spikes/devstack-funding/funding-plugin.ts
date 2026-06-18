@@ -3,11 +3,13 @@
 // The load-bearing finding (two parts):
 //
 //  1. CONTRIBUTION. `defineFaucetStrategy` is SUI-only, so a non-SUI coin
-//     funding strategy is contributed via the generic `strategyContributor`
-//     under a `coinType:<fullCoinType>` capability key, wrapping an
-//     `AccountFundingStrategy`. This is the exact shape the DEEP funding-strategy
-//     plugin and the USDC funding-strategy plugin will follow — only the
-//     `request` body differs.
+//     funding strategy is contributed imperatively via
+//     `ctx.provides({ kind: 'strategy-contributor', ... })` (the `PluginContext`
+//     service, inside `start`) under a `coinType:<fullCoinType>` capability key,
+//     wrapping an `AccountFundingStrategy`. (devstack 0.3.0 replaced the older
+//     static `capabilities` array + `strategyContributor()` helper with this.)
+//     This is the exact shape the DEEP funding-strategy plugin and the USDC
+//     funding-strategy plugin follow — only the `request` body differs.
 //
 //  2. BODY. On a forked mainnet the body CANNOT sign (the impersonated whale
 //     has no key) and CANNOT let the SDK auto-select gas. devstack's own fork
@@ -41,7 +43,7 @@ import { Transaction, TransactionDataBuilder } from "@mysten/sui/transactions";
 import { Effect } from "effect";
 import {
     definePlugin,
-    strategyContributor,
+    PluginContext,
     sui,
     type AccountFundingStrategy,
 } from "@mysten-incubation/devstack";
@@ -239,18 +241,23 @@ export function deepFunding(suiRef: ReturnType<typeof sui>) {
         id: "deep-funding",
         role: "service",
         dependsOn: { sui: suiRef },
-        start: (deps) => Effect.succeed({ sui: deps.sui }),
-        capabilities: ({ value }) => [
-            strategyContributor({
-                // The key the account-funding pass dispatches `{ coin: DEEP, amount }` to.
-                // Built-in coin.* plugins contribute the same key at priority 0 (a
-                // mint-backed strategy, wrong for fixed-supply DEEP); ours wins at 1.
-                capabilityKey: `coinType:${TARGET_COIN_TYPE}`,
-                strategy: deepWhaleStrategy(value.sui as unknown as SuiForkValue),
-                autoMounted: false,
-                priority: 1,
+        start: (deps) =>
+            Effect.gen(function* () {
+                const ctx = yield* PluginContext;
+                // devstack 0.3.0 replaced the static `capabilities` array +
+                // `strategyContributor()` helper with the imperative `ctx.provides(...)`.
+                // The key the account-funding pass dispatches `{ coin: DEEP, amount }` to;
+                // built-in coin.* contribute the same key at priority 0 (mint-backed,
+                // wrong for fixed-supply DEEP), so ours wins at 1.
+                ctx.provides({
+                    kind: "strategy-contributor",
+                    capabilityKey: `coinType:${TARGET_COIN_TYPE}`,
+                    strategy: deepWhaleStrategy(deps.sui as unknown as SuiForkValue),
+                    autoMounted: false,
+                    priority: 1,
+                });
+                return { sui: deps.sui };
             }),
-        ],
         section: "service",
     });
 }

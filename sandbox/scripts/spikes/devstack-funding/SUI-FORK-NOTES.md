@@ -27,7 +27,7 @@ materialized), so the registry path resolves and never reaches the index.
 
 ## Environment
 
-- `sui-fork`: `1.74.0`, built from rev `62ee6ada958cd61b3c8a4466dd33c9aba3cdff8a` (devstack 0.1.1's pinned fork-image rev).
+- `sui-fork`: `1.74.0`, built from rev `62ee6ada958cd61b3c8a4466dd33c9aba3cdff8a` (devstack 0.3.0's pinned fork-image rev — unchanged since 0.1.1).
 - Still present on latest `main` `8c1a5dbc40` (2026-06-13): `get_coin_info` and siblings (`get_balance`, `dynamic_field_iter`, `balance_iter`, `package_versions_iter`) are all `todo!()`; only one (unrelated) commit touched `crates/sui-fork` since the pinned rev. **Not fixed upstream.**
 - Network: `--upstream mainnet`.
 

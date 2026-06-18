@@ -4,14 +4,16 @@ Confirms **how a devstack plugin funds an account with a non-SUI coin type**
 (DEEP, USDC) — the load-bearing authoring question for the DEEP/USDC funding
 plugins in Phases 1–2 (the DEEP funding-strategy plugin / the USDC
 funding-strategy plugin). Read against
-`@mysten-incubation/devstack@0.1.1`, on a `mode: 'fork'` mainnet stack.
+`@mysten-incubation/devstack@0.3.0`, on a `mode: 'fork'` mainnet stack.
 
 ## TL;DR
 
 1. **Contribution API** — `defineFaucetStrategy` is SUI-only. A non-SUI coin
-   funding strategy is contributed with the generic `strategyContributor({
-capabilityKey: 'coinType:<fullCoinType>', strategy })`, wrapping an
-   `AccountFundingStrategy`. **Validated** at the type level _and_ at runtime:
+   funding strategy is contributed imperatively from `start` via
+   `ctx.provides({ kind: 'strategy-contributor', capabilityKey:
+'coinType:<fullCoinType>', strategy })` (the `PluginContext` service; devstack
+   0.3.0 removed the older static `capabilities` array + `strategyContributor()`
+   helper), wrapping an `AccountFundingStrategy`. **Validated** at the type level _and_ at runtime:
    `devstack up` mounts the plugin, registers the `coinType:<DEEP>` strategy, and
    the account-funding pass **dispatches `alice`'s `{ coin: DEEP, amount }` entry
    to our strategy**.
@@ -39,7 +41,7 @@ capabilityKey: 'coinType:<fullCoinType>', strategy })`, wrapping an
 
 ---
 
-## 1. Contribution — `strategyContributor` with a `coinType:` key
+## 1. Contribution — `ctx.provides` with a `coinType:` key
 
 `defineFaucetStrategy` contributes under the **SUI faucet** capability key, keyed
 by `chainId`, not by coin type:
@@ -53,17 +55,24 @@ declare function defineFaucetStrategy<ChainId extends string>(decl: {
 }): StrategyContributorDecl<`faucet:request:${ChainId}`, FaucetStrategy>;
 ```
 
-For a non-SUI coin you use the lower-level generic it's built on —
-`strategyContributor(...)` with a `coinType:<fullCoinType>` capability key. The
-built-in `coin.known/fromPackage/builtin` plugins auto-contribute the same key
-(a _mint-backed_ strategy at `priority: 0`); a custom plugin contributes its own
-at `priority: 1` to win:
+For a non-SUI coin you contribute a `coinType:<fullCoinType>` strategy yourself.
+In devstack 0.3.0 this is done imperatively inside `start` via the `PluginContext`
+service (the older static `capabilities` array + `strategyContributor()` helper
+were removed). The built-in `coin.known/fromPackage/builtin` plugins contribute
+the same key (a _mint-backed_ strategy at `priority: 0`); a custom plugin
+contributes its own at `priority: 1` to win:
 
 ```ts
-// dist/api/define-capabilities.d.mts
-declare const strategyContributor: <const Key extends string, Strategy>(
-  decl: Omit<StrategyContributorDecl<Key, Strategy>, "kind">,
-) => StrategyContributorDecl<Key, Strategy>;
+// inside definePlugin({ start })
+const ctx = yield * PluginContext; // PluginContext: a root export
+ctx.provides({
+  // ctx.provides: (decl: StrategyContributorDecl) => void
+  kind: "strategy-contributor",
+  capabilityKey: `coinType:${fullCoinType}`,
+  strategy, // an AccountFundingStrategy
+  autoMounted: false,
+  priority: 1,
+});
 ```
 
 The strategy is an **`AccountFundingStrategy`**:
@@ -129,9 +138,9 @@ plugin:
 | DEEP | impersonate the whale → `splitCoins` + `transferObjects` (DEEP is fixed-supply, can't mint) | the DEEP whale-transfer spike |
 | USDC | impersonate the master-minter → Circle `treasury::mint`                                     | the USDC mint spike           |
 
-Both are authored identically — a `strategyContributor({ capabilityKey:
-'coinType:<X>', strategy })` whose body uses the §2 fork-impersonation plumbing —
-only the PTB inside differs.
+Both are authored identically — `ctx.provides({ kind: 'strategy-contributor',
+capabilityKey: 'coinType:<X>', strategy })` whose body uses the §2
+fork-impersonation plumbing — only the PTB inside differs.
 
 ## 3. The blocker — sui-fork `get_coin_info` is `todo!()` (live transfer)
 
@@ -161,13 +170,13 @@ one-line `sed` in the bundled `Dockerfile`) — the validated workaround; see
 
 ## Files
 
-| File                             | What it is                                                                                                                                                                                                           |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `devstack.config.ts`             | The stack: `sui({ mode: 'fork', upstream: 'mainnet' })` + the funding plugin + `coin.known(DEEP)` + `account('alice', { funding })`.                                                                                 |
-| `funding-plugin.ts`              | The custom plugin — `strategyContributor({ capabilityKey: 'coinType:<DEEP>', … })` whose body re-implements the fork-impersonation transfer. The reference shape the DEEP/USDC funding-strategy plugins will follow. |
-| `SUI-FORK-NOTES.md`              | sui-fork bug report (`get_coin_info` `todo!()`) — the blocker for live non-SUI fork funding.                                                                                                                         |
-| `.fork-patched/`                 | Patched fork-image build context (gitignored) used to validate the transfer past the sui-fork bug.                                                                                                                   |
-| `package.json` / `tsconfig.json` | Pin `@mysten-incubation/devstack@0.1.1`; `tsc --noEmit` type-checks the config + plugin against the real types.                                                                                                      |
+| File                             | What it is                                                                                                                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `devstack.config.ts`             | The stack: `sui({ mode: 'fork', upstream: 'mainnet' })` + the funding plugin + `coin.known(DEEP)` + `account('alice', { funding })`.                                                                                                        |
+| `funding-plugin.ts`              | The custom plugin — `ctx.provides({ kind: 'strategy-contributor', capabilityKey: 'coinType:<DEEP>', … })` whose body re-implements the fork-impersonation transfer. The reference shape the DEEP/USDC funding-strategy plugins will follow. |
+| `SUI-FORK-NOTES.md`              | sui-fork bug report (`get_coin_info` `todo!()`) — the blocker for live non-SUI fork funding.                                                                                                                                                |
+| `.fork-patched/`                 | Patched fork-image build context (gitignored) used to validate the transfer past the sui-fork bug.                                                                                                                                          |
+| `package.json` / `tsconfig.json` | Pin `@mysten-incubation/devstack@0.3.0`; `tsc --noEmit` type-checks the config + plugin against the real types.                                                                                                                             |
 
 ## Status / how to run
 
