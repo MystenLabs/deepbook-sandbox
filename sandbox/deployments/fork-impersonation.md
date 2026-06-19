@@ -59,13 +59,43 @@ fork; it lazy-fetches the owner's coins). The devstack-funding spike hardcoded a
 coin ref for expedience and noted it would go stale; the production plugin must
 resolve dynamically.
 
-## USDC donor
+## USDC minter
 
-USDC is **mintable**, so no donor / drain ceiling is needed: the sandbox
-impersonates the Circle **master-minter** and runs `treasury::mint` (validated in
-the USDC mint spike). The relevant identities (master-minter, `Treasury<USDC>`,
-stablecoin package) are recorded in `sandbox/scripts/spikes/usdc/`; the USDC
-funding plugin wires them in. No `*_DONOR_ADDRESS` is required for USDC.
+USDC is **mintable**, so there's no donor or drain ceiling: the sandbox
+impersonates Circle's **master-minter** and mints via the stablecoin framework's
+`treasury::mint`. Native USDC on Sui is a regulated coin — the `TreasuryCap<USDC>`
+is **not** address-owned; it lives as a dynamic object field under a **shared**
+`Treasury<USDC>`, gated by a controller → minter allowlist (each minter holds a
+`MintCap`). Validated end-to-end in the USDC mint spike (`scripts/spikes/usdc/`):
+impersonate the master-minter → `configure_new_controller` + `configure_minter`
+(grants a `MintCap`) → `treasury::mint`.
+
+|                                         |                                                                                                                              |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **USDC package**                        | `0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7`                                                         |
+| **Coin type**                           | `0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC` (mainnet — the fork inherits mainnet state) |
+| **Stablecoin framework package**        | `0xecf47609d7da919ea98e7fd04f6e0648a0a79b337aaad373fa37aac8febf19c8` (`treasury` / `roles` / `mint_allowance`)               |
+| **Shared `Treasury<USDC>`**             | `0x57d6725e7a8b49a7b2a612f6bd66ab5f39fc95332ca48be421c3229d514a6de7` (Shared, initial version `313333795`)                   |
+| **`TreasuryCap<USDC>`**                 | `0x677e41a5c35d90177d401b72952c228ffa65b770e265561ad607f34d6896dcc2` (dynamic-object-field under the Treasury)               |
+| **Master minter** (impersonated sender) | `0x41c0c6d67577b39f31a5fe4052314fd3a8b7c7f890676f60e007bd390e397ac1`                                                         |
+| **Env vars**                            | `USDC_TOKEN_PACKAGE_ID`, `USDC_TREASURY_ID`, `USDC_MINTER_ADDRESS` (+ `USDC_STABLECOIN_PACKAGE_ID`, `USDC_TREASURY_CAP_ID`)  |
+
+### ⚠️ Implementation note — the cap is gated, and the master-minter can rotate
+
+`coin::mint` does **not** work (the cap isn't address-owned); minting must go
+through `treasury::mint` as a configured minter. The USDC funding plugin
+impersonates the master-minter to self-configure a `MintCap`, then mints. If
+Circle rotates the master-minter, re-derive it (no hardcoding needed):
+
+```
+bag      = Treasury.roles.data (a 0x2::bag::Bag) → its UID
+fieldId  = deriveDynamicFieldID(bag, `<stablecoin-pkg>::roles::MasterMinterKey`, [0x00])
+minter   = Field<MasterMinterKey, address>.value
+```
+
+`[0x00]` is the BCS of the key (`MasterMinterKey { dummy_field: bool }` in the
+deployed package). `pnpm verify:usdc-minter` (from `sandbox/devstack-plugins/`) runs this
+derivation against mainnet and prints the current values.
 
 ## Funding caps (sandbox-wide policy)
 
@@ -86,3 +116,7 @@ mainnet effect** (impersonation is fork-only).
 - `MAX_DEEP_PER_REQUEST` / `MAX_DEEP_PER_SESSION` carry the caps above.
 - Default donor when `DEEP_DONOR_ADDRESS` is unset: `0x9548…70d` (this document's
   choice).
+- USDC: `USDC_TOKEN_PACKAGE_ID`, `USDC_TREASURY_ID`, `USDC_MINTER_ADDRESS` (+
+  `USDC_STABLECOIN_PACKAGE_ID`, `USDC_TREASURY_CAP_ID`) hold the mainnet identities
+  above (see `.env.example`); the forthcoming USDC funding plugin consumes them.
+  Re-verify / re-derive after a Circle rotation with `pnpm verify:usdc-minter`.
