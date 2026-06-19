@@ -18,10 +18,16 @@ const DONOR =
     "0x9548232f9cebbc1eec56cfb25b99f61e17924b4908248c260c8d70100c59c70d";
 
 const forkImageContext = process.env.FORK_IMAGE_CONTEXT?.trim();
+// Build the fork binary from a sui rev whose protocol config supports current
+// mainnet (>= v126); passed to the patched Dockerfile as SUI_FORK_REV. Without
+// this, devstack's default rev (62ee6ada, max protocol v125) can't fork current
+// mainnet. Override via SUI_FORK_REV.
+const forkRev = process.env.SUI_FORK_REV ?? "8c1a5dbc40b12b91e5ce79f8f0e259c69f63269c";
 
 const suiRef = sui({
     mode: "fork",
     upstream: "mainnet",
+    version: forkRev,
     ...(forkImageContext
         ? { image: { build: { context: forkImageContext, dockerfile: "sui-fork/Dockerfile" } } }
         : {}),

@@ -61,6 +61,14 @@ perRequestCap, sessionCap, sessionDrawn(), remainingDeep }`. `remainingDeep` is
 The donor address, rationale, risk profile, and caps live in
 [`../deployments/fork-impersonation.md`](../deployments/fork-impersonation.md).
 
+## Faucet & dashboard
+
+devstack's built-in dashboard auto-surfaces this `coinType:<DEEP>` strategy as an
+editable-amount faucet action — confirm with `pnpm verify:dashboard-faucet`. How
+that wires into the dashboard + the `POST /faucet` HTTP endpoint (and what's
+deferred to the devstack runtime migration) is in
+[`faucet-dashboard-integration.md`](./faucet-dashboard-integration.md).
+
 ## ⚠️ Known blocker — sui-fork
 
 Executing a non-SUI coin transfer on a **stock** sui-fork aborts the fork
