@@ -3,12 +3,11 @@
 // ends up holding Coin<DEEP> at the real mainnet DEEP package.
 //
 // Opt-in (boots Docker; the unit `pnpm test` excludes this file). Run it:
-//   nvm use 24
-//   FORK_IMAGE_CONTEXT="$PWD/../scripts/spikes/devstack-funding/.fork-patched/images" \
-//   pnpm test:e2e
+//   nvm use 24 && pnpm test:e2e
 //
-// Requires Docker + Node >= 24 and the PATCHED fork image — a STOCK sui-fork
-// aborts on the DEEP transfer (the get_coin_info blocker; see ../deep-funding.ts).
+// Requires Docker + Node >= 24. The fixture defaults to the PATCHED fork image
+// (a STOCK sui-fork aborts on the DEEP transfer — the get_coin_info blocker; see
+// ../deep-funding.ts), so no env is needed; the first run builds it (~12 min).
 // The harness's global-setup.ts boots + tears down the stack; getStackContext()
 // confirms the boot. We query the fork via its DIRECT host-mapped port — the
 // manifest's routed `*.localhost` URL isn't gRPC-reachable from the host.

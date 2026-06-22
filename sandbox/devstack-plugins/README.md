@@ -61,6 +61,46 @@ perRequestCap, sessionCap, sessionDrawn(), remainingDeep }`. `remainingDeep` is
 The donor address, rationale, risk profile, and caps live in
 [`../deployments/fork-impersonation.md`](../deployments/fork-impersonation.md).
 
+## `usdc-funding.ts` — USDC funding strategy
+
+USDC is **mintable**, so (unlike DEEP) there's no donor or session-drain
+ceiling — only a per-request cap. `usdcFundingFromCapOwner({ sui, minter })`
+contributes a `coinType:<USDC>` strategy that mints native USDC on the fork.
+
+How it works:
+- **Regulated coin** — native USDC's `TreasuryCap<USDC>` is **not** address-owned;
+  it lives under a shared `Treasury<USDC>` gated by a controller → minter
+  allowlist, so `coin::mint` doesn't work. Minting goes through the stablecoin
+  framework's `treasury::mint` as a configured minter.
+- **Impersonation** — impersonate Circle's master-minter (empty-sig). One-time
+  per fork: `configure_new_controller` + `configure_minter` mints a `MintCap`
+  (discovered from the tx's `changedObjects`; reuse a known id via
+  `USDC_MINT_CAP_ID`). Per request: `treasury::mint(treasury, mintCap, denyList,
+  amount, recipient)`.
+- **Sponsored gas** — the master-minter holds no SUI on the fork, so every tx is
+  sponsored: sender = master-minter, gas owner = a SUI donor (the DEEP whale,
+  resolved by known coin id — the fork can't enumerate coins). All minter txs are
+  serialized (they share the donor's gas coin + the one-time configure).
+- **Cap** — per-request (`MAX_USDC_PER_FAUCET_REQUEST`, default 1M USDC); breaches
+  surface as `FaucetBodyError`, transport failures as `FaucetUnreachable`.
+- **Published value** — `{ minter, coinType, perRequestCap }`.
+
+The minter identities (package, `Treasury<USDC>`, master-minter) + the
+master-minter re-derivation are in
+[`../deployments/fork-impersonation.md`](../deployments/fork-impersonation.md)
+(re-verify after a Circle rotation with `pnpm verify:usdc-minter`). Minting trips
+the same sui-fork `GetCoinInfo` blocker as DEEP — the patched fork is required.
+
+### Legacy `sandbox/packages/usdc/` (deferred drop)
+
+This plugin replaces the custom `sandbox/packages/usdc/` Move package — but only
+on the **fork** runtime. The current **localnet** stack still publishes that
+package (`scripts/utils/deployer.ts`) and uses its id for pool creation + the
+faucet, so dropping it from the publish path is part of the devstack runtime
+migration (the `MoveDeployer` collapse), not this change — dropping it now would
+break `pnpm deploy-all`. The Move source stays as the localnet/escape-hatch path
+until then.
+
 ## Faucet & dashboard
 
 devstack's built-in dashboard auto-surfaces this `coinType:<DEEP>` strategy as an
@@ -71,9 +111,9 @@ deferred to the devstack runtime migration) is in
 
 ## ⚠️ Known blocker — sui-fork
 
-Executing a non-SUI coin transfer on a **stock** sui-fork aborts the fork
-process: the SDK enriches the tx's balance-changes via `GetCoinInfo`, which on
-the fork misses the (un-materialized) shared CoinRegistry `Currency` object and
+Executing a non-SUI coin transfer **or mint** on a **stock** sui-fork aborts the
+fork process: the SDK enriches the tx's balance-changes via `GetCoinInfo`, which
+on the fork misses the (un-materialized) shared CoinRegistry `Currency` object and
 hits an unimplemented index `todo!()`. Until sui-fork fixes that, the live path
 needs the **patched** fork image. Full report + the patch:
 [`../scripts/spikes/devstack-funding/SUI-FORK-NOTES.md`](../scripts/spikes/devstack-funding/SUI-FORK-NOTES.md).
@@ -86,18 +126,23 @@ patched fork.
 pnpm install --ignore-workspace   # nested under sandbox/'s workspace
 pnpm test                         # unit tests (stubbed fork sdk.core); excludes *.e2e
 
-# E2E (boots a real fork via devstack's vitest harness) — requires Node >= 24,
-# Docker, and the patched fork image (the stock fork aborts; see above):
-FORK_IMAGE_CONTEXT="$PWD/../scripts/spikes/devstack-funding/.fork-patched/images" \
+# E2E (boots a real fork via devstack's vitest harness) — requires Node >= 24 +
+# Docker. The fixture defaults to the patched fork image (required — a stock fork
+# aborts; see above), so no env is needed. The FIRST run compiles sui-fork from
+# source (~12 min; cached after).
 pnpm test:e2e
+
+# Override the fork image build context if needed:
+# FORK_IMAGE_CONTEXT=/abs/path/to/images pnpm test:e2e
 ```
 
 `pnpm test:e2e` uses `@mysten-incubation/devstack/vitest`: a `globalSetup`
 (`__tests__/global-setup.ts`) boots + tears down the fork fixture stack
 (`__tests__/devstack.config.ts`), `__tests__/e2e-setup.ts` captures its manifest
-for `getStackContext()`, and the test confirms the boot then queries `alice`'s
-DEEP. `alice` is a fixed-keypair recipient (`__tests__/alice.ts`), so the test
-queries a deterministic address. It reaches the fork via its **direct host port**
+for `getStackContext()`, and the tests confirm the boot then query `alice`'s
+DEEP + USDC (the fixture funds her with both — one fork boot covers both plugins).
+`alice` is a fixed-keypair recipient (`__tests__/alice.ts`), so the tests query a
+deterministic address. They reach the fork via its **direct host port**
 (`docker port`) — the manifest's routed `*.localhost` URL isn't gRPC-reachable
 from the host.
 
