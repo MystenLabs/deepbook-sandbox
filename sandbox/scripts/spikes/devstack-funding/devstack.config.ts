@@ -27,11 +27,11 @@ import { deepFunding, TARGET_COIN_TYPE } from "./funding-plugin.ts";
 // FORK_IMAGE_CONTEXT=<abs .fork-patched/images> builds a patched fork
 // (get_coin_info -> Ok(None)) instead of relying on the prime.
 const forkImageContext = process.env.FORK_IMAGE_CONTEXT?.trim();
-// Build the fork binary from a sui rev whose protocol config supports current
-// mainnet (>= v126); passed to the patched Dockerfile as SUI_FORK_REV. devstack's
-// default rev (62ee6ada, max protocol v125) can't fork current mainnet. Override
-// via SUI_FORK_REV.
-const forkRev = process.env.SUI_FORK_REV ?? "8c1a5dbc40b12b91e5ce79f8f0e259c69f63269c";
+// Build the fork binary from a sui rev whose MAX_PROTOCOL_VERSION covers current
+// mainnet (protocol 128 as of 2026-07-08); passed to the patched Dockerfile as
+// SUI_FORK_REV. This rev (16f1402387, sui main) is protocol max 130; devstack's
+// default rev (62ee6ada, max v125) can't fork current mainnet. Override via SUI_FORK_REV.
+const forkRev = process.env.SUI_FORK_REV ?? "16f1402387c7ce0f9310e57610428efec930dbf4";
 const suiRef = sui({
     mode: "fork",
     upstream: "mainnet",

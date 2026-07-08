@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@mysten-incubation/devstack':
-        specifier: 0.3.0
-        version: 0.3.0(ioredis@5.11.1)(typescript@5.9.3)(vitest@4.1.9(@types/node@22.19.21)(vite@7.3.5(@types/node@22.19.21)(yaml@2.9.0)))
+        specifier: 0.7.0
+        version: 0.7.0(ioredis@5.11.1)(typescript@5.9.3)(vitest@4.1.9(@types/node@22.19.21)(vite@7.3.5(@types/node@22.19.21)(yaml@2.9.0)))
       '@mysten/sui':
         specifier: ^2.18.0
         version: 2.18.0(typescript@5.9.3)
@@ -345,8 +345,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@mysten-incubation/devstack@0.3.0':
-    resolution: {integrity: sha512-qtmf8vKty4dz/Z/X/O1d1VYH1F4E98jLKMxACOMVpcUrIYMg8kDwyIJP19Je6ckO5Q4AHfiPzfkqGR5fv3j9/Q==}
+  '@mysten-incubation/devstack@0.7.0':
+    resolution: {integrity: sha512-duy3+rlUNd7yES4vNYE0EpMVy0Gljnd0ulFe14pgxDfm+N7U5WXb60yZN81PIR0GGwUWjDS1zK5Q3YNXiFI9Hw==}
     engines: {node: '>=24.0.0'}
     hasBin: true
     peerDependencies:
@@ -378,6 +378,14 @@ packages:
 
   '@mysten/utils@0.4.0':
     resolution: {integrity: sha512-nHlXECBl9kE+AHF/aw5a7JVNizae8Kb71A4H18BV/sXd5/l2BaWNGWVatq05fzJo3hF78AWorDxa++1TgcBKWw==}
+
+  '@mysten/walrus-wasm@0.3.0':
+    resolution: {integrity: sha512-uuTbK4woj+R4bQILLcSxBJCy1rIL3EDELnA7jjWbC3Q9bsQZFzwEKOPVtei4DKb3nT7zeALD/ky24MkeUZyDNQ==}
+
+  '@mysten/walrus@1.2.3':
+    resolution: {integrity: sha512-0Kai5o9ymXCriHv+S0R4plTF1DDhg6AtqKykTzO4sNnzjfOOTWF1xKAUoFiKo9q7whguU/JRiYEKXNVfVCuMyQ==}
+    peerDependencies:
+      '@mysten/sui': ^2.20.1
 
   '@noble/curves@2.2.0':
     resolution: {integrity: sha512-T/BoHgFXirb0ENSPBquzX0rcjXeM6Lo892a2jlYJkqk83LqZx0l1Of7DzlKJ6jkpvMrkHSnAcgb5JegL8SeIkQ==}
@@ -734,6 +742,9 @@ packages:
   cross-inspect@1.0.1:
     resolution: {integrity: sha512-Pcw1JTvZLSJH83iiGWt6fRcT+BjZlCDRVwYLbUcHzv/CRpB7r0MlSrGbIyQvVSNyGnbt7G4AXuyCiDR3POvZ1A==}
     engines: {node: '>=16.0.0'}
+
+  dataloader@2.2.3:
+    resolution: {integrity: sha512-y2krtASINtPFS1rSDjacrFgn1dcUuoREVabwlOGOe4SdxenREqwjwjElAdwvbGM7kgZz9a3KVicWR7vcz8rnzA==}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -1566,12 +1577,13 @@ snapshots:
   '@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4':
     optional: true
 
-  '@mysten-incubation/devstack@0.3.0(ioredis@5.11.1)(typescript@5.9.3)(vitest@4.1.9(@types/node@22.19.21)(vite@7.3.5(@types/node@22.19.21)(yaml@2.9.0)))':
+  '@mysten-incubation/devstack@0.7.0(ioredis@5.11.1)(typescript@5.9.3)(vitest@4.1.9(@types/node@22.19.21)(vite@7.3.5(@types/node@22.19.21)(yaml@2.9.0)))':
     dependencies:
       '@effect/platform-node': 4.0.0-beta.65(effect@4.0.0-beta.65)(ioredis@5.11.1)
       '@mysten/codegen': 0.11.1
-      '@mysten/deepbook-v3': 1.5.0(@mysten/sui@2.18.0(typescript@5.9.3))
-      '@mysten/sui': 2.18.0(typescript@5.9.3)
+      '@mysten/deepbook-v3': 1.5.0(@mysten/sui@2.19.0(typescript@5.9.3))
+      '@mysten/sui': 2.19.0(typescript@5.9.3)
+      '@mysten/walrus': 1.2.3(@mysten/sui@2.19.0(typescript@5.9.3))
       '@pothos/core': 4.13.0(graphql@16.14.2)
       '@pothos/plugin-relay': 4.7.0(@pothos/core@4.13.0(graphql@16.14.2))(graphql@16.14.2)
       '@pothos/plugin-simple-objects': 4.1.3(@pothos/core@4.13.0(graphql@16.14.2))(graphql@16.14.2)
@@ -1617,10 +1629,10 @@ snapshots:
       - '@gql.tada/svelte-support'
       - '@gql.tada/vue-support'
 
-  '@mysten/deepbook-v3@1.5.0(@mysten/sui@2.18.0(typescript@5.9.3))':
+  '@mysten/deepbook-v3@1.5.0(@mysten/sui@2.19.0(typescript@5.9.3))':
     dependencies:
       '@mysten/bcs': 2.1.0
-      '@mysten/sui': 2.18.0(typescript@5.9.3)
+      '@mysten/sui': 2.19.0(typescript@5.9.3)
       '@noble/hashes': 2.2.0
       axios: 1.18.0
       axios-retry: 4.5.0(axios@1.18.0)
@@ -1629,6 +1641,28 @@ snapshots:
       - supports-color
 
   '@mysten/sui@2.18.0(typescript@5.9.3)':
+    dependencies:
+      '@graphql-typed-document-node/core': 3.2.0(graphql@16.14.2)
+      '@mysten/bcs': 2.1.0
+      '@mysten/utils': 0.4.0
+      '@noble/curves': 2.2.0
+      '@noble/hashes': 2.2.0
+      '@protobuf-ts/grpcweb-transport': 2.11.1
+      '@protobuf-ts/runtime': 2.11.1
+      '@protobuf-ts/runtime-rpc': 2.11.1
+      '@scure/base': 2.2.0
+      '@scure/bip32': 2.2.0
+      '@scure/bip39': 2.2.0
+      gql.tada: 1.11.2(graphql@16.14.2)(typescript@5.9.3)
+      graphql: 16.14.2
+      poseidon-lite: 0.2.1
+      valibot: 1.4.1(typescript@5.9.3)
+    transitivePeerDependencies:
+      - '@gql.tada/svelte-support'
+      - '@gql.tada/vue-support'
+      - typescript
+
+  '@mysten/sui@2.19.0(typescript@5.9.3)':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@16.14.2)
       '@mysten/bcs': 2.1.0
@@ -1675,6 +1709,16 @@ snapshots:
   '@mysten/utils@0.4.0':
     dependencies:
       '@scure/base': 2.2.0
+
+  '@mysten/walrus-wasm@0.3.0': {}
+
+  '@mysten/walrus@1.2.3(@mysten/sui@2.19.0(typescript@5.9.3))':
+    dependencies:
+      '@mysten/bcs': 2.1.0
+      '@mysten/sui': 2.19.0(typescript@5.9.3)
+      '@mysten/utils': 0.4.0
+      '@mysten/walrus-wasm': 0.3.0
+      dataloader: 2.2.3
 
   '@noble/curves@2.2.0':
     dependencies:
@@ -1990,6 +2034,8 @@ snapshots:
   cross-inspect@1.0.1:
     dependencies:
       tslib: 2.8.1
+
+  dataloader@2.2.3: {}
 
   debug@4.4.3:
     dependencies:

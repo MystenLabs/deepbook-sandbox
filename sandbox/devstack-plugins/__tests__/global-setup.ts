@@ -16,9 +16,9 @@ import { STACK_NAME } from "./stack.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 export default devstackVitestGlobalSetup({
-  configPath: join(HERE, "devstack.config.ts"),
-  stack: STACK_NAME,
-  // The FIRST run compiles sui-fork from source (~12 min); cached after. Allow
-  // for that so a cold machine/CI doesn't time out mid-build.
-  bootTimeoutMs: 1_020_000, // 17 min
+    configPath: join(HERE, "devstack.config.ts"),
+    stack: STACK_NAME,
+    // The FIRST run compiles sui-fork from source (~12 min); cached after. Allow
+    // for that so a cold machine/CI doesn't time out mid-build.
+    bootTimeoutMs: 1_500_000, // 25 min (cold sui-fork compile of a fresh rev)
 });

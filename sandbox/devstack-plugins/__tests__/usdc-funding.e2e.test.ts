@@ -10,7 +10,7 @@
 //
 // Requires Docker + Node >= 24. The fixture defaults to the PATCHED fork image —
 // minting USDC trips the same get_coin_info abort as DEEP on a stock fork (see
-// ../usdc-funding.ts); the first run builds it (~12 min).
+// ../usdc-funding.ts); the first run compiles sui-fork (~15-20 min; cached after).
 
 import { execSync } from "node:child_process";
 
@@ -25,35 +25,40 @@ import { STACK_NAME } from "./stack.ts";
 /** The fork's gRPC base URL via its direct host-mapped 9000 port (the manifest's
  *  routed *.localhost URL isn't gRPC-reachable from the host). */
 function forkRpcUrl(): string {
-  const ids = execSync(`docker ps -q --filter name=${STACK_NAME}-sui-fork`)
-    .toString()
-    .trim()
-    .split("\n")
-    .filter(Boolean);
-  if (ids.length === 0) {
-    throw new Error(`no running ${STACK_NAME}-sui-fork container — did global-setup boot the fork?`);
-  }
-  const mapped = execSync(`docker port ${ids[0]} 9000/tcp`).toString().trim().split("\n")[0];
-  const port = mapped.split(":").pop();
-  if (!port || !/^\d+$/.test(port)) {
-    throw new Error(`could not resolve fork host port from 'docker port' output: '${mapped}'`);
-  }
-  return `http://127.0.0.1:${port}`;
+    const ids = execSync(`docker ps -q --filter name=${STACK_NAME}-sui-fork`)
+        .toString()
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+    if (ids.length === 0) {
+        throw new Error(
+            `no running ${STACK_NAME}-sui-fork container — did global-setup boot the fork?`,
+        );
+    }
+    const mapped = execSync(`docker port ${ids[0]} 9000/tcp`).toString().trim().split("\n")[0];
+    const port = mapped.split(":").pop();
+    if (!port || !/^\d+$/.test(port)) {
+        throw new Error(`could not resolve fork host port from 'docker port' output: '${mapped}'`);
+    }
+    return `http://127.0.0.1:${port}`;
 }
 
 describe("usdc-funding e2e (patched fork)", () => {
-  it("funds alice with USDC via the impersonated master-minter mint", async () => {
-    const ctx = getStackContext();
-    if (!ctx) {
-      throw new Error(
-        "no devstack StackContext — global-setup did not boot the fork (run via `pnpm test:e2e`)",
-      );
-    }
+    it("funds alice with USDC via the impersonated master-minter mint", async () => {
+        const ctx = getStackContext();
+        if (!ctx) {
+            throw new Error(
+                "no devstack StackContext — global-setup did not boot the fork (run via `pnpm test:e2e`)",
+            );
+        }
 
-    const client = new SuiGrpcClient({ network: "mainnet", baseUrl: forkRpcUrl() });
-    const page = await client.core.listCoins({ owner: ALICE_ADDRESS, coinType: USDC_COIN_TYPE });
-    const total = page.objects.reduce((a, o) => a + BigInt(o.balance ?? 0), 0n);
+        const client = new SuiGrpcClient({ network: "mainnet", baseUrl: forkRpcUrl() });
+        const page = await client.core.listCoins({
+            owner: ALICE_ADDRESS,
+            coinType: USDC_COIN_TYPE,
+        });
+        const total = page.objects.reduce((a, o) => a + BigInt(o.balance ?? 0), 0n);
 
-    expect(total).toBeGreaterThanOrEqual(1_000_000_000n); // >= 1000 USDC (6 dp)
-  });
+        expect(total).toBeGreaterThanOrEqual(1_000_000_000n); // >= 1000 USDC (6 dp)
+    });
 });

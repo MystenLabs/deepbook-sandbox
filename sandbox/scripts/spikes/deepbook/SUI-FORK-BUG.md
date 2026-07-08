@@ -1,5 +1,23 @@
 # sui-fork bug report — stale shared-object version breaks dynamic-field (child) reads during execution
 
+> **✅ FIXED upstream (2026-06-19).** MystenLabs/sui PR
+> [#26966](https://github.com/MystenLabs/sui/pull/26966) — "[sui-fork] Fix child
+> object reads to support bounded versions" — adds bounded child-object reads
+> (`read_child_object` → `get_object_lt_or_eq_version`), resolving this panic.
+> Merged to `main` as `b124567746b3a78a7e294ac2de265f693401ec9d`. Our patched
+> fork image is built from a later `main` rev that includes it (`SUI_FORK_REV`,
+> currently `16f1402387`), so the DeepBook admin path works without a workaround.
+>
+> **Validated end-to-end (2026-06-22)** against a `sui-fork` built from `main`
+> (`1.75.0-cf371176`): `pool::create_pool_admin` on the mainnet DeepBook Registry
+> (the call that used to panic) now **executes successfully** via empty-sig
+> impersonation — `$kind=Transaction, status: success`, the fork process stays
+> alive, no `INVARIANT VIOLATION` / `read_child_object` panic in the log.
+>
+> (The _separate_ `get_coin_info` panic that blocks non-SUI coin funding is still
+> `todo!()` on `main` — see `../devstack-funding/SUI-FORK-NOTES.md`.) Report kept
+> for the record.
+
 ## Summary
 
 When executing a transaction that takes a **long-lived shared object whose `Versioned`/dynamic-field inner has been mutated since creation** as a mutable input, `sui-fork` loads the shared object at a **stale version** (its `initial_shared_version` / genesis state) instead of the version current at the fork checkpoint. Its dynamic-field child is then fetched at the child's _latest_ version, which is newer than the (stale) parent's Lamport bound. `DataStore::read_child_object` does not support bounded reads, so this raises a `STORAGE_ERROR`, and the executor aborts with an **INVARIANT VIOLATION panic** that kills the RPC handler (the client sees an `h2` stream reset).

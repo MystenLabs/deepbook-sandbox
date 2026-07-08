@@ -28,10 +28,10 @@ const DIST = resolve("node_modules/@mysten-incubation/devstack/dist");
 const { runStack } = await import(pathToFileURL(DIST + "/api/run-stack.mjs").href);
 
 const ctx = process.env.FORK_IMAGE_CONTEXT?.trim();
-// Build the fork binary from a sui rev whose protocol config supports current
-// mainnet (>= v126). `version` is passed to the patched Dockerfile as
-// SUI_FORK_REV (see devstack sui/mode/fork.mjs). Override via SUI_FORK_REV.
-const FORK_REV = process.env.SUI_FORK_REV ?? "8c1a5dbc40b12b91e5ce79f8f0e259c69f63269c";
+// Build the fork binary from a sui rev whose protocol config covers current
+// mainnet (protocol 128; this rev is max 130). `version` is passed to the patched
+// Dockerfile as SUI_FORK_REV (see devstack sui/mode/fork.mjs). Override via SUI_FORK_REV.
+const FORK_REV = process.env.SUI_FORK_REV ?? "16f1402387c7ce0f9310e57610428efec930dbf4";
 // Checkpoint pin no longer required (the binary supports current mainnet); kept
 // optional via FORK_CHECKPOINT for reproducibility / pre-upgrade state.
 const checkpoint = process.env.FORK_CHECKPOINT ? Number(process.env.FORK_CHECKPOINT) : undefined;

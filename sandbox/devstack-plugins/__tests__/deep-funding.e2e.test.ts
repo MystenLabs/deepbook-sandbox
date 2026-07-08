@@ -7,7 +7,7 @@
 //
 // Requires Docker + Node >= 24. The fixture defaults to the PATCHED fork image
 // (a STOCK sui-fork aborts on the DEEP transfer — the get_coin_info blocker; see
-// ../deep-funding.ts), so no env is needed; the first run builds it (~12 min).
+// ../deep-funding.ts), so no env is needed; the first run compiles sui-fork (~15-20 min; cached after).
 // The harness's global-setup.ts boots + tears down the stack; getStackContext()
 // confirms the boot. We query the fork via its DIRECT host-mapped port — the
 // manifest's routed `*.localhost` URL isn't gRPC-reachable from the host.

@@ -15,7 +15,7 @@
         "dashboard:up": "node scripts/dashboard-up.mjs"
     },
     "devDependencies": {
-        "@mysten-incubation/devstack": "0.3.0",
+        "@mysten-incubation/devstack": "0.7.0",
         "@mysten/sui": "^2.18.0",
         "@types/node": "^22",
         "effect": "4.0.0-beta.65",

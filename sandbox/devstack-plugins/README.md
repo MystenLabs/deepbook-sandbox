@@ -38,7 +38,7 @@ How it works:
   contributed imperatively via `ctx.provides({ kind: "strategy-contributor", … })`
   (`PluginContext`, inside `start`) under a `coinType:<fullType>` key, at
   **priority 1** (the built-in `coin.known` mint strategy sits at 0 — wrong for
-  fixed-supply DEEP — and ours wins). Targets `@mysten-incubation/devstack@0.3.0`.
+  fixed-supply DEEP — and ours wins). Targets `@mysten-incubation/devstack@0.7.0`.
 - **Body** — impersonation: no signing (the whale has no key) and no SDK gas
   auto-select. A mainnet fork lazily materializes objects on direct-by-id access
   (`getObject`) but does **not** build an owner→coins index, so
@@ -68,6 +68,7 @@ ceiling — only a per-request cap. `usdcFundingFromCapOwner({ sui, minter })`
 contributes a `coinType:<USDC>` strategy that mints native USDC on the fork.
 
 How it works:
+
 - **Regulated coin** — native USDC's `TreasuryCap<USDC>` is **not** address-owned;
   it lives under a shared `Treasury<USDC>` gated by a controller → minter
   allowlist, so `coin::mint` doesn't work. Minting goes through the stablecoin
@@ -76,7 +77,7 @@ How it works:
   per fork: `configure_new_controller` + `configure_minter` mints a `MintCap`
   (discovered from the tx's `changedObjects`; reuse a known id via
   `USDC_MINT_CAP_ID`). Per request: `treasury::mint(treasury, mintCap, denyList,
-  amount, recipient)`.
+amount, recipient)`.
 - **Sponsored gas** — the master-minter holds no SUI on the fork, so every tx is
   sponsored: sender = master-minter, gas owner = a SUI donor (the DEEP whale,
   resolved by known coin id — the fork can't enumerate coins). All minter txs are
@@ -129,7 +130,7 @@ pnpm test                         # unit tests (stubbed fork sdk.core); excludes
 # E2E (boots a real fork via devstack's vitest harness) — requires Node >= 24 +
 # Docker. The fixture defaults to the patched fork image (required — a stock fork
 # aborts; see above), so no env is needed. The FIRST run compiles sui-fork from
-# source (~12 min; cached after).
+# source (~15-20 min; cached after — CI should prebuild the image).
 pnpm test:e2e
 
 # Override the fork image build context if needed:
