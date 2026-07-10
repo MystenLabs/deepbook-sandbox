@@ -189,7 +189,9 @@ Test files live in `sandbox/scripts/__tests__/**/*.integration.test.ts`. Vitest 
 
 **Key pattern — localnet key handling:** On localnet, `deploy-all.ts` always reads the container-generated key (from `deployments/.sui-keystore`) and calls `importKeyToHostCli()` to configure the host `sui` CLI. The `.env` `PRIVATE_KEY` is only a placeholder for `docker-compose.yml` variable validation (`${PRIVATE_KEY:?...}`). Tests that write a seed `.env` should include a placeholder `PRIVATE_KEY` but must not expect `deploy-all.ts` to use it — the container key always takes precedence on localnet.
 
-**CI workflow:** `.github/workflows/integration-tests.yml` runs both test suites in a matrix (parallel runners). Triggers on PRs/pushes that touch `sandbox/` or `external/deepbook/`, plus `workflow_dispatch`. The `sui` CLI is extracted from the `mysten/sui-tools:compat` Docker image to match the localnet container version. On failure, Docker logs are uploaded as artifacts.
+**CI workflow:** `.github/workflows/integration-tests.yml` runs both test suites in a matrix (parallel runners). Triggers on PRs/pushes that touch `sandbox/` or `external/deepbook/`, plus `workflow_dispatch`. The `sui` CLI is extracted from the pinned `SUI_TOOLS_IMAGE` Docker image to match the localnet container version. On failure, Docker logs are uploaded as artifacts.
+
+**Key pattern — pinned sui-tools image:** `SUI_TOOLS_IMAGE` is pinned to a released tag (`testnet-v1.75.1`) in the CI workflow env, `defaultSuiToolsImage()` in `sandbox/scripts/utils/keygen.ts`, `sandbox/.env.example`, and several docs (docker-compose.yml comments, READMEs). When bumping the pin, `grep -r "sui-tools:"` and update every reference. Never use the moving `compat`/`compat-arm64` tags — they track sui main and have broken CI before (sui 1.76 made the embedded rpc-store index asynchronous, which crash-loops `sui start --with-faucet` at startup; SEDEFI-348). When bumping the pin, verify the faucet comes up: run the image with `sui start --with-faucet --force-regenesis` and curl `http://127.0.0.1:9123/v1/status`.
 
 ## Oracle Service
 

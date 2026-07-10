@@ -113,7 +113,7 @@ pnpm down
 
 When you run `pnpm deploy-all`, here's the full sequence:
 
-1. **Env bootstrap** — If `SUI_TOOLS_IMAGE` is missing, it's auto-detected based on CPU architecture (`mysten/sui-tools:compat-arm64` for Apple Silicon, `mysten/sui-tools:compat` for Intel/AMD). If `PRIVATE_KEY` is missing, a placeholder keypair is generated so `docker-compose.yml` can parse its variable validation.
+1. **Env bootstrap** — If `SUI_TOOLS_IMAGE` is missing, it's auto-detected based on CPU architecture (`mysten/sui-tools:testnet-v1.75.1-arm64` for Apple Silicon, `mysten/sui-tools:testnet-v1.75.1` for Intel/AMD). If `PRIVATE_KEY` is missing, a placeholder keypair is generated so `docker-compose.yml` can parse its variable validation.
 2. **Docker compose up** — Starts `sui-localnet` and `postgres` containers. The Sui container generates a fresh Ed25519 keypair, copies the keystore to `deployments/.sui-keystore`, and launches the node with `--force-regenesis` and `--with-faucet`.
 3. **RPC polling** — The script polls `http://127.0.0.1:9000` every 2 seconds until the node responds (up to 60 attempts), then polls the faucet at port 9123.
 4. **Key import** — Reads the container's keypair from the shared keystore file, imports it into your host `sui` CLI with `sui keytool import`, creates a `localnet` environment pointing at `http://127.0.0.1:9000`, and switches to it.
@@ -374,7 +374,7 @@ All variables from `sandbox/.env.example`. For localnet, you don't need to set a
 
 | Variable                    | Required                        | Default                                            | Description                                                               |
 | --------------------------- | ------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------- |
-| `SUI_TOOLS_IMAGE`           | No (auto-detected)              | `mysten/sui-tools:compat[-arm64]`                  | Docker image for Sui node; auto-detected from CPU architecture            |
+| `SUI_TOOLS_IMAGE`           | No (auto-detected)              | `mysten/sui-tools:testnet-v1.75.1[-arm64]`         | Docker image for Sui node; auto-detected from CPU architecture            |
 | `PRIVATE_KEY`               | No (auto-generated on localnet) | —                                                  | Deployer/signer private key (`suiprivkey1...` or `0x...` hex)             |
 | `ORACLE_PRIVATE_KEY`        | No (auto-generated)             | —                                                  | Dedicated oracle service keypair                                          |
 | `RPC_URL`                   | No                              | auto-detected                                      | Sui RPC endpoint override                                                 |

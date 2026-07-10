@@ -77,7 +77,15 @@ export function importKeyToHostCli(privateKey: string, address: string): void {
 
 /**
  * Auto-detect the SUI_TOOLS_IMAGE based on CPU architecture.
+ *
+ * Pinned to a released tag rather than the moving `compat`/`compat-arm64` tags:
+ * those are rebuilt from sui main, and sui 1.76 broke `sui start --with-faucet`
+ * (the faucet races the now-async embedded rpc-store index at startup and the
+ * process crash-loops — SEDEFI-348). Keep in sync with SUI_TOOLS_IMAGE in
+ * .github/workflows/integration-tests.yml.
  */
 export function defaultSuiToolsImage(): string {
-    return process.arch === "arm64" ? "mysten/sui-tools:compat-arm64" : "mysten/sui-tools:compat";
+    return process.arch === "arm64"
+        ? "mysten/sui-tools:testnet-v1.75.1-arm64"
+        : "mysten/sui-tools:testnet-v1.75.1";
 }
