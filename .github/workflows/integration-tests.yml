@@ -19,7 +19,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SUI_TOOLS_IMAGE: mysten/sui-tools:compat
+  # Pinned (not `compat`): the compat tag is rebuilt from sui main and broke CI
+  # when sui 1.76 made the embedded rpc-store index async — `sui start --with-faucet`
+  # races it at startup and crash-loops (SEDEFI-348). Keep in sync with
+  # defaultSuiToolsImage() in sandbox/scripts/utils/keygen.ts.
+  SUI_TOOLS_IMAGE: mysten/sui-tools:testnet-v1.75.1
   INDEXER_IMAGE: mysten/deepbookv3-sandbox-indexer:794efb1c54ee5cc4f0f367233a4e70818aa0defb
   SERVER_IMAGE: mysten/deepbookv3-server:794efb1c54ee5cc4f0f367233a4e70818aa0defb
 

@@ -43,6 +43,7 @@ import { readContainerKey, importKeyToHostCli, defaultSuiToolsImage } from "../u
 import { setupPythOracles, type PythOracleIds } from "../utils/oracle";
 import { PoolCreator, type PoolEntry, type MarginPoolsResult } from "../utils/pool";
 import { expectValidSuiId, waitForUrl, expectContainerRunning } from "./helpers/assertions";
+import { captureDockerDiagnostics } from "./helpers/docker-diagnostics";
 
 // ---------------------------------------------------------------------------
 // Resolve paths — avoid importing config.ts (has dotenv/config side effect)
@@ -513,6 +514,10 @@ describe("deploy-all pipeline (localnet)", () => {
     // Cleanup
     // ----------------------------------------------------------------
     afterAll(async () => {
+        // Capture logs BEFORE teardown — CI's diagnostics step runs after
+        // vitest exits, when containers are already gone
+        captureDockerDiagnostics("deploy-pipeline", SANDBOX_ROOT);
+
         // Tear down containers
         cleanupLocalnet(SANDBOX_ROOT);
 

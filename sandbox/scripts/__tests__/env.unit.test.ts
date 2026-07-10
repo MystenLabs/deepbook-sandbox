@@ -27,7 +27,7 @@ describe("env utility tests", () => {
 
     /** Helper: builds .env content with all required keys populated. */
     function requiredBlock(): string {
-        return "PRIVATE_KEY=0xabc123\nSUI_TOOLS_IMAGE=mysten/sui-tools:compat\n";
+        return "PRIVATE_KEY=0xabc123\nSUI_TOOLS_IMAGE=mysten/sui-tools:testnet-v1.75.1\n";
     }
 
     describe("cleanEnvFile", () => {
@@ -66,7 +66,7 @@ describe("env utility tests", () => {
         it("handles values with special characters (= in URLs, spaces, quotes)", async () => {
             const lines = [
                 "PRIVATE_KEY=suiprivkey1abc123==",
-                "SUI_TOOLS_IMAGE=mysten/sui-tools:compat",
+                "SUI_TOOLS_IMAGE=mysten/sui-tools:testnet-v1.75.1",
                 "DB_URL=postgres://user:pass@host:5432/db?sslmode=require",
                 'QUOTED="hello world"',
                 "SPACED=some value with spaces",
@@ -216,7 +216,7 @@ describe("env utility tests", () => {
                 "",
                 "# User keys",
                 "PRIVATE_KEY=suiprivkey1abc",
-                "SUI_TOOLS_IMAGE=mysten/sui-tools:compat",
+                "SUI_TOOLS_IMAGE=mysten/sui-tools:testnet-v1.75.1",
                 "MM_SPREAD_BPS=10",
                 "MM_LEVELS_PER_SIDE=5",
                 "RUST_LOG=info",
@@ -242,7 +242,7 @@ describe("env utility tests", () => {
 
             // User keys preserved
             expect(result).toContain("PRIVATE_KEY=suiprivkey1abc");
-            expect(result).toContain("SUI_TOOLS_IMAGE=mysten/sui-tools:compat");
+            expect(result).toContain("SUI_TOOLS_IMAGE=mysten/sui-tools:testnet-v1.75.1");
             expect(result).toContain("MM_SPREAD_BPS=10");
             expect(result).toContain("MM_LEVELS_PER_SIDE=5");
             expect(result).toContain("RUST_LOG=info");

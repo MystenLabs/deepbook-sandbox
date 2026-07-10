@@ -29,6 +29,7 @@ import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 
 import { defaultSuiToolsImage } from "../utils/keygen";
 import { expectValidSuiId, waitForUrl } from "./helpers/assertions";
+import { captureDockerDiagnostics } from "./helpers/docker-diagnostics";
 
 // ---------------------------------------------------------------------------
 // Resolve paths — avoid importing config.ts (has dotenv/config side effect)
@@ -386,6 +387,10 @@ describe("deploy-all E2E (subprocess)", () => {
     // Cleanup
     // ----------------------------------------------------------------
     afterAll(async () => {
+        // Capture logs BEFORE teardown — CI's diagnostics step runs after
+        // vitest exits, when containers are already gone
+        captureDockerDiagnostics("deploy-all-e2e", SANDBOX_ROOT);
+
         // Tear down containers
         cleanupLocalnet(SANDBOX_ROOT);
 

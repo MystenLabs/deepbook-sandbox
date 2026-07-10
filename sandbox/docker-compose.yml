@@ -8,9 +8,10 @@
 #   View logs:
 #     docker compose logs -f
 #
-# Set SUI_TOOLS_IMAGE in .env based on your CPU:
-#   - ARM64 (Apple Silicon): SUI_TOOLS_IMAGE=mysten/sui-tools:mainnet-v1.63.3-arm64
-#   - x86_64 (Intel/AMD):    SUI_TOOLS_IMAGE=mysten/sui-tools:mainnet-v1.63.3
+# Set SUI_TOOLS_IMAGE in .env based on your CPU (use a pinned release tag, not
+# the moving `compat` tags — see defaultSuiToolsImage() in scripts/utils/keygen.ts):
+#   - ARM64 (Apple Silicon): SUI_TOOLS_IMAGE=mysten/sui-tools:testnet-v1.75.1-arm64
+#   - x86_64 (Intel/AMD):    SUI_TOOLS_IMAGE=mysten/sui-tools:testnet-v1.75.1
 
 networks:
   deepbook-net:
@@ -64,7 +65,7 @@ services:
   # Dumps checkpoints to shared volume for the indexer
   # ============================================================
   sui-localnet:
-    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:mainnet-v1.63.3-arm64 (ARM) or mysten/sui-tools:mainnet-v1.63.3 (x86)}
+    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:testnet-v1.75.1-arm64 (ARM) or mysten/sui-tools:testnet-v1.75.1 (x86)}
     container_name: sui-localnet
     profiles:
       - localnet
