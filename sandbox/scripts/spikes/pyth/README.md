@@ -4,8 +4,8 @@ This spike validates that the deepbook-sandbox can replace its mock `pyth::pyth`
 
 ## Backlog tickets
 
-- **DBSF-005** — Adopt this POC into the repo (✅ this folder).
-- **DBSF-004** — Use the script here as the reference for the `advance-clock` + Pyth update integration spike.
+- **DBSF-005** — Adopt this POC into the repo (✅ this folder; files `problem.md`, `codex-execution-plan.md`, `build-pyth-suiusd-fork-tx.mjs`).
+- **DBSF-004** — `advance-clock` + Pyth update integration (✅ `advance-clock-and-update-pyth.mjs`). Builds on DBSF-005 to validate the clock-drift fix that makes mainnet's 60-second freshness contract work on the fork.
 
 ## Why this works
 
@@ -15,11 +15,24 @@ See `problem.md` for the longer write-up.
 
 ## Files
 
-| File                            | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `problem.md`                    | Research notes — establishes the "VAAs are not chain-bound" insight, the high-level Hermes → PTB → fork flow, and the two practical gotchas (clock drift, guardian rotation). No code.                                                                                                                                                                                                                                                                                                                                                                            |
-| `codex-execution-plan.md`       | Operational recipe — locks down the specific mainnet object IDs (Pyth State, Wormhole State, package IDs, SUI/USD `PriceInfoObject`, feed ID), the whale address to impersonate, the 8-step sequence to run the POC, and the critical implementation details that aren't obvious from Pyth's docs (e.g. that `create_authenticated_price_infos_using_accumulator` takes the _full accumulator message bytes_ and a _separately-verified_ VAA, not `WormholeState`). Includes refresh commands for re-fetching the IDs if Pyth or Wormhole upgrade their packages. |
-| `build-pyth-suiusd-fork-tx.mjs` | The working implementation (~220 lines). Fetches the accumulator update from `hermes.pyth.network/v2/updates/price/latest`, parses out the embedded VAA bytes, builds the PTB with `parse_and_verify` → `create_authenticated_price_infos_using_accumulator` → `splitCoins` (1 MIST fee) → `update_single_price_feed` → `hot_potato_vector::destroy`, serializes unsigned, and submits via `sui client execute-signed-tx` for empty-sig impersonation.                                                                                                            |
+| File                                | Ticket   | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `problem.md`                        | DBSF-005 | Research notes — establishes the "VAAs are not chain-bound" insight, the high-level Hermes → PTB → fork flow, and the two practical gotchas (clock drift, guardian rotation). No code.                                                                                                                                                                                                                                                                                                                                                                            |
+| `codex-execution-plan.md`           | DBSF-005 | Operational recipe — locks down the specific mainnet object IDs (Pyth State, Wormhole State, package IDs, SUI/USD `PriceInfoObject`, feed ID), the whale address to impersonate, the 8-step sequence to run the POC, and the critical implementation details that aren't obvious from Pyth's docs (e.g. that `create_authenticated_price_infos_using_accumulator` takes the _full accumulator message bytes_ and a _separately-verified_ VAA, not `WormholeState`). Includes refresh commands for re-fetching the IDs if Pyth or Wormhole upgrade their packages. |
+| `build-pyth-suiusd-fork-tx.mjs`     | DBSF-005 | Stefan's working implementation (~220 lines). Fetches the accumulator update from `hermes.pyth.network/v2/updates/price/latest`, parses out the embedded VAA bytes, builds the PTB with `parse_and_verify` → `create_authenticated_price_infos_using_accumulator` → `splitCoins` (1 MIST fee) → `update_single_price_feed` → `hot_potato_vector::destroy`, serializes unsigned, and submits via `sui client execute-signed-tx` for empty-sig impersonation.                                                                                                       |
+| `advance-clock-and-update-pyth.mjs` | DBSF-004 | Orchestration spike that wraps the same Pyth update flow with a `sui-fork advance-clock` pre-step. Reads current Clock via `sui-fork --json status`, fetches Hermes, computes the delta to bring Clock up to `publish_time`, advances the fork, submits the update, then runs a verification PTB calling `pyth::get_price_no_older_than(price_info, clock, 60)` to confirm the 60-second freshness check passes without the 3600s relaxation Stefan's POC needed. This is the reference loop the production oracle-service (DBSF-013) will run on a timer.        |
+
+## The three-step tick (DBSF-004 reference loop)
+
+The new oracle-service (DBSF-013) will run this loop on a timer. The spike script `advance-clock-and-update-pyth.mjs` is the runnable reference.
+
+1. **Read current Clock.** `sui-fork --json status` returns `timestamp_ms` for the fork's on-chain `Clock` object.
+2. **Fetch the latest Hermes update** for the target feed. The response carries both the accumulator binary (for the PTB) and the `publish_time` (in seconds, in `parsed[0].price.publish_time` — request with `parsed=true` to get it). Convert to ms.
+3. **Compute the delta**: `target = publish_time_ms + slack ; delta = max(0, target - clock_now)`. If `delta > 0`, call `sui-fork advance-clock --duration-ms <delta>`. This atomically bumps `Clock` and seals a new checkpoint with the matching `timestamp_ms` (verified against `src/rpc/forking_service.rs`). After the call, `Clock.now ≈ publish_time`.
+4. **Submit the Pyth update PTB.** Same five-call PTB as Stefan's POC — `parse_and_verify` → `create_authenticated_price_infos_using_accumulator` → `splitCoins` for the 1-MIST fee → `update_single_price_feed` → `hot_potato_vector::destroy`. Empty-sig impersonation as the configured whale.
+5. **(Verification in the spike, not in production)** Submit a one-call PTB invoking `pyth::get_price_no_older_than(price_info, clock, 60)`. If it succeeds, the 60s freshness check passed and the clock-drift fix is doing its job. Without the advance-clock pre-step, this exact call aborts on `check_price_is_fresh` — that's the failure mode Stefan documented in the original POC results below.
+
+The mitigation preserves mainnet's real 60-second freshness contract end-to-end, so DeepBook integration tests run with the same `max_age` mainnet uses instead of a relaxed sandbox-only value.
 
 ## Original POC results (2026-05-14, validated by Stefan)
 
@@ -45,6 +58,8 @@ sui-fork start \
   --address 0xb4f42571101827758f55a9b998a1251892402fbd4dce90da3373625298091627
 ```
 
+The `--address` seed is optional for `advance-clock-and-update-pyth.mjs` — its `run` mode auto-funds the sender (see the gas note below). It still matters for the original POC script (`build-pyth-suiusd-fork-tx.mjs`), which doesn't auto-fund.
+
 In another terminal, point the Sui CLI at the fork:
 
 ```bash
@@ -52,7 +67,7 @@ sui client new-env --alias local-fork --rpc http://127.0.0.1:9000
 sui client switch --env local-fork
 ```
 
-### Run the script
+### Run the original POC script (DBSF-005)
 
 ```bash
 cd sandbox/scripts/spikes/pyth
@@ -66,6 +81,39 @@ node build-pyth-suiusd-fork-tx.mjs ptb-args
 # Build + submit via execute-signed-tx in one shot:
 node build-pyth-suiusd-fork-tx.mjs submit
 ```
+
+### Run the orchestration spike (DBSF-004)
+
+```bash
+cd sandbox/scripts/spikes/pyth
+
+# Dry-run: show current clock, fetched publish_time, and the
+# advance-clock delta the script would apply. No transactions submitted.
+node advance-clock-and-update-pyth.mjs inspect
+
+# Full run: status → Hermes fetch → advance-clock → submit Pyth
+# update → verify with get_price_no_older_than(clock, 60).
+node advance-clock-and-update-pyth.mjs run
+```
+
+`run` mode logs each step to stderr as a JSON line so you can pipe the script through `| jq` for structured progress. The final result (success or the abort reason) is written to stdout.
+
+**Gas is automatic.** The impersonated `SENDER` holds no enumerable SUI on a fresh fork, so PTB gas auto-selection would fail with "Cannot find gas coin". `run` funds the sender 1 SUI from the donor whale (referenced by id) before submitting; pass `SENDER_GAS_COIN` to use an existing coin instead. (`inspect` submits nothing, so it never funds.)
+
+**Validated 2026-06-11 on a plain fresh fork** (no `--object` seeding): Clock advanced 53s to match a Hermes VAA, `update_single_price_feed` landed (`status: success`), and the `get_price_no_older_than(price_info, clock, 60)` verify **passed at 60s**. Unlike the DeepBook Registry (see `../deepbook/SUI-FORK-BUG.md`), the Pyth/Wormhole shared objects did **not** trip sui-fork's stale-shared-object / bounded-read bug, so no seeding is needed here. If a future run _does_ hit that panic (`h2` stream reset, `read_child_object does not yet support bounded reads`), seed the relevant shared object with `--object` per that bug report.
+
+Additional env vars beyond the table below specific to this script:
+
+| Env var                  | Default                                                              | What it does                                                                                                                                            |
+| ------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUI_FORK_BIN`           | _(unset — falls back to `sui-fork` on `PATH`; errors if not found)_  | Path to the sui-fork binary.                                                                                                                            |
+| `FORK_RPC_URL`           | `http://127.0.0.1:9000`                                              | RPC addr passed to `sui-fork status` / `advance-clock`. Point it at your fork's `--rpc-addr`.                                                           |
+| `MAX_AGE_SECS`           | `60`                                                                 | Freshness window for the verification PTB. The whole point of the spike is to make `60` succeed.                                                        |
+| `ADVANCE_CLOCK_SLACK_MS` | `100`                                                                | Small safety margin added to the delta so `Clock.now` ends up slightly ahead of `publish_time` — keeps the freshness check robust against any rounding. |
+| `SENDER_GAS_COIN`        | _(unset — `run` auto-funds the sender from the donor if not given)_  | Explicit SUI gas coin owned by `SENDER`.                                                                                                                |
+| `SUI_DONOR`              | `0x9548232f9cebbc1eec56cfb25b99f61e17924b4908248c260c8d70100c59c70d` | SUI source that funds the gas-less sender.                                                                                                              |
+| `SUI_DONOR_GAS_COIN`     | `0xc866352dd2574aa14752dd09afca89cd993f573c59218ff278c3dafbd24ca714` | A SUI coin owned by `SUI_DONOR`, referenced by id (a fresh fork can't enumerate it).                                                                    |
+| `FUND_AMOUNT`            | `1000000000`                                                         | MIST sent to the sender for gas (1 SUI).                                                                                                                |
 
 The script accepts these env vars for retargeting (defaults are the verified mainnet 2026-05-14 values):
 
@@ -100,8 +148,7 @@ If you get `pyth::check_price_is_fresh` aborted with code 3 at `max_age = 60`, t
 
 The script is feed-agnostic. Flip `PYTH_FEED_ID` and `PRICE_INFO_OBJECT_ID` env vars to update other feeds. DEEP/USD and USDC/USD `PriceInfoObject` IDs are resolved as part of DBSF-012 and will be wired in here when known.
 
-## What to do after this spike passes
+## What to do after these spikes pass
 
-- Update the migration plan's §4 with any new mainnet object IDs or refinements.
-- Move to DBSF-004 (advance-clock integration) — extend the script or write a sibling that adds the `sui-fork advance-clock --duration-ms <delta>` step before submission.
-- The production version of this loop lands in `sandbox/scripts/oracle-service/` under DBSF-013.
+- Update the migration plan's §4 with any new mainnet object IDs, refinements, or surprises uncovered while running against a fresh fork.
+- The production version of the orchestration loop lands in `sandbox/scripts/oracle-service/` under DBSF-013 — generalized for SUI/DEEP/USDC feeds, with a polling timer instead of the single-shot `run` mode here.
