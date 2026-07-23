@@ -1,0 +1,7 @@
+node_modules/
+.devstack/
+.DS_Store
+# devstack codegen output (regenerated on `devstack up`)
+src/generated/
+# patched sui-fork image build context (validation artifact; see SUI-FORK-NOTES.md)
+.fork-patched/
