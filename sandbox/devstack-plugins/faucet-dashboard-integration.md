@@ -59,10 +59,11 @@ The plugin also publishes `remainingDeep` (a best-effort donor balance) for a
    mutation), for backward compatibility with builders/scripts pointing at the
    legacy endpoint. Retire it entirely only if no legacy consumers remain — final
    call when the proxy target exists.
-3. **Remaining-balance indicator** — surface `remainingDeep`. Caveat: on a fork
-   it reads `0` (the coin registry is unavailable for `getBalance`; see
-   `deep-funding.ts`), so it may need a `getObject`-based read of the donor coin
-   instead.
+3. **Remaining-balance indicator** — surface `remainingDeep`. It reads the
+   donor's funding-source coin by known id (`getObject` with
+   `include: { json: true }` — see `deep-funding.ts`), which works on the fork
+   and decrements as sessions draw; it falls back to `0` only if the coin is
+   missing/unreadable.
 
 ## Deferred work (runtime-composition / infra-swap phase)
 

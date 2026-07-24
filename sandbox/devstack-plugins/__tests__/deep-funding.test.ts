@@ -7,7 +7,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { Effect } from "effect";
 import { TransactionDataBuilder } from "@mysten/sui/transactions";
-import { deepFundingStrategy, DEEP_COIN_TYPE, type ForkCore } from "../deep-funding.ts";
+import {
+    coinBalanceFromJson,
+    deepFundingStrategy,
+    DEEP_COIN_TYPE,
+    type ForkCore,
+} from "../deep-funding.ts";
 
 const DONOR = "0x9548232f9cebbc1eec56cfb25b99f61e17924b4908248c260c8d70100c59c70d";
 const ALICE = "0xf53dc99e086af5405d3afd113396a351144256175ba3e8a748135ba6ab2384da";
@@ -226,5 +231,26 @@ describe("deepFundingStrategy", () => {
         const e = await failureOf(strategy.request({ address: ALICE, amount: deep(1_000) }));
         expect(e._tag).toBe("FaucetBodyError");
         expect(e.message).toMatch(/fork mode/);
+    });
+});
+
+// The Coin JSON shape varies across API implementations (the SDK's own type doc
+// says so) — the parser must accept the known renderings and fail soft to 0n.
+describe("coinBalanceFromJson", () => {
+    it("parses balance as a string or number", () => {
+        expect(coinBalanceFromJson({ balance: "4500000000000000" })).toBe(4_500_000_000_000_000n);
+        expect(coinBalanceFromJson({ balance: 1234 })).toBe(1234n);
+    });
+
+    it("parses balance as { value }", () => {
+        expect(coinBalanceFromJson({ balance: { value: "999" } })).toBe(999n);
+    });
+
+    it("returns 0n on missing or malformed shapes", () => {
+        expect(coinBalanceFromJson(undefined)).toBe(0n);
+        expect(coinBalanceFromJson(null)).toBe(0n);
+        expect(coinBalanceFromJson({})).toBe(0n);
+        expect(coinBalanceFromJson({ balance: { wrong: true } })).toBe(0n);
+        expect(coinBalanceFromJson({ balance: "not-a-number" })).toBe(0n);
     });
 });
