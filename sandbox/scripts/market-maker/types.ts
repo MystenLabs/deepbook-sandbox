@@ -63,6 +63,8 @@ export interface DeploymentManifest {
     pools: PoolConfig[];
     deploymentTime: string;
     deployerAddress: string;
+    /** Mainnet DEEP donor impersonated on a fork; see deployments/fork-impersonation.md. */
+    deepDonorAddress?: string;
 }
 
 export interface GridLevel {

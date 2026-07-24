@@ -1,12 +1,15 @@
-// DBSF-031 — custom non-SUI coinType funding strategy plugin.
+// Devstack funding-strategy spike — custom non-SUI coinType funding strategy plugin.
 //
 // The load-bearing finding (two parts):
 //
 //  1. CONTRIBUTION. `defineFaucetStrategy` is SUI-only, so a non-SUI coin
-//     funding strategy is contributed via the generic `strategyContributor`
-//     under a `coinType:<fullCoinType>` capability key, wrapping an
-//     `AccountFundingStrategy`. This is the exact shape DEEP (DBSF-007) and
-//     USDC (DBSF-010) will follow — only the `request` body differs.
+//     funding strategy is contributed imperatively via
+//     `ctx.provides({ kind: 'strategy-contributor', ... })` (the `PluginContext`
+//     service, inside `start`) under a `coinType:<fullCoinType>` capability key,
+//     wrapping an `AccountFundingStrategy`. (devstack 0.3.0 replaced the older
+//     static `capabilities` array + `strategyContributor()` helper with this.)
+//     This is the exact shape the DEEP funding-strategy plugin and the USDC
+//     funding-strategy plugin follow — only the `request` body differs.
 //
 //  2. BODY. On a forked mainnet the body CANNOT sign (the impersonated whale
 //     has no key) and CANNOT let the SDK auto-select gas. devstack's own fork
@@ -40,7 +43,7 @@ import { Transaction, TransactionDataBuilder } from "@mysten/sui/transactions";
 import { Effect } from "effect";
 import {
     definePlugin,
-    strategyContributor,
+    PluginContext,
     sui,
     type AccountFundingStrategy,
 } from "@mysten-incubation/devstack";
@@ -49,7 +52,8 @@ import {
 export const TARGET_COIN_TYPE =
     "0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270::deep::DEEP";
 
-// Mainnet DEEP whale we impersonate as the funding source (the DBSF-001 donor).
+// Mainnet DEEP whale we impersonate as the funding source (the donor from the
+// DEEP whale-transfer spike).
 const WHALE = "0x9548232f9cebbc1eec56cfb25b99f61e17924b4908248c260c8d70100c59c70d";
 
 type ObjectRef = { objectId: string; version: string; digest: string };
@@ -182,8 +186,9 @@ function deepWhaleStrategy(suiValue: SuiForkValue): AccountFundingStrategy {
                 }
                 const core = suiValue.sdk.core;
 
-                // DBSF-001 PTB: split `amount` off the whale's DEEP coin (a concrete
-                // ref), send it to the recipient. Gas is the whale's SUI coin, also by ref.
+                // DEEP whale-transfer PTB: split `amount` off the whale's DEEP coin (a
+                // concrete ref), send it to the recipient. Gas is the whale's SUI coin,
+                // also by ref.
                 const tx = new Transaction();
                 const [chunk] = tx.splitCoins(tx.objectRef(DEEP_SOURCE_COIN), [
                     tx.pure.u64(amount),
@@ -236,18 +241,23 @@ export function deepFunding(suiRef: ReturnType<typeof sui>) {
         id: "deep-funding",
         role: "service",
         dependsOn: { sui: suiRef },
-        start: (deps) => Effect.succeed({ sui: deps.sui }),
-        capabilities: ({ value }) => [
-            strategyContributor({
-                // The key the account-funding pass dispatches `{ coin: DEEP, amount }` to.
-                // Built-in coin.* plugins contribute the same key at priority 0 (a
-                // mint-backed strategy, wrong for fixed-supply DEEP); ours wins at 1.
-                capabilityKey: `coinType:${TARGET_COIN_TYPE}`,
-                strategy: deepWhaleStrategy(value.sui as unknown as SuiForkValue),
-                autoMounted: false,
-                priority: 1,
+        start: (deps) =>
+            Effect.gen(function* () {
+                const ctx = yield* PluginContext;
+                // devstack 0.3.0 replaced the static `capabilities` array +
+                // `strategyContributor()` helper with the imperative `ctx.provides(...)`.
+                // The key the account-funding pass dispatches `{ coin: DEEP, amount }` to;
+                // built-in coin.* contribute the same key at priority 0 (mint-backed,
+                // wrong for fixed-supply DEEP), so ours wins at 1.
+                ctx.provides({
+                    kind: "strategy-contributor",
+                    capabilityKey: `coinType:${TARGET_COIN_TYPE}`,
+                    strategy: deepWhaleStrategy(deps.sui as unknown as SuiForkValue),
+                    autoMounted: false,
+                    priority: 1,
+                });
+                return { sui: deps.sui };
             }),
-        ],
         section: "service",
     });
 }

@@ -40,6 +40,8 @@ export interface Manifest {
     packages: Record<string, ManifestPackage>;
     pools: Record<string, ManifestPool>;
     deployerAddress: string;
+    /** Mainnet DEEP donor impersonated on a fork; see deployments/fork-impersonation.md. */
+    deepDonorAddress?: string;
 }
 
 /* ------------------------------------------------------------------ */

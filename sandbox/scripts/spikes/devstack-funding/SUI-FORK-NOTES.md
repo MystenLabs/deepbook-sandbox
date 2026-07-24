@@ -27,8 +27,8 @@ materialized), so the registry path resolves and never reaches the index.
 
 ## Environment
 
-- `sui-fork`: `1.74.0`, built from rev `62ee6ada958cd61b3c8a4466dd33c9aba3cdff8a` (devstack 0.1.1's pinned fork-image rev).
-- Still present on latest `main` `8c1a5dbc40` (2026-06-13): `get_coin_info` and siblings (`get_balance`, `dynamic_field_iter`, `balance_iter`, `package_versions_iter`) are all `todo!()`; only one (unrelated) commit touched `crates/sui-fork` since the pinned rev. **Not fixed upstream.**
+- `sui-fork`: built from rev `16f1402387c7ce0f9310e57610428efec930dbf4` (sui `main`, 2026-07-08; MAX_PROTOCOL_VERSION 130, covers mainnet protocol 128; includes PR #26966's child-read fix), passed to the patched Dockerfile as `SUI_FORK_REV` (devstack 0.7.0's own default is still the older `62ee6ada`, protocol max v125, which can't fork current mainnet — see [[sui-fork-protocol-version-lag]]).
+- **Still NOT fixed upstream** at that rev: `get_coin_info` and siblings (`get_balance`, `dynamic_field_iter`, `balance_iter`, `package_versions_iter`) remain `todo!()` (`store.rs:1360`), so this bug (and our `get_coin_info -> Ok(None)` patch) still stands. PR #26966 fixed a _different_ sui-fork bug (the dynamic-field/child-read `STORAGE_ERROR`; see `../deepbook/SUI-FORK-BUG.md`), which is why we bumped to its merge commit — it's orthogonal to the coin-info panic.
 - Network: `--upstream mainnet`.
 
 ## The panic (fork container log)
@@ -82,8 +82,8 @@ works.)
    `object_store.get_object(currencyId)` that `get_coin_info_from_registry` uses
    materialize the object from upstream (as the gRPC `GetObject` path already
    does). Then `GetCoinInfo` resolves the real registry entry for migrated coins.
-   This is the same shared-object materialization gap as the DBSF-003 bug
-   (`sandbox/scripts/spikes/deepbook/SUI-FORK-BUG.md`).
+   This is the same shared-object materialization gap as the DeepBook admin-cap
+   spike's bug (`sandbox/scripts/spikes/deepbook/SUI-FORK-BUG.md`).
 2. **And/or implement `RpcIndexes::get_coin_info`** (the index fallback) to read
    coin metadata lazily.
 3. **At minimum, don't `todo!()`-panic** — return `Ok(None)` so `GetCoinInfo`
@@ -97,7 +97,7 @@ works.)
 ## Impact
 
 - Blocks **devstack fork-mode funding of any migrated non-SUI coin** (DEEP,
-  USDC) — the live path for DBSF-007 / DBSF-010. SUI funding is unaffected.
+  USDC) — the live path for the DEEP/USDC funding-strategy plugins. SUI funding is unaffected.
 - Any consumer that reads coin info / balances for such a coin against the fork
   crashes it.
 
@@ -113,3 +113,19 @@ a one-line `sed` in the image's `Dockerfile`). With the abort removed:
   works as designed. Fix #1 is the durable answer.
 
 Run it: `FORK_IMAGE_CONTEXT="$PWD/.fork-patched/images" pnpm devstack up`.
+
+### Building the patched image (local source)
+
+`./build-patched-fork.sh` builds the patched image from a **local** sui checkout
+(`git archive <rev>` → the build context), then `docker build`s it. This avoids
+cloning the multi-GB sui monorepo inside Docker (which drops on a flaky
+connection); only cargo's crate/git-deps still need the network during the
+`cargo build`. Building to completion populates BuildKit's layer cache, so a
+later `pnpm test:e2e` reuses the cargo layer instead of recompiling (~20-30 min).
+
+```bash
+SUI_REPO=/path/to/sui SUI_FORK_REV=<rev> ./build-patched-fork.sh
+# default rev = b124567746… (the merge commit of MystenLabs/sui#26966); pass
+# origin/main for the latest. The .fork-patched/images Dockerfile COPYs the
+# generated sui-fork/sui-src.tar instead of cloning.
+```

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// DBSF-004 — advance-clock + Pyth update integration spike.
+// advance-clock + Pyth update integration spike.
 //
 // Validates the clock-drift mitigation strategy for the new oracle-service.
 // Stefan's original POC (build-pyth-suiusd-fork-tx.mjs) successfully landed
@@ -30,7 +30,7 @@
 //
 // Code is intentionally self-contained — the helpers duplicate
 // build-pyth-suiusd-fork-tx.mjs so the spike can be read top-to-bottom
-// without cross-referencing. The production oracle-service (DBSF-013)
+// without cross-referencing. The production oracle-service
 // will factor out the shared logic.
 
 import { spawnSync } from "node:child_process";

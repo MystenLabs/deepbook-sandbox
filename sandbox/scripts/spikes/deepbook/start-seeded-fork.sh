@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DBSF-003 — start a sui-fork mainnet fork pre-seeded with the DeepBook Registry.
+# Start a sui-fork mainnet fork pre-seeded with the DeepBook Registry.
 #
 # The `--object` seeds below are REQUIRED. Without them, sui-fork serves the
 # shared DeepBook `Registry` at a stale (genesis) version during execution, and

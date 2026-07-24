@@ -6,14 +6,12 @@ These scripts are **not part of the production sandbox**. They are evaluation ha
 
 ## Backlog mapping
 
-| Folder      | Ticket             | What it validates                                                         |
-| ----------- | ------------------ | ------------------------------------------------------------------------- |
-| `pyth/`     | DBSF-005, DBSF-004 | Real Hermes VAA + `advance-clock` flow against forked Pyth/Wormhole state |
-| `deep/`     | DBSF-001           | `splitCoins + transferObjects` from an impersonated DEEP whale            |
-| `usdc/`     | DBSF-002           | `mint` from an impersonated USDC TreasuryCap owner                        |
-| `deepbook/` | DBSF-003           | `pool::create_pool_admin` impersonating the `DeepbookAdminCap` holder     |
-
-See the [migration plan](../../../linear-tickets/defi-bu/deepbook-sandobx-fork-tool/SUI_FORK_MIGRATION_PLAN.md) and the [backlog](../../../linear-tickets/defi-bu/deepbook-sandobx-fork-tool/DEEPBOOK_SANDBOX_FORK_TOOL_BACKLOG.md) for context. (Paths assume both repos are checked out as siblings; adjust as needed.)
+| Folder      | Spike                                  | What it validates                                                         |
+| ----------- | -------------------------------------- | ------------------------------------------------------------------------- |
+| `pyth/`     | Adopted Pyth POC + advance-clock spike | Real Hermes VAA + `advance-clock` flow against forked Pyth/Wormhole state |
+| `deep/`     | DEEP whale-transfer spike              | `splitCoins + transferObjects` from an impersonated DEEP whale            |
+| `usdc/`     | USDC mint spike                        | `mint` from an impersonated USDC TreasuryCap owner                        |
+| `deepbook/` | DeepBook admin-cap spike               | `pool::create_pool_admin` impersonating the `DeepbookAdminCap` holder     |
 
 ## Common requirements
 
@@ -48,4 +46,4 @@ node <spike-script>.mjs   # or similar — see the spike's README
 
 ## After all Phase 0 spikes pass
 
-Phases 1 through 4 are unblocked. This folder can stay in the repo indefinitely as worked examples — see DBSF-029 in the backlog where the spikes get repurposed into the partner-facing cookbook.
+Phases 1 through 4 are unblocked. This folder can stay in the repo indefinitely as worked examples — the spikes get repurposed into the partner-facing cookbook.

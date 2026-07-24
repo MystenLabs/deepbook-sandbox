@@ -256,6 +256,11 @@ async function main() {
             },
             marginPools: marginResult.marginPools,
             supplierCapId: seedResult.supplierCapId,
+            // Mainnet DEEP holder impersonated on a sui-fork to fund DEEP.
+            // Rationale + risk profile + caps: deployments/fork-impersonation.md.
+            deepDonorAddress:
+                process.env.DEEP_DONOR_ADDRESS?.trim() ||
+                "0x9548232f9cebbc1eec56cfb25b99f61e17924b4908248c260c8d70100c59c70d",
             deploymentTime: new Date().toISOString(),
             deployerAddress: signerAddress,
         };
