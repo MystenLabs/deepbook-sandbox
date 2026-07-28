@@ -38,11 +38,21 @@ const forkImageContext =
 // own default (62ee6ada, max v125) can't fork current mainnet. Override via SUI_FORK_REV.
 const forkRev = process.env.SUI_FORK_REV ?? "16f1402387c7ce0f9310e57610428efec930dbf4";
 
+// Prebuilt patched image (e.g. from a registry) skips the ~15-20 min source
+// build — set DEVSTACK_SUI_FORK_IMAGE to its ref. devstack only consults that
+// env var when NO explicit `image` option is given (an explicit `build` wins in
+// `resolveForkImage`), so honor it here. Explicit `pull` also fails loudly if
+// the image is unavailable instead of silently source-building a STOCK fork,
+// which would abort at the funding pass.
+const prebuiltImage = process.env.DEVSTACK_SUI_FORK_IMAGE?.trim();
+
 const suiRef = sui({
     mode: "fork",
     upstream: "mainnet",
     version: forkRev,
-    image: { build: { context: forkImageContext, dockerfile: "sui-fork/Dockerfile" } },
+    image: prebuiltImage
+        ? { pull: prebuiltImage }
+        : { build: { context: forkImageContext, dockerfile: "sui-fork/Dockerfile" } },
 });
 const whale = account("deepWhale", { kind: "impersonate", address: DONOR });
 const deepCoin = coin.known(DEEP_COIN_TYPE);

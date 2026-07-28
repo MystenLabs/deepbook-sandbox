@@ -6,6 +6,9 @@
 //   FORK_IMAGE_CONTEXT="$PWD/../scripts/spikes/devstack-funding/.fork-patched/images" \
 //   pnpm dashboard:up
 //
+// Or, with a prebuilt patched image (skips the source build):
+//   DEVSTACK_SUI_FORK_IMAGE=<registry-ref> pnpm dashboard:up
+//
 // Then open the printed http://127.0.0.1:<port>/ URL. Ctrl+C to stop.
 // Needs Docker + Node >= 24 + the patched fork image (alice's DEEP funding runs
 // at boot, which a stock fork aborts; see deep-funding.ts).
@@ -28,6 +31,10 @@ const DIST = resolve("node_modules/@mysten-incubation/devstack/dist");
 const { runStack } = await import(pathToFileURL(DIST + "/api/run-stack.mjs").href);
 
 const ctx = process.env.FORK_IMAGE_CONTEXT?.trim();
+// Prebuilt patched image ref (skips the source build entirely; wins over
+// FORK_IMAGE_CONTEXT). devstack ignores this env var when an explicit
+// `image.build` is passed, so we resolve the precedence ourselves.
+const pulled = process.env.DEVSTACK_SUI_FORK_IMAGE?.trim();
 // Build the fork binary from a sui rev whose protocol config covers current
 // mainnet (protocol 128; this rev is max 130). `version` is passed to the patched
 // Dockerfile as SUI_FORK_REV (see devstack sui/mode/fork.mjs). Override via SUI_FORK_REV.
@@ -35,12 +42,17 @@ const FORK_REV = process.env.SUI_FORK_REV ?? "16f1402387c7ce0f9310e57610428efec9
 // Checkpoint pin no longer required (the binary supports current mainnet); kept
 // optional via FORK_CHECKPOINT for reproducibility / pre-upgrade state.
 const checkpoint = process.env.FORK_CHECKPOINT ? Number(process.env.FORK_CHECKPOINT) : undefined;
+// Precedence: prebuilt pull > patched build context > devstack default build.
+let imageOpt = {};
+if (pulled) imageOpt = { image: { pull: pulled } };
+else if (ctx) imageOpt = { image: { build: { context: ctx, dockerfile: "sui-fork/Dockerfile" } } };
+
 const suiRef = sui({
     mode: "fork",
     upstream: "mainnet",
     version: FORK_REV,
     ...(checkpoint !== undefined ? { checkpoint } : {}),
-    ...(ctx ? { image: { build: { context: ctx, dockerfile: "sui-fork/Dockerfile" } } } : {}),
+    ...imageOpt,
 });
 const whale = account("deepWhale", { kind: "impersonate", address: DONOR });
 const deepFunding = deepFundingFromWhale({ sui: suiRef, whale });
@@ -61,9 +73,10 @@ const handle = runStack(stackDef, {
     runtimeRoot: ".devstack",
 });
 
-console.error(
-    `booting fork + DEEP plugin + dashboard()${ctx ? " (patched image)" : " (default image — may cold-build ~12 min)"}...`,
-);
+let imageNote = " (default image — may cold-build ~12 min)";
+if (pulled) imageNote = ` (prebuilt image ${pulled})`;
+else if (ctx) imageNote = " (patched image)";
+console.error(`booting fork + DEEP plugin + dashboard()${imageNote}...`);
 const exit = await Effect.runPromiseExit(handle.start);
 if (Exit.isFailure(exit)) {
     console.error("BOOT FAILED:", inspect(exit.cause, { depth: 12 }));

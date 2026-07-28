@@ -55,8 +55,10 @@ How it works:
   `FaucetBodyError`, transport failures as `FaucetUnreachable`.
 - **Published value** — the plugin's resolved value exposes `{ donor, coinType,
 perRequestCap, sessionCap, sessionDrawn(), remainingDeep }`. `remainingDeep` is
-  a best-effort `getBalance` for the dashboard (0 on the fork, where the coin
-  registry is unavailable).
+  a best-effort read of the donor's funding-source coin **by known id**
+  (`getObject` with `include: { json: true }` — the only balance read that works
+  on a fork, which has no owner→coins index for `getBalance`). It decrements as
+  sessions draw; 0 on any miss.
 
 The donor address, rationale, risk profile, and caps live in
 [`../deployments/fork-impersonation.md`](../deployments/fork-impersonation.md).
@@ -102,6 +104,15 @@ migration (the `MoveDeployer` collapse), not this change — dropping it now wou
 break `pnpm deploy-all`. The Move source stays as the localnet/escape-hatch path
 until then.
 
+**Migration plan of record** (2026-07-24 devstack-docs review, details on
+SEDEFI-326): the runtime migration builds on devstack's **first-party
+[`deepbook()` member](https://ts-sdks-incubation.vercel.app/devstack/deepbook)**
+(already in our pinned 0.7.0 — publish, `DeepbookPoolSpec` pools, seed
+liquidity, mock-Pyth initial feeds, codegen bindings) rather than porting
+`MoveDeployer`/`pool.ts`. The member does **not** cover the indexer, server,
+market-maker, the oracle-service's ongoing price updates, or non-SUI funding on
+a mainnet fork — this package's funding plugins remain necessary alongside it.
+
 ## Faucet & dashboard
 
 devstack's built-in dashboard auto-surfaces this `coinType:<DEEP>` strategy as an
@@ -130,8 +141,14 @@ pnpm test                         # unit tests (stubbed fork sdk.core); excludes
 # E2E (boots a real fork via devstack's vitest harness) — requires Node >= 24 +
 # Docker. The fixture defaults to the patched fork image (required — a stock fork
 # aborts; see above), so no env is needed. The FIRST run compiles sui-fork from
-# source (~15-20 min; cached after — CI should prebuild the image).
+# source (~15-20 min; cached after).
 pnpm test:e2e
+
+# Skip the source build with a prebuilt patched image (the CI path — push the
+# image built by build-patched-fork.sh to a registry once, then):
+# DEVSTACK_SUI_FORK_IMAGE=<registry-ref> pnpm test:e2e
+# (Must be set explicitly — devstack ignores this env var when the config passes
+# an explicit image.build, so our configs resolve the precedence themselves.)
 
 # Override the fork image build context if needed:
 # FORK_IMAGE_CONTEXT=/abs/path/to/images pnpm test:e2e
@@ -150,3 +167,6 @@ from the host.
 If the donor's default coin ids ever go stale (the whale spent them), set
 `DEEP_DONOR_COIN_ID` / `SUI_GAS_COIN_ID` from
 `node scripts/refresh-donor-coins.mjs` before running.
+
+For the full manual shakedown (devstack stack + Pyth loop + the exploratory
+compose-services-on-fork pass), see [`../SMOKE-TEST.md`](../SMOKE-TEST.md).

@@ -79,22 +79,29 @@ type CoinRef = { objectId: string; version: string; digest: string };
 /** The fork gRPC client surface we use.
  *  - `getObject` resolves a coin by KNOWN id (the fork materializes objects on
  *    direct-by-id access but does NOT build an owner->coins index, so
- *    listCoins/getOwnedObjects return empty on the fork).
- *  - `executeTransaction` with empty signatures is the impersonation path.
- *  - `getBalance` is best-effort (needs the coin registry, unreliable on the
- *    fork) and only feeds the published `remainingDeep` display. */
+ *    listCoins/getOwnedObjects return empty on the fork). With
+ *    `include: { json: true }` the response carries the parsed Move value —
+ *    that's how `remainingDeep` reads the donor coin's balance without
+ *    `getBalance`, which needs the owner->coins index the fork doesn't have.
+ *  - `executeTransaction` with empty signatures is the impersonation path. */
 export type ForkCore = {
-    getObject: (args: { objectId: string }) => Promise<{
-        object?: { objectId: string; version: string; digest: string; type?: string };
+    getObject: (args: {
+        objectId: string;
+        include?: { content?: boolean; json?: boolean };
+    }) => Promise<{
+        object?: {
+            objectId: string;
+            version: string;
+            digest: string;
+            type?: string;
+            json?: unknown;
+        };
     }>;
     executeTransaction: (args: {
         transaction: Uint8Array;
         signatures: readonly string[];
         include?: { effects?: boolean; objectTypes?: boolean };
     }) => Promise<unknown>;
-    getBalance?: (args: { owner: string; coinType: string }) => Promise<{
-        balance?: { balance?: string; coinBalance?: string };
-    }>;
 };
 
 // --- Tagged errors devstack's funding/faucet model expects. The factory
@@ -163,6 +170,27 @@ async function coinRefById(
         throw new Error(`object ${objectId} is not a Coin<${expectCoinType}> (got ${o.type})`);
     }
     return { objectId: o.objectId, version: o.version, digest: o.digest };
+}
+
+/** Pull the `balance` out of a Coin object's parsed-JSON Move value
+ *  (`getObject` with `include: { json: true }`). The Move `Coin` struct is
+ *  `{ id: UID, balance: Balance<T> }`; the JSON rendering carries `balance` as a
+ *  string/number, or as `{ value }` depending on SDK version — accept both.
+ *  Returns 0n on any shape mismatch (display-only, best-effort). */
+export function coinBalanceFromJson(json: unknown): bigint {
+    const balance = (json as { balance?: unknown } | undefined)?.balance;
+    const raw =
+        typeof balance === "object" && balance !== null
+            ? (balance as { value?: unknown }).value
+            : balance;
+    if (typeof raw === "string" || typeof raw === "number") {
+        try {
+            return BigInt(raw);
+        } catch {
+            return 0n;
+        }
+    }
+    return 0n;
 }
 
 // --- Empty-sig "impersonation" tx builder (offline; concrete refs only) ---
@@ -473,14 +501,20 @@ export function deepFundingFromWhale(opts: DeepFundingOptions) {
                     perRequestCap,
                     sessionCap,
                     sessionDrawn: () => session.drawn,
-                    // Live, best-effort display of the donor's remaining DEEP (dashboard
-                    // only; not on the boot/funding path). getBalance needs the coin
-                    // registry, which is unreliable on the fork → 0n there rather than an
-                    // error. Re-reads on each evaluation.
+                    // Live, best-effort display of the DEEP left in the donor's funding
+                    // source coin (dashboard only; not on the boot/funding path). Reads
+                    // the known coin object by id with `include: { json: true }` — the
+                    // only balance read that works on a fork, which has no owner->coins
+                    // index for `getBalance` (docs: "use ChainProbe for balance reads";
+                    // same by-id principle). 0n on any miss rather than an error.
+                    // Re-reads on each evaluation, so it decrements as sessions draw.
                     remainingDeep: Effect.promise(async () => {
                         try {
-                            const r = await core.getBalance?.({ owner: donor, coinType });
-                            return BigInt(r?.balance?.balance ?? r?.balance?.coinBalance ?? 0);
+                            const r = await core.getObject({
+                                objectId: deepCoinId,
+                                include: { json: true },
+                            });
+                            return coinBalanceFromJson(r.object?.json);
                         } catch {
                             return 0n;
                         }
