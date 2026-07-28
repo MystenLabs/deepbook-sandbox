@@ -22,63 +22,7 @@ This project provides a toolset for reducing builder friction with one-liner dep
 
 ## File Structure
 
-```
-deepbook-sandbox/
-├── CLAUDE.md              # This file - agent instructions
-├── README.md              # Project overview
-├── sandbox/
-│   ├── docker-compose.yml # Docker orchestration
-│   ├── dashboard/         # Web dashboard (React SPA, Dockerized with nginx)
-│   │   ├── Dockerfile
-│   │   ├── nginx.conf     # Reverse-proxy config (replicates Vite dev proxy)
-│   │   ├── package.json
-│   │   └── src/           # React app source (Health, Market Maker, Trading, Faucet, Deployment)
-│   ├── api/               # Sandbox API service (TypeScript/Hono) — faucet + manifest + service control
-│   │   ├── Dockerfile     # Runtime image installs docker-cli for /services routes
-│   │   ├── package.json
-│   │   ├── tsconfig.json
-│   │   └── src/
-│   │       ├── index.ts           # Server entry, /manifest endpoint, faucet + services routes
-│   │       ├── config.ts          # Env validation, signer/client factories
-│   │       ├── services/
-│   │       │   ├── sui-faucet.ts    # Proxies to Sui's built-in faucet
-│   │       │   └── coin-faucet.ts   # Generic: signs DEEP/USDC transfers from deployer (owns signing lock)
-│   │       └── routes/
-│   │           ├── faucet.ts      # POST /faucet endpoint
-│   │           └── services.ts    # POST /services/:name/{stop,restart} — docker control via mounted socket
-│   └── scripts/
-│       ├── deploy-all.ts      # Deploy DeepBook to localnet
-│       ├── down.ts            # Full teardown (containers, volumes, .env)
-│       ├── market-maker/      # Market maker service (Dockerized)
-│       │   ├── Dockerfile
-│       │   ├── index.ts   # Entry point
-│       │   ├── config.ts  # Zod config schema
-│       │   ├── types.ts   # DeepBook constants
-│       │   └── ...        # Grid strategy, order management, etc.
-│       ├── oracle-service/        # Pyth price feed updater (Dockerized)
-│       │   ├── Dockerfile
-│       │   ├── index.ts           # Service loop + status HTTP server (port 9010)
-│       │   ├── pyth-client.ts     # Pyth API client
-│       │   ├── oracle-updater.ts  # On-chain update logic
-│       │   ├── constants.ts       # Price feed IDs
-│       │   └── types.ts           # TypeScript types
-│       └── utils/         # Shared utilities
-├── examples/
-│   └── sandbox/           # SDK integration examples (@mysten/deepbook-v3)
-│       ├── package.json   # Isolated package (uses @mysten/sui@v2, NOT v1)
-│       ├── tsconfig.json
-│       ├── setup.ts       # Shared: manifest loader, client factory, faucet, BM lifecycle
-│       ├── check-order-book.ts   # Read-only: mid price + order book depth
-│       ├── swap-tokens.ts        # Direct wallet swap SUI→DEEP (no BalanceManager)
-│       ├── place-limit-order.ts  # Create BM, deposit, place resting limit bid
-│       ├── place-market-order.ts # Create BM, deposit, market buy against MM
-│       ├── query-user-orders.ts  # Place, query, cancel — full order lifecycle
-│       └── README.md
-└── external/
-    └── deepbook/          # Git submodule - DeepBookV3 source
-        ├── packages/      # Move smart contracts
-        └── crates/        # Rust crates (indexer, API server)
-```
+Run `ls`/`find` to explore the tree. Top-level: `sandbox/` (docker-compose stack, `dashboard/`, `api/`, `scripts/`), `examples/sandbox/` (SDK integration examples), and `external/deepbook/` (DeepBookV3 git submodule). Subsystem-specific guidance lives in nested `CLAUDE.md` files (`sandbox/dashboard/`, `sandbox/scripts/oracle-service/`, `sandbox/scripts/market-maker/`).
 
 ## Docker Stack
 
@@ -195,43 +139,11 @@ Test files live in `sandbox/scripts/__tests__/**/*.integration.test.ts`. Vitest 
 
 ## Oracle Service
 
-The oracle service (`./sandbox/scripts/oracle-service/`) runs as a Docker container and provides automated price feed updates for localnet testing:
+Pyth price-feed updater (Docker, `localnet` profile, status on `http://localhost:9010`). Subsystem details — env vars, price-feed IDs — live in `sandbox/scripts/oracle-service/CLAUDE.md` (loads when you work in that dir); full docs in its `README.md`.
 
-- **Deployment**: Runs in Docker as part of the `localnet` profile, started automatically by `pnpm deploy-all`
-- **Purpose**: Updates Pyth price oracle contracts for SUI, DEEP, and USDC every 10 seconds
-- **Status endpoint**: `http://localhost:9010` — returns JSON with latest prices, update count, and errors
-- **Data Source**: Fetches historical price data from Pyth Network API (24h ago)
-- **Env vars** (set automatically by deploy-all):
-  - `ORACLE_PRIVATE_KEY`: Dedicated Ed25519 keypair (auto-generated, avoids gas coin conflicts with market maker)
-  - `PYTH_PACKAGE_ID`: Deployed pyth package address
-  - `DEEP_PRICE_INFO_OBJECT_ID`: DEEP PriceInfoObject ID
-  - `SUI_PRICE_INFO_OBJECT_ID`: SUI PriceInfoObject ID
-  - `USDC_PRICE_INFO_OBJECT_ID`: USDC PriceInfoObject ID
-- **Price Feeds**:
-  - SUI: `0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744`
-  - DEEP: `0x29bdd5248234e33bd93d3b81100b5fa32eaa5997843847e2c2cb16d7c6d9f7ff`
-  - USDC: `0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a`
-- **Files**:
-  - `index.ts`: Main service loop + status HTTP server
-  - `pyth-client.ts`: Pyth API client
-  - `oracle-updater.ts`: On-chain update logic
-  - `types.ts`: TypeScript types
-  - `Dockerfile`: Container image definition
+## Market Maker
 
-See [./sandbox/scripts/oracle-service/README.md](./sandbox/scripts/oracle-service/README.md) for detailed documentation.
-
-### Market Maker Configuration
-
-Environment variables for `pnpm market-maker`:
-
-- `MM_SPREAD_BPS` - Spread in basis points (default: 10 = 0.1%)
-- `MM_LEVELS_PER_SIDE` - Orders per side (default: 5)
-- `MM_ORDER_SIZE_BASE` - Order size in base asset units (default: 10_000_000 = 10 DEEP)
-- `MM_REBALANCE_INTERVAL_MS` - Rebalance interval (default: 10000)
-- `MM_HEALTH_CHECK_PORT` - Health server port (default: 3000)
-- `MM_METRICS_PORT` - Prometheus metrics port (default: 9090)
-
-See `sandbox/scripts/market-maker/README.md` for full documentation.
+Automated market maker (Docker, `localnet` profile). Config env vars (`MM_*`) live in `sandbox/scripts/market-maker/CLAUDE.md`; full docs in its `README.md`.
 
 ## Key Concepts
 
@@ -241,13 +153,7 @@ See `sandbox/scripts/market-maker/README.md` for full documentation.
 
 ## Trading Page (Dashboard)
 
-The dashboard's Trading page is the user-facing interface for the deepbook protocol. Architecture notes for agents working in this area:
-
-- **BM creation is user-driven, not deploy-time.** `pnpm deploy-all` no longer auto-creates a BalanceManager. Instead, users click "Create Balance Manager" on the Trading page, which builds a single PTB containing `balance_manager::new_with_custom_owner` + `register_balance_manager` + `public_share_object`. Two are SDK helpers (`createBalanceManagerWithOwner`, `shareBalanceManager`); the middle one is a raw `moveCall` because the SDK's `registerBalanceManager` helper takes a config-lookup key and can't reference a freshly-created BM ref.
-- **BM discovery is on-chain.** The dashboard calls `client.deepbook.getBalanceManagerIds(address)` (which simulates a tx against `registry::get_balance_manager_ids`) to find the user's registered BMs. No env var, no localStorage, no API endpoint. The deepbook Registry's owner→BM map is the single source of truth.
-- **The registry's BM map must be initialized first.** `init_balance_manager_map` is an admin-gated one-time call that creates the dynamic field `register_balance_manager` writes into. We bundle that call into `createDeepbookPools` (`sandbox/scripts/utils/pool.ts`) so it runs as part of `pnpm deploy-all`. It's idempotent (`if !exists`), so re-running deploy-all is safe.
-- **Wallet swap correctness:** the BM discovery query is keyed by `account?.address`, and the BM-balances / open-orders queries are keyed by `balanceManagerId`. Disconnecting Wallet A and connecting Wallet B immediately re-runs discovery and shows the empty state for B until B creates its own BM.
-- **Trading hooks live at** `sandbox/dashboard/src/components/trading/hooks.ts` — read this file before touching any trading flow. `useCreateBalanceManager` is the canonical BM-creation path; do not duplicate it elsewhere.
+Architecture notes for the dashboard's user-facing Trading page — user-driven BM creation, on-chain BM discovery, registry-map init, wallet-swap keying — live in `sandbox/dashboard/CLAUDE.md` (loads when you work under `sandbox/dashboard/`). Read that before touching any trading flow.
 
 ## SDK Integration Examples
 
