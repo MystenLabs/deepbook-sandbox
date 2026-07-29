@@ -49,13 +49,13 @@ pnpm typecheck && pnpm test          # 21 unit tests
 pnpm verify:usdc-minter              # Circle minter ids still current (mainnet read)
 
 FORK_IMAGE_CONTEXT="$PWD/../scripts/spikes/devstack-funding/.fork-patched/images" \
-pnpm dashboard:up                    # boots fork + DEEP plugin + dashboard()
+pnpm dashboard:up                    # boots fork + DEEP/USDC plugins + dashboard()
 ```
 
 Then, in the printed `http://127.0.0.1:<port>/` UI:
 
 - [ ] Stack members all show healthy; `alice` exists.
-- [ ] Faucet panel lists **DEEP** (editable amount) and **SUI**.
+- [ ] Faucet panel lists **DEEP** and **USDC** (editable amounts) and **SUI**.
 - [ ] Faucet 100 DEEP to any address → success; repeat with an amount over
       `MAX_DEEP_PER_REQUEST` (default 100k DEEP) → clean cap error, stack stays up.
 - [ ] `pnpm verify:dashboard-faucet` (scripted equivalent) passes.
