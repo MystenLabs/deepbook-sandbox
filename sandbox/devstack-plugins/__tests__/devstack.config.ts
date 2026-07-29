@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { account, coin, defineDevstack, sui } from "@mysten-incubation/devstack";
 
 import { deepFundingFromWhale, DEEP_COIN_TYPE } from "../deep-funding.ts";
+import { deepbookFromManifest, deepbookMarginPackagesFromManifest } from "../deepbook-known.ts";
 import { usdcFundingFromCapOwner, USDC_COIN_TYPE } from "../usdc-funding.ts";
 import { ALICE_KEYPAIR } from "./alice.ts";
 import { STACK_NAME } from "./stack.ts";
@@ -62,6 +63,13 @@ const usdcMinter = account("usdcMinter", { kind: "impersonate", address: USDC_MI
 const usdcCoin = coin.known(USDC_COIN_TYPE);
 const usdcFunding = usdcFundingFromCapOwner({ sui: suiRef, minter: usdcMinter });
 
+// DeepBook itself (DBSF-017): devstack's first-party member in mode 'known' —
+// the fork already carries mainnet's deployment, so nothing publishes. The
+// margin/liquidation knownPackage probes double as fork-serves-the-pins checks.
+const deepbookMember = deepbookFromManifest();
+const { margin: marginPackage, liquidation: liquidationPackage } =
+    deepbookMarginPackagesFromManifest();
+
 export default defineDevstack({
     members: [
         suiRef,
@@ -71,6 +79,9 @@ export default defineDevstack({
         usdcMinter,
         usdcFunding,
         usdcCoin,
+        deepbookMember,
+        marginPackage,
+        liquidationPackage,
         account("alice", {
             // Fixed keypair ⇒ deterministic recipient address the e2e tests query
             // directly (see ./alice.ts). alice signs nothing here — she's a passive
