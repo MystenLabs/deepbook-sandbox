@@ -97,6 +97,44 @@ minter   = Field<MasterMinterKey, address>.value
 deployed package). `pnpm verify:usdc-minter` (from `sandbox/devstack-plugins/`) runs this
 derivation against mainnet and prints the current values.
 
+## DeepBook admin wallet (DBSF-016)
+
+The fork inherits mainnet's DeepBook deployment wholesale — packages, registries,
+and pools need no re-publish. Admin-gated flows (e.g. `create_pool_admin` for a
+fresh sandbox pool, margin config) impersonate the **mainnet admin wallet**, which
+holds **both** admin caps, so one impersonation target covers every admin flow:
+
+|                        |                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Admin wallet**       | `0xd0ec0b201de6b4e7f425918bbd7151c37fc1b06c59b3961a2a00db74f6ea865e` (impersonated sender)             |
+| **`DeepbookAdminCap`** | `0xada554b8b712556b8509be47ac1bc04db9505c3532049a543721aca0c010a840` (validated by the DBSF-003 spike) |
+| **`MarginAdminCap`**   | `0x3ec65d06f0be30905cc1742b903aa497791c702820331db263176b74e74c95c8`                                   |
+
+The id inventory — the three package ids (original + latest: deepbook v8,
+margin v6, liquidation v4), `Registry` / `MarginRegistry` (with initial shared
+versions), and the default pools (DEEP_SUI, SUI_USDC, DEEP_USDC) — is pinned in
+[`deployments/mainnet-fork.json`](./mainnet-fork.json) under the `deepbook` key.
+Everything was verified live on mainnet 2026-07-29; re-verify (drift check:
+transferred caps, packages upgraded past their pin, missing objects, pool
+base/quote types) with `pnpm verify:deepbook-ids` from `sandbox/devstack-plugins/`.
+
+Notes:
+
+- **Type tags vs call targets:** object types are stamped with the _original_
+  package ids (`0x2c8d603b…` for deepbook, `0x97d94737…` for margin); `moveCall`
+  targets should use the _latest_ ids. The manifest carries both.
+- **Upgrades move `latestId`:** mainnet was on deepbook **v6** (`0x337f4f4f…`)
+  when the DBSF-003 spike ran (2026-05-18) and is **v8** (`0x0e735f8c…`) as of
+  2026-07-29 — and DeepBook enforces `allowed_versions` on-chain, so calls
+  through a stale package id abort with `EPackageVersionNotEnabled`. The verify
+  script detects a newer upgrade via `listPackageVersions`. (Don't trust
+  `@mysten/deepbook-v3`'s `mainnetPackageIds` as the source of truth — 1.5.0
+  lags mainnet for margin, pinning v5.)
+- The admin wallet holds no enumerable SUI on a fresh fork — fund its gas from
+  the SUI donor first (same pattern as the spikes; see `create-pool-as-admin.mjs`,
+  but note that spike still defaults to the stale v6 package id — override via
+  `DEEPBOOK_PACKAGE_ID` or use the manifest's `latestId`).
+
 ## Funding caps (sandbox-wide policy)
 
 | Cap              | Value         | Enforced by                                                                                                                                  |
