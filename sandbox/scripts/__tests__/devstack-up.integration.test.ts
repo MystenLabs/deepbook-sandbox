@@ -37,10 +37,23 @@ if (skip) {
 
 describe("devstack-up smoke", () => {
     it.skipIf(skip)("boots the production stack to settled within the smoke budget", () => {
+        // Pre-warm devstack-plugins dependencies to avoid ERR_MODULE_NOT_FOUND
+        // on fresh clone (stack-smoke.mjs imports effect + devstack by bare specifier).
+        // --ignore-scripts suppresses pnpm 11's build-script warnings; --frozen-lockfile
+        // prevents accidental lockfile rewrites during test runs.
+        execFileSync(
+            "pnpm",
+            ["install", "--ignore-workspace", "--ignore-scripts", "--frozen-lockfile"],
+            {
+                cwd: PLUGINS_DIR,
+                stdio: "inherit",
+                timeout: 120_000, // fresh-clone install headroom; fast no-op when warm
+            },
+        );
         execFileSync("node", ["scripts/stack-smoke.mjs"], {
             cwd: PLUGINS_DIR,
             stdio: "inherit",
-            timeout: 570_000, // vitest testTimeout is 600s; leave teardown headroom
+            timeout: 480_000, // stack boot budget; account for pnpm install above (vitest testTimeout 600s)
         });
     });
 });
