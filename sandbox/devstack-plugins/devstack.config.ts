@@ -7,9 +7,10 @@
 // Image precedence (same policy as scripts/dashboard-up.mjs): prebuilt pull
 // (DEVSTACK_SUI_FORK_IMAGE) > patched build context (FORK_IMAGE_CONTEXT, or the
 // default spike path when present) > devstack's default source build. A STOCK
-// fork boots this stack fine (nothing funds at boot — no pre-funded accounts),
-// but dashboard faucet requests for DEEP/USDC abort a stock fork — use the
-// patched image for real faucet usage (see README "Known blocker").
+// fork survives boot-and-teardown checks but crashes seconds after boot once
+// dashboard faucet requests or the `remainingDeep` balance-read Effect hit
+// donor-coin access — use the patched image for real faucet usage (see README
+// "Known blocker").
 
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -61,10 +62,12 @@ if (pulled) imageOpt = { image: { pull: pulled } };
 else if (ctx) imageOpt = { image: { build: { context: ctx, dockerfile: "sui-fork/Dockerfile" } } };
 else
     console.error(
-        "devstack.config: no patched fork image found — booting devstack's default (STOCK) " +
-            "fork build. The stack will boot, but DEEP/USDC faucet requests will abort it. " +
-            "Build the patched image (scripts/spikes/devstack-funding/build-patched-fork.sh) " +
-            "or set DEVSTACK_SUI_FORK_IMAGE / FORK_IMAGE_CONTEXT.",
+        "devstack.config: no patched fork image found — falling back to devstack's default " +
+            "(STOCK) fork build. A stock fork survives boot-and-teardown checks (pnpm smoke) " +
+            "but crashes seconds after boot once the funding members touch donor coins, and " +
+            "any DEEP/USDC execution aborts it. Build the patched image " +
+            "(scripts/spikes/devstack-funding/build-patched-fork.sh) or set " +
+            "DEVSTACK_SUI_FORK_IMAGE / FORK_IMAGE_CONTEXT for a usable stack.",
     );
 
 const suiRef = sui({

@@ -84,3 +84,20 @@ await client.core.signAndExecuteTransaction({ transaction: tx, signer });
   persists check `docker compose logs sui-localnet`.
 - **Type errors with `@mysten/sui`** — These examples use `@mysten/sui@v2` which is incompatible
   with the sandbox's `@mysten/sui@v1`. Make sure you install from `examples/sandbox/`, not from `sandbox/`.
+
+## Fork mode (devstack runtime)
+
+Against the devstack mainnet-fork stack instead of localnet:
+
+```bash
+cd sandbox && pnpm stack:up          # boots the fork stack (patched image REQUIRED — a stock fork crashes shortly after boot)
+cd examples/sandbox
+SANDBOX_ENV=fork pnpm check-order-book
+SANDBOX_ENV=fork pnpm swap-tokens
+```
+
+Same convention as localnet — fresh keypair per run, funded over HTTP — but
+ids come from `sandbox/deployments/mainnet-fork.json`, RPC from the fork
+container's direct host port (`FORK_RPC_URL` overrides), and funding from the
+devstack dashboard's `fund` GraphQL mutation (`SANDBOX_DASHBOARD_URL`
+overrides discovery). The legacy `:9009` faucet is not involved.
