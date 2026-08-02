@@ -53,7 +53,7 @@ describe("devstack-up smoke", () => {
         execFileSync("node", ["scripts/stack-smoke.mjs"], {
             cwd: PLUGINS_DIR,
             stdio: "inherit",
-            timeout: 480_000, // stack boot budget; account for pnpm install above (vitest testTimeout 600s)
+            timeout: 450_000, // stack boot budget; 120s install + 450s spawn leaves 30s headroom under vitest testTimeout 600s
         });
     });
 });

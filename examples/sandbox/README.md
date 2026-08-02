@@ -82,8 +82,9 @@ await client.core.signAndExecuteTransaction({ transaction: tx, signer });
   Wait 10-15 seconds after deploy-all completes and retry.
 - **"Insufficient gas"** — The faucet may be slow. The setup retries automatically, but if it
   persists check `docker compose logs sui-localnet`.
-- **Type errors with `@mysten/sui`** — These examples use `@mysten/sui@v2` which is incompatible
-  with the sandbox's `@mysten/sui@v1`. Make sure you install from `examples/sandbox/`, not from `sandbox/`.
+- **Type errors with `@mysten/sui`** — These examples pin a newer `@mysten/sui` minor (`^2.23.1`,
+  required by `@mysten/deepbook-v3@1.6.x`) than `sandbox/` (`^2.16.0`). Make sure you install from
+  `examples/sandbox/`, not from `sandbox/`.
 
 ## Fork mode (devstack runtime)
 

@@ -11,7 +11,7 @@
     },
     "dependencies": {
         "@mysten/deepbook-v3": "^1.5.0",
-        "@mysten/sui": "^2.16.0"
+        "@mysten/sui": "^2.23.1"
     },
     "devDependencies": {
         "@types/node": "^20.19.37",
