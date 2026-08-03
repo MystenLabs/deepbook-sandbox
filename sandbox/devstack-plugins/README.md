@@ -115,10 +115,11 @@ a mainnet fork — this package's funding plugins remain necessary alongside it.
 
 ## Faucet & dashboard
 
-devstack's built-in dashboard auto-surfaces this `coinType:<DEEP>` strategy as an
-editable-amount faucet action — confirm with `pnpm verify:dashboard-faucet`. How
-that wires into the dashboard + the `POST /faucet` HTTP endpoint (and what's
-deferred to the devstack runtime migration) is in
+devstack's built-in dashboard auto-surfaces the `coinType:<DEEP>` and
+`coinType:<USDC>` strategies as editable-amount faucet actions — confirm with
+`pnpm verify:dashboard-faucet`. How that wires into the dashboard + the
+`POST /faucet` HTTP endpoint (and what's deferred to the devstack runtime
+migration) is in
 [`faucet-dashboard-integration.md`](./faucet-dashboard-integration.md).
 
 ## ⚠️ Known blocker — sui-fork

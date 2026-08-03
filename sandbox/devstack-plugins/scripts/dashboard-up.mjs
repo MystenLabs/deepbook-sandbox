@@ -1,6 +1,6 @@
-// Boot a devstack stack with the DEEP funding plugin + devstack's dashboard()
-// and STAY UP so you can open the dashboard in a browser. The Faucet panel shows
-// DEEP (editable amount) + SUI; alice is pre-funded with DEEP.
+// Boot a devstack stack with the DEEP + USDC funding plugins + devstack's
+// dashboard() and STAY UP so you can open the dashboard in a browser. The Faucet
+// panel shows DEEP + USDC (editable amounts) + SUI; alice is pre-funded with both.
 //
 //   nvm use 24
 //   FORK_IMAGE_CONTEXT="$PWD/../scripts/spikes/devstack-funding/.fork-patched/images" \
@@ -10,8 +10,8 @@
 //   DEVSTACK_SUI_FORK_IMAGE=<registry-ref> pnpm dashboard:up
 //
 // Then open the printed http://127.0.0.1:<port>/ URL. Ctrl+C to stop.
-// Needs Docker + Node >= 24 + the patched fork image (alice's DEEP funding runs
-// at boot, which a stock fork aborts; see deep-funding.ts).
+// Needs Docker + Node >= 24 + the patched fork image (alice's DEEP/USDC funding
+// runs at boot, which a stock fork aborts; see deep-funding.ts).
 
 import { Effect, Exit } from "effect";
 import { inspect } from "node:util";
@@ -22,9 +22,15 @@ import { execSync } from "node:child_process";
 import { account, coin, dashboard, defineDevstack, sui } from "@mysten-incubation/devstack";
 
 import { deepFundingFromWhale, DEEP_COIN_TYPE } from "../deep-funding.ts";
+import { usdcFundingFromCapOwner, USDC_COIN_TYPE } from "../usdc-funding.ts";
 import { ALICE_KEYPAIR } from "../__tests__/alice.ts";
 
-const DONOR = "0x9548232f9cebbc1eec56cfb25b99f61e17924b4908248c260c8d70100c59c70d";
+const DONOR =
+    process.env.DEEP_DONOR_ADDRESS ??
+    "0x9548232f9cebbc1eec56cfb25b99f61e17924b4908248c260c8d70100c59c70d";
+const USDC_MINTER =
+    process.env.USDC_MINTER_ADDRESS ??
+    "0x41c0c6d67577b39f31a5fe4052314fd3a8b7c7f890676f60e007bd390e397ac1";
 const STACK = process.env.DASHBOARD_STACK ?? "deep-dashboard";
 
 const DIST = resolve("node_modules/@mysten-incubation/devstack/dist");
@@ -57,13 +63,29 @@ const suiRef = sui({
 const whale = account("deepWhale", { kind: "impersonate", address: DONOR });
 const deepFunding = deepFundingFromWhale({ sui: suiRef, whale });
 const deepCoin = coin.known(DEEP_COIN_TYPE);
+const usdcMinter = account("usdcMinter", { kind: "impersonate", address: USDC_MINTER });
+const usdcFunding = usdcFundingFromCapOwner({ sui: suiRef, minter: usdcMinter });
+const usdcCoin = coin.known(USDC_COIN_TYPE);
 const alice = account("alice", {
     kind: "signer",
     signer: ALICE_KEYPAIR,
-    funding: [{ coin: deepCoin, amount: 1000n, via: deepFunding }],
+    funding: [
+        { coin: deepCoin, amount: 1000n, via: deepFunding },
+        { coin: usdcCoin, amount: 1_000_000_000n, via: usdcFunding }, // 1000 USDC (6 dp)
+    ],
 });
 const stackDef = defineDevstack({
-    members: [suiRef, whale, deepFunding, deepCoin, alice, dashboard()],
+    members: [
+        suiRef,
+        whale,
+        deepFunding,
+        deepCoin,
+        usdcMinter,
+        usdcFunding,
+        usdcCoin,
+        alice,
+        dashboard(),
+    ],
     stackName: STACK,
 });
 
@@ -76,7 +98,7 @@ const handle = runStack(stackDef, {
 let imageNote = " (default image — may cold-build ~12 min)";
 if (pulled) imageNote = ` (prebuilt image ${pulled})`;
 else if (ctx) imageNote = " (patched image)";
-console.error(`booting fork + DEEP plugin + dashboard()${imageNote}...`);
+console.error(`booting fork + DEEP/USDC plugins + dashboard()${imageNote}...`);
 const exit = await Effect.runPromiseExit(handle.start);
 if (Exit.isFailure(exit)) {
     console.error("BOOT FAILED:", inspect(exit.cause, { depth: 12 }));
@@ -115,7 +137,7 @@ const bar = "=".repeat(64);
 console.error(`\n${bar}`);
 console.error("  devstack dashboard is UP — open in your browser:");
 console.error(`    ${url ?? "(port not detected — check `lsof -p <pid>` for the LISTEN port)"}`);
-console.error("  Faucet panel: DEEP (editable amount) + SUI; alice pre-funded.");
+console.error("  Faucet panel: DEEP + USDC (editable amounts) + SUI; alice pre-funded with both.");
 console.error("  Press Ctrl+C to stop.");
 console.error(`${bar}\n`);
 
