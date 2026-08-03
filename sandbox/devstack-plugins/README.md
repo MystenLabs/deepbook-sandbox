@@ -113,6 +113,42 @@ liquidity, mock-Pyth initial feeds, codegen bindings) rather than porting
 market-maker, the oracle-service's ongoing price updates, or non-SUI funding on
 a mainnet fork — this package's funding plugins remain necessary alongside it.
 
+## `deepbook-known.ts` — DeepBook on the fork (DBSF-017)
+
+Implements the plan of record for the **fork** runtime: devstack's first-party
+`deepbook()` member in **mode `'known'`**, pinned to the mainnet ids DBSF-016
+verified into [`deployments/mainnet-fork.json`](../deployments/mainnet-fork.json)
+(drift-checked by `pnpm verify:deepbook-ids`). The local-mode machinery the plan
+of record lists above (publish, `DeepbookPoolSpec` pools, seed liquidity,
+mock-Pyth feeds) doesn't apply here — nothing publishes; the fork already
+carries mainnet's deployment.
+
+- `deepbookFromManifest()` — the member. Explicit manifest ids override
+  devstack's SDK-derived `.mainnet()` defaults — they match today, but SDK
+  constants have lagged mainnet before (`@mysten/deepbook-v3` 1.5.0 pins margin
+  v5; mainnet is v6), and explicit pins mean a future lag can't silently move
+  them; `network: 'mainnet'` keeps the known-table extras (deepTreasuryId, Pyth
+  state ids).
+- `deepbookMarginPackagesFromManifest()` — verify-only `knownPackage` members
+  for `deepbook_margin` + `margin_liquidation`. Devstack 0.7.0's known mode
+  hardcodes `margin: null`, so this is the cheap sibling-exposure path (vs. an
+  upstream PR); the members' boot probes double as fork-serves-the-pins checks.
+- `deepbookAdminAccountFromManifest()` — the impersonated mainnet admin wallet
+  (holds **both** `DeepbookAdminCap` and `MarginAdminCap`; known mode's
+  `adminCapId` is `null` by design). DBSF-020's create-pool action builds on it.
+- `mainnetForkDeepbookIds()` — the raw pins (registries with initial shared
+  versions, caps, default pools) for anything the member doesn't model.
+
+Live check: `pnpm verify:deepbook-member` boots a fork + the member + package
+probes for all three package pins (a STOCK image suffices — nothing funds,
+nothing executes non-SUI coins) and asserts every row settles (`done` for these
+task-role members) with the pinned package ids chain-proven on the fork; the
+registry object ids ride in from the drift-checked manifest.
+
+Swapping the legacy manifest reads (market-maker, examples, dashboard) over to
+the member's codegen bindings happens with the runtime composition
+(SEDEFI-325/326), same as the faucet/dashboard wiring below.
+
 ## Faucet & dashboard
 
 devstack's built-in dashboard auto-surfaces the `coinType:<DEEP>` and

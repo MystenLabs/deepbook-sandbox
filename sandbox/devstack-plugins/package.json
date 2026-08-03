@@ -12,6 +12,7 @@
         "test:e2e": "vitest run --config vitest.e2e.config.ts",
         "verify:dashboard-faucet": "node scripts/verify-dashboard-faucet.mjs",
         "verify:deepbook-ids": "node scripts/verify-deepbook-ids.mjs",
+        "verify:deepbook-member": "node scripts/verify-deepbook-member.mjs",
         "verify:usdc-minter": "node scripts/verify-usdc-minter.mjs",
         "dashboard:up": "node scripts/dashboard-up.mjs"
     },

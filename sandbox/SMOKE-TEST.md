@@ -45,7 +45,7 @@ and part of the value of this run is recording exactly where they break.
 ```bash
 cd sandbox/devstack-plugins
 pnpm install --ignore-workspace
-pnpm typecheck && pnpm test          # 21 unit tests
+pnpm typecheck && pnpm test          # 28 unit tests
 pnpm verify:usdc-minter              # Circle minter ids still current (mainnet read)
 
 FORK_IMAGE_CONTEXT="$PWD/../scripts/spikes/devstack-funding/.fork-patched/images" \
