@@ -9,7 +9,7 @@
  * liquidity on the opposite side — the sandbox market maker provides this.
  *
  * Prerequisites: The sandbox must be running with the market maker active.
- * Wait 10-15 seconds after `pnpm deploy-all` completes.
+ * The example waits for ask liquidity by itself.
  *
  * Usage: pnpm place-market-order
  */
@@ -20,6 +20,12 @@ import { setupWithBalanceManager, signAndExecute, waitForLiquidity } from "./set
 
 /** How many times to re-place the order if the ask side empties under us. */
 const MAX_ATTEMPTS = 3;
+
+/** Base quantity to buy, in DEEP. */
+const QUANTITY = 10;
+
+/** checkManagerBalance rounds to 9 decimals, so compare fills with a small tolerance. */
+const EPSILON = 1e-9;
 
 async function main() {
     const { client, keypair, balanceManagerKey } = await setupWithBalanceManager();
@@ -59,30 +65,37 @@ async function main() {
             poolKey: "DEEP_SUI",
             balanceManagerKey,
             clientOrderId: String(attempt),
-            quantity: 10,
+            quantity: QUANTITY,
             isBid: true,
             selfMatchingOption: SelfMatchingOptions.SELF_MATCHING_ALLOWED,
             payWithDeep: false,
         })(orderTx);
 
-        console.log(`Placing market BUY: 10 DEEP (attempt ${attempt}/${MAX_ATTEMPTS})...`);
+        console.log(`Placing market BUY: ${QUANTITY} DEEP (attempt ${attempt}/${MAX_ATTEMPTS})...`);
         const result = await signAndExecute(client, keypair, orderTx);
 
         const after = await deepBalance();
         filled = after - before;
 
-        if (filled > 0) {
+        // Success means the whole order filled. A dust fill is not a demonstration
+        // of a market order, so treat a partial fill as a retryable miss.
+        if (filled >= QUANTITY - EPSILON) {
             console.log(`Order executed. Transaction digest: ${result.digest}`);
             console.log(`Filled ${filled} DEEP — BalanceManager went ${before} → ${after}.`);
             break;
         }
 
-        console.log("Filled nothing: the ask side emptied between the check and the order.");
+        console.log(
+            `Filled ${filled} of ${QUANTITY} DEEP (digest ${result.digest}). Most likely the ` +
+                "ask side thinned between the depth check and the order — inspect the digest " +
+                "to confirm.",
+        );
     }
 
-    if (filled === 0) {
-        console.error(`\nNo fill after ${MAX_ATTEMPTS} attempts.`);
-        console.error("The market maker was not quoting asks for long enough to trade against.");
+    // Anything short of a full fill is a failure, including a negative or NaN delta.
+    if (!(filled >= QUANTITY - EPSILON)) {
+        console.error(`\nNo full fill after ${MAX_ATTEMPTS} attempts (last delta: ${filled}).`);
+        console.error("The market maker was not quoting enough ask depth to trade against.");
         console.error("Check it with: docker compose logs -f market-maker");
         process.exit(1);
     }
@@ -91,6 +104,8 @@ async function main() {
 }
 
 main().catch((err) => {
-    console.error("Error:", err.message ?? err);
+    // Print the whole error, not just err.message: the setup helpers attach the
+    // underlying failure as `cause`, and Node renders those chains natively.
+    console.error(err);
     process.exit(1);
 });

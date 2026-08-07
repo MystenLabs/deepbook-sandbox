@@ -69,10 +69,19 @@ const BALANCE_MANAGER_KEY = "MANAGER_1";
 const SUI_ADDRESS = SUI_FRAMEWORK_ADDRESS;
 
 // The sandbox market maker cancels its whole grid in one transaction and places
-// the replacement in a later one, so the book is briefly one-sided on every
-// rebalance — roughly every 13s, for up to about a second. Reads that need both
-// sides, and market orders that need resting liquidity, have to ride that out.
-// 30 attempts at 500ms covers a full rebalance cycle with room to spare.
+// the replacement in another, so the book is empty on BOTH sides in between. The
+// window lasts one transaction round trip, and longer when the maker tops up its
+// BalanceManager first or when a placement fails. Reads that need both sides, and
+// market orders that need resting liquidity, have to ride that out.
+//
+// The cycle is MM_REBALANCE_INTERVAL_MS (10s by default, see market-maker/config.ts)
+// plus the time to cancel and re-place both grids — about 13s measured on localnet.
+// 30 attempts at 500ms gives a ~15s budget, so it covers the default cycle with a
+// small margin. Raise these if you raise the interval.
+//
+// A book that is one-sided for longer has a different cause: the market maker drops
+// the ask side when it runs out of base balance, and the bid side when it runs out
+// of quote (see market-maker.ts, the hasBaseBalance / hasQuoteBalance filters).
 const BOOK_RETRY_ATTEMPTS = 30;
 const BOOK_RETRY_DELAY_MS = 500;
 
@@ -208,45 +217,62 @@ async function fundWallet(address: string): Promise<void> {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const REBALANCE_HINT =
-    "The sandbox market maker cancels its whole grid and re-places it every ~13s, so the\n" +
-    "order book is briefly one-sided on each rebalance. If this persists, the market maker\n" +
-    "is not quoting — check it with: docker compose logs -f market-maker";
+    "The sandbox market maker cancels its whole grid in one transaction and re-places it in\n" +
+    "another, so the order book is empty on both sides for the duration. If this persists,\n" +
+    "the market maker is not quoting, or the deployment manifest is stale — check with:\n" +
+    "docker compose logs -f market-maker";
 
 /**
- * True when an SDK read failed because the on-chain call aborted on a one-sided book.
+ * True when an SDK read came back with no command result.
  *
- * `midPrice` needs a best bid and a best ask. With either side missing the Move
- * call aborts, the devInspect result comes back empty, and the SDK trips over
- * `results[0].returnValues` — surfacing a bare TypeError that says nothing about
- * the order book. Matching the message is how we tell that apart from a real fault.
+ * This is a heuristic, not a precise test. Every SDK query dereferences
+ * `commandResults[0].returnValues[0].bcs`, and gRPC `simulateTransaction` returns
+ * a failed transaction with `commandResults: []` rather than throwing — so ANY
+ * failed simulation surfaces the same bare TypeError. An aborted `midPrice` on an
+ * empty book looks identical to a stale manifest or a wrong pool ID. Callers must
+ * therefore confirm the cause before treating it as an empty book.
  */
-function isEmptyBookError(err: unknown): boolean {
-    return err instanceof Error && err.message.includes("returnValues");
+function isEmptyCommandResultError(err: unknown): boolean {
+    return err instanceof Error && /returnValues|reading '0'/.test(err.message);
+}
+
+/** Depth on both sides, used to confirm what an empty command result actually meant. */
+async function bookIsOneSided(client: SandboxClient, poolKey: string): Promise<boolean> {
+    const ticks = await client.deepbook.getLevel2TicksFromMid(poolKey, 1);
+    return ticks.bid_prices.length === 0 || ticks.ask_prices.length === 0;
 }
 
 /**
  * Mid price for a pool, retried across the market maker's rebalance window.
  *
- * Use this instead of `client.deepbook.midPrice()` directly. Errors that are not
- * the empty-book abort are rethrown immediately, so genuine faults still fail fast.
+ * Use this instead of `client.deepbook.midPrice()` directly. `mid_price` aborts
+ * on-chain unless BOTH sides have resting orders (book.move: EEmptyOrderbook).
+ * A failed simulation is only retried once the book is confirmed to be missing a
+ * side; anything else — a stale manifest, a wrong pool ID — is rethrown at once
+ * with its original error, instead of being retried for the whole window and then
+ * misreported as an empty book.
  */
 export async function getMidPrice(client: SandboxClient, poolKey: string): Promise<number> {
+    const startedAt = Date.now();
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= BOOK_RETRY_ATTEMPTS; attempt++) {
         try {
             return await client.deepbook.midPrice(poolKey);
         } catch (err) {
-            if (!isEmptyBookError(err)) throw err;
+            if (!isEmptyCommandResultError(err)) throw err;
+            // Confirm the book really is missing a side. getLevel2TicksFromMid never
+            // aborts on an empty book, so it is a reliable oracle here.
+            if (!(await bookIsOneSided(client, poolKey))) throw err;
             lastError = err;
             if (attempt < BOOK_RETRY_ATTEMPTS) await sleep(BOOK_RETRY_DELAY_MS);
         }
     }
 
-    const waited = (BOOK_RETRY_ATTEMPTS * BOOK_RETRY_DELAY_MS) / 1000;
+    const waited = ((Date.now() - startedAt) / 1000).toFixed(1);
     throw new Error(
-        `Could not read the ${poolKey} mid price: the order book had no resting orders on ` +
-            `one side for ${waited}s (${BOOK_RETRY_ATTEMPTS} attempts).\n${REBALANCE_HINT}`,
+        `Could not read the ${poolKey} mid price: the order book was missing a side for ` +
+            `${waited}s (${BOOK_RETRY_ATTEMPTS} attempts).\n${REBALANCE_HINT}`,
         { cause: lastError },
     );
 }
@@ -256,25 +282,43 @@ export async function getMidPrice(client: SandboxClient, poolKey: string): Promi
  *
  * Market orders are immediate-or-cancel: against an empty side they match nothing
  * and still return a successful digest, so callers must check for depth first.
+ *
+ * Note there is no catch here on purpose. `get_level2_ticks_from_mid` has no
+ * empty-book assert — it returns empty vectors — so any throw from this call is a
+ * genuine fault and must reach the caller rather than be retried for 15s.
  */
 export async function waitForLiquidity(
     client: SandboxClient,
     poolKey: string,
     side: "bid" | "ask",
 ): Promise<void> {
+    const startedAt = Date.now();
+
     for (let attempt = 1; attempt <= BOOK_RETRY_ATTEMPTS; attempt++) {
-        try {
-            const ticks = await client.deepbook.getLevel2TicksFromMid(poolKey, 30);
-            const depth = side === "ask" ? ticks.ask_prices.length : ticks.bid_prices.length;
-            if (depth > 0) return;
-        } catch (err) {
-            if (!isEmptyBookError(err)) throw err;
-        }
+        const ticks = await client.deepbook.getLevel2TicksFromMid(poolKey, 30);
+        const depth = side === "ask" ? ticks.ask_prices.length : ticks.bid_prices.length;
+        if (depth > 0) return;
         if (attempt < BOOK_RETRY_ATTEMPTS) await sleep(BOOK_RETRY_DELAY_MS);
     }
 
-    const waited = (BOOK_RETRY_ATTEMPTS * BOOK_RETRY_DELAY_MS) / 1000;
+    const waited = ((Date.now() - startedAt) / 1000).toFixed(1);
     throw new Error(`No ${side} liquidity on ${poolKey} after ${waited}s.\n${REBALANCE_HINT}`);
+}
+
+/**
+ * Order book depth, retried while BOTH sides are empty.
+ *
+ * A rebalance empties the whole book, so a single read can catch a healthy sandbox
+ * mid-cycle. Returns null if the book stayed empty for the entire budget, which
+ * means the market maker is not quoting at all.
+ */
+export async function getBookTicks(client: SandboxClient, poolKey: string, ticks: number) {
+    for (let attempt = 1; attempt <= BOOK_RETRY_ATTEMPTS; attempt++) {
+        const level2 = await client.deepbook.getLevel2TicksFromMid(poolKey, ticks);
+        if (level2.bid_prices.length > 0 || level2.ask_prices.length > 0) return level2;
+        if (attempt < BOOK_RETRY_ATTEMPTS) await sleep(BOOK_RETRY_DELAY_MS);
+    }
+    return null;
 }
 
 // ---------------------------------------------------------------------------

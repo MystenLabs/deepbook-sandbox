@@ -55,26 +55,43 @@ The shared `setup.ts` module handles:
 - Creating BalanceManagers on-chain (for examples that need one)
 - Riding out the market maker's rebalance window (see below)
 
-### The order book is not always two-sided
+### The order book is not always populated
 
 The sandbox market maker cancels its whole grid in one transaction and places the
-replacement in a later one, so the book is briefly one-sided on every rebalance —
-roughly every 13 seconds, for up to about a second. Two things break in that window:
+replacement in another, so the book is **empty on both sides** in between. The cycle is
+`MM_REBALANCE_INTERVAL_MS` (10 seconds by default) plus the time to cancel and re-place
+both grids — about 13 seconds on localnet. The empty window lasts one transaction round
+trip, and longer when the maker tops up its BalanceManager first.
 
-- `midPrice()` aborts on-chain, and the SDK surfaces it as an opaque
-  `Cannot read properties of undefined (reading 'returnValues')`.
+A book that stays _one-sided_ for longer has a different cause: the market maker drops
+the ask side when it runs out of base balance, and the bid side when it runs out of quote.
+
+Three things break in those windows:
+
+- `midPrice()` aborts on-chain unless both sides have resting orders, and the SDK
+  surfaces it as an opaque `Cannot read properties of undefined (reading 'returnValues')`.
 - Market orders are immediate-or-cancel, so they match nothing and still return a
   successful digest.
+- A plain depth read looks identical to a sandbox that never started.
 
-`setup.ts` exports two helpers for this, and the examples use them. Any integration
+`setup.ts` exports three helpers for this, and the examples use them. Any integration
 you build against the sandbox will want the same treatment:
 
-- `getMidPrice(client, poolKey)` — retries across the window; rethrows anything that
-  is not an empty-book abort so real faults still fail fast.
+- `getBookTicks(client, poolKey, ticks)` — depth, retried while the book is fully empty.
+- `getMidPrice(client, poolKey)` — retries while a side is missing. It confirms the book
+  state before retrying, so a stale manifest or a wrong pool ID fails fast with its own
+  error instead of being reported as an empty book.
 - `waitForLiquidity(client, poolKey, side)` — blocks until that side has resting orders.
 
+Note the retry budget (30 attempts at 500ms ≈ 15s) is sized for the default rebalance
+interval. Raise it if you raise `MM_REBALANCE_INTERVAL_MS`.
+
 `place-market-order` also proves its fill from the BalanceManager balance delta rather
-than trusting the digest, and exits non-zero if nothing filled.
+than trusting the digest, and exits non-zero unless the whole order filled.
+
+`swap-tokens` deliberately has no such guard: it uses `minOut: 0` and reports only the
+digest, so a swap during the empty window returns nothing and still succeeds. That keeps
+the example minimal — real integrations should set a real `minOut`.
 
 ### SDK Pattern
 
@@ -87,7 +104,8 @@ import { SuiGrpcClient } from '@mysten/sui/grpc';
 const client = new SuiGrpcClient({ network: 'custom', baseUrl: '...' })
   .$extend(deepbook({ address, packageIds, coins, pools }));
 
-// Read-only queries
+// Read-only queries — but see the retry note above; the examples call
+// getMidPrice(client, 'DEEP_SUI') from setup.ts rather than this directly.
 const price = await client.deepbook.midPrice('DEEP_SUI');
 
 // Transaction builders (curried pattern)
@@ -100,9 +118,13 @@ await client.core.signAndExecuteTransaction({ transaction: tx, signer });
 
 - **"ENOENT ... localnet.json"** — Run `pnpm deploy-all` in the sandbox directory first.
 - **"fetch failed" / connection refused** — Make sure localnet is running (`docker ps`).
-- **"Could not read the mid price" / "No ask liquidity"** — The market maker stopped quoting.
-  The examples already retry for 15 seconds, so this means the book stayed empty. Check
-  `docker compose logs -f market-maker`.
+- **"Could not read the mid price" / "No ask liquidity" / "Order book stayed empty"** — The
+  examples already retry for ~15 seconds, so the book stayed empty for a whole cycle. Either
+  the market maker stopped quoting (`docker compose logs -f market-maker`), or
+  `sandbox/deployments/localnet.json` is stale — re-run `pnpm deploy-all` if you rebuilt the
+  sandbox.
+- **`swap-tokens` prints a digest but no DEEP arrives** — The swap uses `minOut: 0`, so an
+  empty book is a successful no-op. Re-run it, or check the market maker.
 - **"Insufficient gas"** — The faucet may be slow. The setup retries automatically, but if it
   persists check `docker compose logs sui-localnet`.
 - **Type errors with `@mysten/sui`** — Install from `examples/sandbox/`, not from `sandbox/`.

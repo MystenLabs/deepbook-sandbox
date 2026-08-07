@@ -10,33 +10,35 @@
  * Usage: pnpm check-order-book
  */
 
-import { createReadOnlyClient, getMidPrice } from "./setup.js";
+import { createReadOnlyClient, getBookTicks, getMidPrice } from "./setup.js";
 
 async function main() {
     const { client } = await createReadOnlyClient();
 
-    // Read the depth first, so a genuinely empty book can be reported plainly.
-    // Asking for the mid price first would abort on-chain and raise an opaque
-    // SDK error before we ever got the chance to explain what is going on.
+    // Read the depth first, so an empty book can be reported plainly. Asking for
+    // the mid price first would abort on-chain and raise an opaque SDK error
+    // before we ever got the chance to explain what is going on.
+    //
+    // getBookTicks retries while the book is empty on both sides, which is what a
+    // market-maker rebalance produces. Without that retry this example reports a
+    // healthy sandbox as "still starting up".
     //
     // Each tick contains a price and the total quantity resting at that level.
-    const ticks = await client.deepbook.getLevel2TicksFromMid("DEEP_SUI", 5);
+    const ticks = await getBookTicks(client, "DEEP_SUI", 5);
+
+    if (ticks === null) {
+        console.error("Order book stayed empty — the market maker is not quoting.");
+        console.error("Check it with: docker compose logs -f market-maker");
+        process.exit(1);
+    }
+
     const hasAsks = ticks.ask_prices.length > 0;
     const hasBids = ticks.bid_prices.length > 0;
-
-    if (!hasAsks && !hasBids) {
-        console.log("Order book is empty — the market maker may still be starting up.");
-        console.log("Wait 10-15 seconds after deploy-all completes and try again.");
-        return;
-    }
 
     // The mid price is the midpoint between best bid and best ask, and the most
     // common reference price for a pair. It only exists when both sides have
     // resting orders, so a one-sided book has no mid price to read — reporting
     // the depth we do have beats failing outright.
-    //
-    // getMidPrice retries across the market maker's rebalance window, when one
-    // side of the book briefly disappears.
     const midPrice = hasAsks && hasBids ? await getMidPrice(client, "DEEP_SUI") : null;
 
     if (midPrice === null) {
@@ -86,6 +88,8 @@ async function main() {
 }
 
 main().catch((err) => {
-    console.error("Error:", err.message ?? err);
+    // Print the whole error, not just err.message: the setup helpers attach the
+    // underlying failure as `cause`, and Node renders those chains natively.
+    console.error(err);
     process.exit(1);
 });

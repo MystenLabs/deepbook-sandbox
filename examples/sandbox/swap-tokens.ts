@@ -47,6 +47,8 @@ async function main() {
 }
 
 main().catch((err) => {
-    console.error("Error:", err.message ?? err);
+    // Print the whole error, not just err.message: the setup helpers attach the
+    // underlying failure as `cause`, and Node renders those chains natively.
+    console.error(err);
     process.exit(1);
 });
