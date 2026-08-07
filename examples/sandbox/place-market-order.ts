@@ -43,15 +43,16 @@ async function main() {
     // So we wait for depth, then prove the fill from the balance delta rather than
     // trusting the digest. The market maker empties the book on every rebalance,
     // so an attempt can still lose the race — hence the retry.
+    // checkManagerBalance returns { coinType, balance } with balance in human units.
+    const deepBalance = async () =>
+        Number((await client.deepbook.checkManagerBalance(balanceManagerKey, "DEEP")).balance);
+
     let filled = 0;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         await waitForLiquidity(client, "DEEP_SUI", "ask");
 
-        // checkManagerBalance returns { coinType, balance } with balance in human units.
-        const before = Number(
-            (await client.deepbook.checkManagerBalance(balanceManagerKey, "DEEP")).balance,
-        );
+        const before = await deepBalance();
 
         const orderTx = new Transaction();
         client.deepbook.deepBook.placeMarketOrder({
@@ -67,9 +68,7 @@ async function main() {
         console.log(`Placing market BUY: 10 DEEP (attempt ${attempt}/${MAX_ATTEMPTS})...`);
         const result = await signAndExecute(client, keypair, orderTx);
 
-        const after = Number(
-            (await client.deepbook.checkManagerBalance(balanceManagerKey, "DEEP")).balance,
-        );
+        const after = await deepBalance();
         filled = after - before;
 
         if (filled > 0) {

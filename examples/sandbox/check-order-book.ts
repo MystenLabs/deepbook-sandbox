@@ -21,8 +21,10 @@ async function main() {
     //
     // Each tick contains a price and the total quantity resting at that level.
     const ticks = await client.deepbook.getLevel2TicksFromMid("DEEP_SUI", 5);
+    const hasAsks = ticks.ask_prices.length > 0;
+    const hasBids = ticks.bid_prices.length > 0;
 
-    if (ticks.ask_prices.length === 0 && ticks.bid_prices.length === 0) {
+    if (!hasAsks && !hasBids) {
         console.log("Order book is empty — the market maker may still be starting up.");
         console.log("Wait 10-15 seconds after deploy-all completes and try again.");
         return;
@@ -35,12 +37,10 @@ async function main() {
     //
     // getMidPrice retries across the market maker's rebalance window, when one
     // side of the book briefly disappears.
-    const twoSided = ticks.ask_prices.length > 0 && ticks.bid_prices.length > 0;
-    const midPrice = twoSided ? await getMidPrice(client, "DEEP_SUI") : null;
+    const midPrice = hasAsks && hasBids ? await getMidPrice(client, "DEEP_SUI") : null;
 
     if (midPrice === null) {
-        const missing = ticks.ask_prices.length === 0 ? "ask" : "bid";
-        console.log(`No ${missing} side resting — mid price unavailable.\n`);
+        console.log(`No ${hasAsks ? "bid" : "ask"} side resting — mid price unavailable.\n`);
     } else {
         console.log(`DEEP/SUI mid price: ${midPrice} SUI per DEEP\n`);
     }
