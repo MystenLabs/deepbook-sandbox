@@ -16,7 +16,10 @@
 
 import { SelfMatchingOptions } from "@mysten/deepbook-v3";
 import { Transaction } from "@mysten/sui/transactions";
-import { setupWithBalanceManager, signAndExecute } from "./setup.js";
+import { setupWithBalanceManager, signAndExecute, waitForLiquidity } from "./setup.js";
+
+/** How many times to re-place the order if the ask side empties under us. */
+const MAX_ATTEMPTS = 3;
 
 async function main() {
     const { client, keypair, balanceManagerKey } = await setupWithBalanceManager();
@@ -34,25 +37,56 @@ async function main() {
     //
     // Market orders don't specify a price — they take the best available.
     // The quantity is in base units (DEEP).
-    const orderTx = new Transaction();
-    client.deepbook.deepBook.placeMarketOrder({
-        poolKey: "DEEP_SUI",
-        balanceManagerKey,
-        clientOrderId: "1",
-        quantity: 10,
-        isBid: true,
-        selfMatchingOption: SelfMatchingOptions.SELF_MATCHING_ALLOWED,
-        payWithDeep: false,
-    })(orderTx);
+    //
+    // A market order is immediate-or-cancel. If the ask side happens to be empty
+    // it matches nothing, yet the transaction still succeeds and returns a digest.
+    // So we wait for depth, then prove the fill from the balance delta rather than
+    // trusting the digest. The market maker empties the book on every rebalance,
+    // so an attempt can still lose the race — hence the retry.
+    let filled = 0;
 
-    console.log("Placing market BUY: 10 DEEP...");
-    const result = await signAndExecute(client, keypair, orderTx);
-    console.log(`Order executed. Transaction digest: ${result.digest}\n`);
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        await waitForLiquidity(client, "DEEP_SUI", "ask");
 
-    // Check the BalanceManager balance to confirm the fill.
-    // checkManagerBalance returns { coinType, balance } with the balance in human units.
-    const { balance } = await client.deepbook.checkManagerBalance(balanceManagerKey, "DEEP");
-    console.log(`DEEP balance in BalanceManager: ${balance}`);
+        // checkManagerBalance returns { coinType, balance } with balance in human units.
+        const before = Number(
+            (await client.deepbook.checkManagerBalance(balanceManagerKey, "DEEP")).balance,
+        );
+
+        const orderTx = new Transaction();
+        client.deepbook.deepBook.placeMarketOrder({
+            poolKey: "DEEP_SUI",
+            balanceManagerKey,
+            clientOrderId: String(attempt),
+            quantity: 10,
+            isBid: true,
+            selfMatchingOption: SelfMatchingOptions.SELF_MATCHING_ALLOWED,
+            payWithDeep: false,
+        })(orderTx);
+
+        console.log(`Placing market BUY: 10 DEEP (attempt ${attempt}/${MAX_ATTEMPTS})...`);
+        const result = await signAndExecute(client, keypair, orderTx);
+
+        const after = Number(
+            (await client.deepbook.checkManagerBalance(balanceManagerKey, "DEEP")).balance,
+        );
+        filled = after - before;
+
+        if (filled > 0) {
+            console.log(`Order executed. Transaction digest: ${result.digest}`);
+            console.log(`Filled ${filled} DEEP — BalanceManager went ${before} → ${after}.`);
+            break;
+        }
+
+        console.log("Filled nothing: the ask side emptied between the check and the order.");
+    }
+
+    if (filled === 0) {
+        console.error(`\nNo fill after ${MAX_ATTEMPTS} attempts.`);
+        console.error("The market maker was not quoting asks for long enough to trade against.");
+        console.error("Check it with: docker compose logs -f market-maker");
+        process.exit(1);
+    }
 
     console.log("\nDone.");
 }

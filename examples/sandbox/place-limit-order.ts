@@ -16,7 +16,7 @@
 
 import { OrderType, SelfMatchingOptions } from "@mysten/deepbook-v3";
 import { Transaction } from "@mysten/sui/transactions";
-import { setupWithBalanceManager, signAndExecute } from "./setup.js";
+import { getMidPrice, setupWithBalanceManager, signAndExecute } from "./setup.js";
 
 async function main() {
     const { client, keypair, balanceManagerKey } = await setupWithBalanceManager();
@@ -32,7 +32,10 @@ async function main() {
 
     // Query the current mid price so we can place our bid below it.
     // A bid below all resting bids will rest on the book without filling.
-    const midPrice = await client.deepbook.midPrice("DEEP_SUI");
+    //
+    // getMidPrice retries across the market maker's rebalance window. Calling
+    // client.deepbook.midPrice() directly fails whenever the book is one-sided.
+    const midPrice = await getMidPrice(client, "DEEP_SUI");
 
     // Round down to the pool's tick size (0.000001 SUI for DEEP/SUI).
     // On-chain prices must be exact multiples of the tick size.

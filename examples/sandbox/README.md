@@ -53,6 +53,28 @@ The shared `setup.ts` module handles:
 - Constructing `DeepBookClient` with custom localnet package IDs, coins, and pools
 - Generating and funding a keypair (via the sandbox faucet at port 9009)
 - Creating BalanceManagers on-chain (for examples that need one)
+- Riding out the market maker's rebalance window (see below)
+
+### The order book is not always two-sided
+
+The sandbox market maker cancels its whole grid in one transaction and places the
+replacement in a later one, so the book is briefly one-sided on every rebalance —
+roughly every 13 seconds, for up to about a second. Two things break in that window:
+
+- `midPrice()` aborts on-chain, and the SDK surfaces it as an opaque
+  `Cannot read properties of undefined (reading 'returnValues')`.
+- Market orders are immediate-or-cancel, so they match nothing and still return a
+  successful digest.
+
+`setup.ts` exports two helpers for this, and the examples use them. Any integration
+you build against the sandbox will want the same treatment:
+
+- `getMidPrice(client, poolKey)` — retries across the window; rethrows anything that
+  is not an empty-book abort so real faults still fail fast.
+- `waitForLiquidity(client, poolKey, side)` — blocks until that side has resting orders.
+
+`place-market-order` also proves its fill from the BalanceManager balance delta rather
+than trusting the digest, and exits non-zero if nothing filled.
 
 ### SDK Pattern
 
@@ -78,9 +100,11 @@ await client.core.signAndExecuteTransaction({ transaction: tx, signer });
 
 - **"ENOENT ... localnet.json"** — Run `pnpm deploy-all` in the sandbox directory first.
 - **"fetch failed" / connection refused** — Make sure localnet is running (`docker ps`).
-- **Market order / swap returns empty fill** — The market maker may not have placed orders yet.
-  Wait 10-15 seconds after deploy-all completes and retry.
+- **"Could not read the mid price" / "No ask liquidity"** — The market maker stopped quoting.
+  The examples already retry for 15 seconds, so this means the book stayed empty. Check
+  `docker compose logs -f market-maker`.
 - **"Insufficient gas"** — The faucet may be slow. The setup retries automatically, but if it
   persists check `docker compose logs sui-localnet`.
-- **Type errors with `@mysten/sui`** — These examples use `@mysten/sui@v2` which is incompatible
-  with the sandbox's `@mysten/sui@v1`. Make sure you install from `examples/sandbox/`, not from `sandbox/`.
+- **Type errors with `@mysten/sui`** — Install from `examples/sandbox/`, not from `sandbox/`.
+  These examples keep their own `node_modules`; running them against another subproject's
+  install can resolve a different copy of the SDK.

@@ -10,17 +10,15 @@
  * Usage: pnpm check-order-book
  */
 
-import { createReadOnlyClient } from "./setup.js";
+import { createReadOnlyClient, getMidPrice } from "./setup.js";
 
 async function main() {
     const { client } = await createReadOnlyClient();
 
-    // Query the mid price — the midpoint between best bid and best ask.
-    // This is the most common reference price for the trading pair.
-    const midPrice = await client.deepbook.midPrice("DEEP_SUI");
-    console.log(`DEEP/SUI mid price: ${midPrice} SUI per DEEP\n`);
-
-    // Query order book depth: 5 ticks (price levels) from each side of the mid.
+    // Read the depth first, so a genuinely empty book can be reported plainly.
+    // Asking for the mid price first would abort on-chain and raise an opaque
+    // SDK error before we ever got the chance to explain what is going on.
+    //
     // Each tick contains a price and the total quantity resting at that level.
     const ticks = await client.deepbook.getLevel2TicksFromMid("DEEP_SUI", 5);
 
@@ -28,6 +26,23 @@ async function main() {
         console.log("Order book is empty — the market maker may still be starting up.");
         console.log("Wait 10-15 seconds after deploy-all completes and try again.");
         return;
+    }
+
+    // The mid price is the midpoint between best bid and best ask, and the most
+    // common reference price for a pair. It only exists when both sides have
+    // resting orders, so a one-sided book has no mid price to read — reporting
+    // the depth we do have beats failing outright.
+    //
+    // getMidPrice retries across the market maker's rebalance window, when one
+    // side of the book briefly disappears.
+    const twoSided = ticks.ask_prices.length > 0 && ticks.bid_prices.length > 0;
+    const midPrice = twoSided ? await getMidPrice(client, "DEEP_SUI") : null;
+
+    if (midPrice === null) {
+        const missing = ticks.ask_prices.length === 0 ? "ask" : "bid";
+        console.log(`No ${missing} side resting — mid price unavailable.\n`);
+    } else {
+        console.log(`DEEP/SUI mid price: ${midPrice} SUI per DEEP\n`);
     }
 
     console.log("=== DEEP/SUI Order Book ===\n");
@@ -53,7 +68,7 @@ async function main() {
         );
     }
 
-    console.log(`  --- mid: ${midPrice} ---`);
+    console.log(midPrice === null ? "  --- no mid ---" : `  --- mid: ${midPrice} ---`);
 
     // Bid side (buyers) — displayed top-down (highest first)
     const bids = ticks.bid_prices.map((price, i) => ({

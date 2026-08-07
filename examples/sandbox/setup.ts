@@ -68,6 +68,14 @@ const FAUCET_URL = "http://127.0.0.1:9009";
 const BALANCE_MANAGER_KEY = "MANAGER_1";
 const SUI_ADDRESS = SUI_FRAMEWORK_ADDRESS;
 
+// The sandbox market maker cancels its whole grid in one transaction and places
+// the replacement in a later one, so the book is briefly one-sided on every
+// rebalance — roughly every 13s, for up to about a second. Reads that need both
+// sides, and market orders that need resting liquidity, have to ride that out.
+// 30 attempts at 500ms covers a full rebalance cycle with room to spare.
+const BOOK_RETRY_ATTEMPTS = 30;
+const BOOK_RETRY_DELAY_MS = 500;
+
 // ---------------------------------------------------------------------------
 // Manifest loading & ID extraction
 // ---------------------------------------------------------------------------
@@ -191,6 +199,82 @@ async function fundWallet(address: string): Promise<void> {
     // Fund with both SUI (for gas + quote coin) and DEEP (for base coin / fees)
     await fundFromFaucet(address, "SUI");
     await fundFromFaucet(address, "DEEP");
+}
+
+// ---------------------------------------------------------------------------
+// Order book helpers
+// ---------------------------------------------------------------------------
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const REBALANCE_HINT =
+    "The sandbox market maker cancels its whole grid and re-places it every ~13s, so the\n" +
+    "order book is briefly one-sided on each rebalance. If this persists, the market maker\n" +
+    "is not quoting — check it with: docker compose logs -f market-maker";
+
+/**
+ * True when an SDK read failed because the on-chain call aborted on a one-sided book.
+ *
+ * `midPrice` needs a best bid and a best ask. With either side missing the Move
+ * call aborts, the devInspect result comes back empty, and the SDK trips over
+ * `results[0].returnValues` — surfacing a bare TypeError that says nothing about
+ * the order book. Matching the message is how we tell that apart from a real fault.
+ */
+function isEmptyBookError(err: unknown): boolean {
+    return err instanceof Error && err.message.includes("returnValues");
+}
+
+/**
+ * Mid price for a pool, retried across the market maker's rebalance window.
+ *
+ * Use this instead of `client.deepbook.midPrice()` directly. Errors that are not
+ * the empty-book abort are rethrown immediately, so genuine faults still fail fast.
+ */
+export async function getMidPrice(client: SandboxClient, poolKey: string): Promise<number> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= BOOK_RETRY_ATTEMPTS; attempt++) {
+        try {
+            return await client.deepbook.midPrice(poolKey);
+        } catch (err) {
+            if (!isEmptyBookError(err)) throw err;
+            lastError = err;
+            if (attempt < BOOK_RETRY_ATTEMPTS) await sleep(BOOK_RETRY_DELAY_MS);
+        }
+    }
+
+    const waited = (BOOK_RETRY_ATTEMPTS * BOOK_RETRY_DELAY_MS) / 1000;
+    throw new Error(
+        `Could not read the ${poolKey} mid price: the order book had no resting orders on ` +
+            `one side for ${waited}s (${BOOK_RETRY_ATTEMPTS} attempts).\n${REBALANCE_HINT}`,
+        { cause: lastError },
+    );
+}
+
+/**
+ * Block until the requested side of the book has resting orders.
+ *
+ * Market orders are immediate-or-cancel: against an empty side they match nothing
+ * and still return a successful digest, so callers must check for depth first.
+ */
+export async function waitForLiquidity(
+    client: SandboxClient,
+    poolKey: string,
+    side: "bid" | "ask",
+): Promise<void> {
+    for (let attempt = 1; attempt <= BOOK_RETRY_ATTEMPTS; attempt++) {
+        try {
+            const ticks = await client.deepbook.getLevel2TicksFromMid(poolKey, 30);
+            const depth = side === "ask" ? ticks.ask_prices.length : ticks.bid_prices.length;
+            if (depth > 0) return;
+        } catch (err) {
+            if (!isEmptyBookError(err)) throw err;
+        }
+        if (attempt < BOOK_RETRY_ATTEMPTS) await sleep(BOOK_RETRY_DELAY_MS);
+    }
+
+    const waited = (BOOK_RETRY_ATTEMPTS * BOOK_RETRY_DELAY_MS) / 1000;
+    throw new Error(`No ${side} liquidity on ${poolKey} after ${waited}s.\n${REBALANCE_HINT}`);
 }
 
 // ---------------------------------------------------------------------------
