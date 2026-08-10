@@ -13,10 +13,19 @@
  */
 
 import { Transaction } from "@mysten/sui/transactions";
-import { setupSandbox, signAndExecute } from "./setup.js";
+import { setupSandbox, signAndExecute, waitForLiquidity } from "./setup.js";
 
 async function main() {
-    const { client, keypair, address } = await setupSandbox();
+    const { client, keypair, address, manifest } = await setupSandbox();
+    const deepType = manifest.pools.DEEP_SUI.baseCoinType;
+
+    // A swap against an empty ask side matches nothing and STILL returns a
+    // successful digest, exactly like a market order. Wait for depth, then prove
+    // the swap from the wallet balance rather than trusting the digest.
+    await waitForLiquidity(client, "DEEP_SUI", "ask");
+    const before = BigInt(
+        (await client.core.getBalance({ owner: address, coinType: deepType })).balance.balance,
+    );
 
     // Swap 0.1 SUI for DEEP on the DEEP/SUI pool.
     // Since SUI is the quote coin in DEEP/SUI, we use swapExactQuoteForBase.
@@ -43,7 +52,20 @@ async function main() {
     const result = await signAndExecute(client, keypair, tx);
     console.log(`Transaction digest: ${result.digest}`);
 
-    console.log("\nDone. Check explorer for detailed balance changes.");
+    const after = BigInt(
+        (await client.core.getBalance({ owner: address, coinType: deepType })).balance.balance,
+    );
+
+    if (after <= before) {
+        console.error("\nThe swap returned no DEEP, but the transaction succeeded.");
+        console.error("minOut is 0, so an empty ask side makes this a silent no-op.");
+        console.error("Check the market maker with: docker compose logs -f market-maker");
+        process.exit(1);
+    }
+
+    // DEEP has 6 decimals; divide for a human-readable figure.
+    console.log(`Received ${Number(after - before) / 1_000_000} DEEP.`);
+    console.log("\nDone.");
 }
 
 main().catch((err) => {

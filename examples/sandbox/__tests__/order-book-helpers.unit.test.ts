@@ -1,24 +1,33 @@
 /**
  * Unit tests for the order-book helpers in setup.ts.
  *
- * These exist because two properties below are invisible to any end-to-end run,
- * no matter how many times it executes the examples:
+ * These exist because three properties are invisible to any end-to-end run, no
+ * matter how many times it executes the examples:
  *
  *   1. Which side of the book `waitForLiquidity` checks. The sandbox market maker
  *      posts bids and asks in the SAME transaction, so depth on one side always
  *      implies depth on the other. An inverted ternary still returns, the order
  *      still fills, and a live run cannot tell correct code from broken code.
  *
- *   2. Whether `isEmptyCommandResultError` still recognises the SDK's failure. It
- *      matches the text of a V8 TypeError, not an SDK contract. If a future
- *      @mysten/deepbook-v3 throws something else, the retry silently stops working
- *      and SEDEFI-440 regresses. The empty-book window is ~1s in 13, so CI would
- *      go intermittent rather than red — which reads as flakiness and gets ignored.
+ *   2. How long the retry budget actually is. A budget collapsed to near-zero
+ *      still passes every example run on a healthy sandbox — it only shows up as
+ *      the SEDEFI-440 flake returning, roughly one run in twelve, which reads as
+ *      flaky CI and gets ignored. The elapsed-time assertions below pin it.
+ *
+ *   3. That the classifier stays NARROW. Broadening it silently converts a stale
+ *      manifest or a wrong pool id into "the market maker is not quoting", after
+ *      a pointless 15s wait.
+ *
+ * What these tests canNOT do: notice that the SDK changed its error. The strings
+ * below are written here, not imported from the SDK, so a real upstream change
+ * breaks production while these stay green. They pin the classifier's contract,
+ * nothing more. The e2e job is where an SDK change would actually surface.
  *
  * Everything here runs against a stubbed client. No chain, no container, no network.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DeepBookClient, Level2TicksFromMid } from "@mysten/deepbook-v3";
 
 import {
     getBookTicks,
@@ -28,23 +37,21 @@ import {
 } from "../setup.js";
 import type { SandboxClient } from "../setup.js";
 
-// Mirrors BOOK_RETRY_ATTEMPTS / BOOK_RETRY_DELAY_MS in setup.ts. If those change,
-// these must change too — that coupling is deliberate, so the budget cannot drift
-// without a test failing and forcing a look.
+// Mirrors BOOK_RETRY_ATTEMPTS / BOOK_RETRY_DELAY_MS in setup.ts. Both the attempt
+// count and the delay are asserted below, so neither can drift without a failure.
 const ATTEMPTS = 30;
 const DELAY_MS = 500;
-const FULL_BUDGET_MS = ATTEMPTS * DELAY_MS;
+// N attempts sleep N-1 times — the classic off-by-one, and the reason the helpers
+// report measured elapsed time rather than ATTEMPTS * DELAY_MS.
+const EXPECTED_ELAPSED = (((ATTEMPTS - 1) * DELAY_MS) / 1000).toFixed(1);
 
-/** The exact error the SDK raises when a simulation returns no command result. */
+/** The error the SDK raises today when a simulation returns no command result. */
 const SDK_EMPTY = () =>
     new TypeError("Cannot read properties of undefined (reading 'returnValues')");
 
-type Ticks = {
-    bid_prices: number[];
-    bid_quantities: number[];
-    ask_prices: number[];
-    ask_quantities: number[];
-};
+// Using the SDK's own type means a field rename upstream fails `pnpm typecheck`,
+// which is the closest this suite gets to genuine drift detection.
+type Ticks = Level2TicksFromMid;
 
 const EMPTY: Ticks = { bid_prices: [], bid_quantities: [], ask_prices: [], ask_quantities: [] };
 const ASKS_ONLY: Ticks = {
@@ -68,16 +75,12 @@ const TWO_SIDED: Ticks = {
 
 /** Minimal stub of the two SDK queries the helpers touch. */
 function stubClient(opts: {
-    ticks?: Ticks | (() => Ticks);
-    getLevel2TicksFromMid?: ReturnType<typeof vi.fn>;
-    midPrice?: ReturnType<typeof vi.fn>;
+    ticks?: Ticks;
+    getLevel2TicksFromMid?: DeepBookClient["getLevel2TicksFromMid"];
+    midPrice?: DeepBookClient["midPrice"];
 }) {
-    const ticksFn =
-        opts.getLevel2TicksFromMid ??
-        vi.fn(async () =>
-            typeof opts.ticks === "function" ? opts.ticks() : (opts.ticks ?? EMPTY),
-        );
-    const midPriceFn = opts.midPrice ?? vi.fn(async () => 1.45);
+    const ticksFn = vi.fn(opts.getLevel2TicksFromMid ?? (async () => opts.ticks ?? EMPTY));
+    const midPriceFn = vi.fn(opts.midPrice ?? (async () => 1.45));
 
     const client = {
         deepbook: { getLevel2TicksFromMid: ticksFn, midPrice: midPriceFn },
@@ -87,26 +90,38 @@ function stubClient(opts: {
 }
 
 afterEach(() => {
+    // Order matters: drop any timer still pending from a failed run before
+    // switching back to real ones, so it cannot fire into the next test.
+    vi.clearAllTimers();
     vi.useRealTimers();
-    vi.restoreAllMocks();
 });
 
 // ---------------------------------------------------------------------------
 
 describe("isEmptyCommandResultError", () => {
-    it("recognises the SDK's empty-simulation TypeError", () => {
-        // The drift detector. If this ever fails, the SDK changed its error and
-        // the whole retry mechanism has stopped working.
+    it("matches the SDK's empty-simulation TypeError", () => {
         expect(isEmptyCommandResultError(SDK_EMPTY())).toBe(true);
     });
 
-    it("recognises the narrower `reading '0'` variant", () => {
+    it("matches the narrower `reading '0'` variant", () => {
         // Raised instead when commandResults itself is undefined rather than [].
         expect(
             isEmptyCommandResultError(
                 new TypeError("Cannot read properties of undefined (reading '0')"),
             ),
         ).toBe(true);
+    });
+
+    it("does not match an unrelated missing-property TypeError", () => {
+        // The near miss, and the one that matters most. Only commandResults[0] and
+        // .returnValues mean "empty simulation". Broadening the regex to something
+        // like /Cannot read properties/ would make every missing-property fault
+        // look like an empty book: retried for 15s, then blamed on the maker.
+        expect(
+            isEmptyCommandResultError(
+                new TypeError("Cannot read properties of undefined (reading 'digest')"),
+            ),
+        ).toBe(false);
     });
 
     it("does not match a transport error", () => {
@@ -134,6 +149,7 @@ describe("waitForLiquidity", () => {
         const { client, ticksFn } = stubClient({ ticks: ASKS_ONLY });
         await expect(waitForLiquidity(client, "DEEP_SUI", "ask")).resolves.toBeUndefined();
         expect(ticksFn).toHaveBeenCalledTimes(1);
+        expect(ticksFn).toHaveBeenCalledWith("DEEP_SUI", 30);
     });
 
     it("returns for 'bid' when only the bid side has depth", async () => {
@@ -143,40 +159,69 @@ describe("waitForLiquidity", () => {
     });
 
     it("keeps waiting for 'ask' while only the bid side has depth", async () => {
-        // The inverse of the test above: the wrong side being full must NOT satisfy it.
+        // The inverse of the pair above: the wrong side being full must NOT satisfy it.
         vi.useFakeTimers();
         const { client } = stubClient({ ticks: BIDS_ONLY });
 
-        const promise = waitForLiquidity(client, "DEEP_SUI", "ask");
-        const assertion = expect(promise).rejects.toThrow(/No ask liquidity on DEEP_SUI/);
-        await vi.advanceTimersByTimeAsync(FULL_BUDGET_MS);
-        await assertion;
+        const settled = waitForLiquidity(client, "DEEP_SUI", "ask").catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
+
+        expect((await settled) as Error).toMatchObject({
+            message: expect.stringMatching(/No ask liquidity on DEEP_SUI/),
+        });
+    });
+
+    it("recovers when the side fills partway through the budget", async () => {
+        // The real SEDEFI-440 scenario: empty during a rebalance, then quoting again.
+        vi.useFakeTimers();
+        let calls = 0;
+        const { client, ticksFn } = stubClient({
+            getLevel2TicksFromMid: async () => (++calls < 3 ? EMPTY : ASKS_ONLY),
+        });
+
+        const settled = waitForLiquidity(client, "DEEP_SUI", "ask").catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
+
+        expect(await settled).toBeUndefined();
+        expect(ticksFn).toHaveBeenCalledTimes(3);
     });
 
     it("rethrows a real fault instead of swallowing it", async () => {
         // getLevel2TicksFromMid has no empty-book assert on-chain — it returns empty
         // vectors. So any throw here is a genuine fault (stale manifest, wrong pool
-        // id) and must reach the caller immediately, not be retried for 15s.
+        // id) and must reach the caller at once, not be retried for the full budget.
+        //
+        // Fake timers matter here: if this regresses into retrying, the drain below
+        // ends the loop and the call-count assertion reports it, instead of the test
+        // hanging to a 10s timeout that says nothing about the cause.
+        vi.useFakeTimers();
         const boom = SDK_EMPTY();
-        const ticksFn = vi.fn(async () => {
-            throw boom;
+        const { client, ticksFn } = stubClient({
+            getLevel2TicksFromMid: async () => {
+                throw boom;
+            },
         });
-        const { client } = stubClient({ getLevel2TicksFromMid: ticksFn });
 
-        await expect(waitForLiquidity(client, "DEEP_SUI", "ask")).rejects.toBe(boom);
+        const settled = waitForLiquidity(client, "DEEP_SUI", "ask").catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
+
+        expect(await settled).toBe(boom);
         expect(ticksFn).toHaveBeenCalledTimes(1);
     });
 
-    it("gives up after the full budget and names the side and pool", async () => {
+    it("gives up after the full budget, and the budget is the documented length", async () => {
         vi.useFakeTimers();
         const { client, ticksFn } = stubClient({ ticks: EMPTY });
 
-        const promise = waitForLiquidity(client, "DEEP_SUI", "ask");
-        const assertion = expect(promise).rejects.toThrow(/No ask liquidity on DEEP_SUI/);
-        await vi.advanceTimersByTimeAsync(FULL_BUDGET_MS);
-        await assertion;
+        const settled = waitForLiquidity(client, "DEEP_SUI", "ask").catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
 
-        // 30 attempts, 29 sleeps between them — the classic off-by-one location.
+        const err = (await settled) as Error;
+        expect(err.message).toContain("No ask liquidity on DEEP_SUI");
+        // Pins the DELAY, not just the attempt count. Without this, shrinking
+        // BOOK_RETRY_DELAY_MS — or making sleep a no-op — passes every test while
+        // collapsing the budget below the ~13s empty-book window.
+        expect(err.message).toContain(`${EXPECTED_ELAPSED}s`);
         expect(ticksFn).toHaveBeenCalledTimes(ATTEMPTS);
     });
 });
@@ -185,7 +230,7 @@ describe("waitForLiquidity", () => {
 
 describe("getMidPrice", () => {
     it("returns the first reading without sleeping", async () => {
-        const { client, midPriceFn } = stubClient({ midPrice: vi.fn(async () => 1.25) });
+        const { client, midPriceFn } = stubClient({ midPrice: async () => 1.25 });
         await expect(getMidPrice(client, "DEEP_SUI")).resolves.toBe(1.25);
         expect(midPriceFn).toHaveBeenCalledTimes(1);
     });
@@ -193,64 +238,81 @@ describe("getMidPrice", () => {
     it("rethrows a non-empty-result error unchanged", async () => {
         // Asserted by identity, not by message: proves the error is not re-wrapped,
         // so the caller still sees the original stack.
+        vi.useFakeTimers();
         const boom = new Error("14 UNAVAILABLE: No connection established");
-        const midPrice = vi.fn(async () => {
-            throw boom;
+        const { client, midPriceFn } = stubClient({
+            midPrice: async () => {
+                throw boom;
+            },
+            ticks: EMPTY,
         });
-        const { client } = stubClient({ midPrice, ticks: EMPTY });
 
-        await expect(getMidPrice(client, "DEEP_SUI")).rejects.toBe(boom);
-        expect(midPrice).toHaveBeenCalledTimes(1);
+        const settled = getMidPrice(client, "DEEP_SUI").catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
+
+        expect(await settled).toBe(boom);
+        expect(midPriceFn).toHaveBeenCalledTimes(1);
     });
 
     it("fast-fails when the book has both sides — the fault is real, not an empty book", async () => {
-        // Blind spot 2's companion. A stale manifest raises the SAME TypeError as an
-        // empty book, so without this confirmation step it would be retried for the
-        // whole budget and then misreported as a market-maker problem.
+        // The most valuable behaviour in the file. A stale manifest raises the SAME
+        // TypeError as an empty book, so without the confirmation step it would be
+        // retried for the whole budget and then misreported as a maker problem.
+        vi.useFakeTimers();
         const boom = SDK_EMPTY();
-        const midPrice = vi.fn(async () => {
-            throw boom;
+        const { client, midPriceFn, ticksFn } = stubClient({
+            midPrice: async () => {
+                throw boom;
+            },
+            ticks: TWO_SIDED,
         });
-        const { client, ticksFn } = stubClient({ midPrice, ticks: TWO_SIDED });
 
-        await expect(getMidPrice(client, "DEEP_SUI")).rejects.toBe(boom);
-        expect(midPrice).toHaveBeenCalledTimes(1);
+        const settled = getMidPrice(client, "DEEP_SUI").catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
+
+        expect(await settled).toBe(boom);
+        expect(midPriceFn).toHaveBeenCalledTimes(1);
         expect(ticksFn).toHaveBeenCalledTimes(1);
     });
 
     it("retries while the book is one-sided, then returns the later reading", async () => {
         vi.useFakeTimers();
-        const midPrice = vi
-            .fn<() => Promise<number>>()
-            .mockRejectedValueOnce(SDK_EMPTY())
-            .mockResolvedValueOnce(1.75);
-        const { client } = stubClient({ midPrice, ticks: ASKS_ONLY });
+        let calls = 0;
+        const { client, midPriceFn } = stubClient({
+            midPrice: async () => {
+                if (++calls === 1) throw SDK_EMPTY();
+                return 1.75;
+            },
+            ticks: ASKS_ONLY,
+        });
 
-        const promise = getMidPrice(client, "DEEP_SUI");
-        await vi.advanceTimersByTimeAsync(DELAY_MS);
+        const settled = getMidPrice(client, "DEEP_SUI").catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
 
-        await expect(promise).resolves.toBe(1.75);
-        expect(midPrice).toHaveBeenCalledTimes(2);
+        expect(await settled).toBe(1.75);
+        expect(midPriceFn).toHaveBeenCalledTimes(2);
     });
 
-    it("gives up after the full budget, naming the pool and preserving the cause", async () => {
+    it("gives up after the full budget, naming the pool, the length and the cause", async () => {
         vi.useFakeTimers();
         const boom = SDK_EMPTY();
-        const midPrice = vi.fn(async () => {
-            throw boom;
+        const { client, midPriceFn } = stubClient({
+            midPrice: async () => {
+                throw boom;
+            },
+            ticks: ASKS_ONLY,
         });
-        const { client } = stubClient({ midPrice, ticks: ASKS_ONLY });
 
-        const promise = getMidPrice(client, "DEEP_SUI");
-        const captured = promise.catch((err: unknown) => err);
-        await vi.advanceTimersByTimeAsync(FULL_BUDGET_MS);
+        const settled = getMidPrice(client, "DEEP_SUI").catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
 
-        const err = (await captured) as Error;
+        const err = (await settled) as Error;
         expect(err.message).toContain("DEEP_SUI");
         expect(err.message).toContain(`${ATTEMPTS} attempts`);
+        expect(err.message).toContain(`${EXPECTED_ELAPSED}s`);
         // The cause chain is what the examples print; losing it strands the real error.
         expect(err.cause).toBe(boom);
-        expect(midPrice).toHaveBeenCalledTimes(ATTEMPTS);
+        expect(midPriceFn).toHaveBeenCalledTimes(ATTEMPTS);
     });
 });
 
@@ -261,34 +323,38 @@ describe("getBookTicks", () => {
         const { client, ticksFn } = stubClient({ ticks: BIDS_ONLY });
         await expect(getBookTicks(client, "DEEP_SUI", 5)).resolves.toEqual(BIDS_ONLY);
         expect(ticksFn).toHaveBeenCalledTimes(1);
+        // The caller's tick count must reach the SDK, not a hard-coded one.
+        expect(ticksFn).toHaveBeenCalledWith("DEEP_SUI", 5);
     });
 
-    it("returns null when the book stays empty for the whole budget", async () => {
+    it("returns null after the full budget, having actually waited it out", async () => {
         // A rebalance empties BOTH sides, so a single read can catch a healthy
         // sandbox mid-cycle. Null means it never recovered — a real failure.
         vi.useFakeTimers();
+        const startedAt = Date.now();
         const { client, ticksFn } = stubClient({ ticks: EMPTY });
 
-        const promise = getBookTicks(client, "DEEP_SUI", 5);
-        await vi.advanceTimersByTimeAsync(FULL_BUDGET_MS);
+        const settled = getBookTicks(client, "DEEP_SUI", 5).catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
 
-        await expect(promise).resolves.toBeNull();
+        expect(await settled).toBeNull();
         expect(ticksFn).toHaveBeenCalledTimes(ATTEMPTS);
+        // getBookTicks returns null with no message, so the clock is the only place
+        // the budget is observable. Without this the delay is unprotected here too.
+        expect(Date.now() - startedAt).toBe((ATTEMPTS - 1) * DELAY_MS);
     });
 
     it("recovers when the book fills partway through the budget", async () => {
         vi.useFakeTimers();
         let calls = 0;
-        const ticksFn = vi.fn(async () => {
-            calls++;
-            return calls < 3 ? EMPTY : TWO_SIDED;
+        const { client, ticksFn } = stubClient({
+            getLevel2TicksFromMid: async () => (++calls < 3 ? EMPTY : TWO_SIDED),
         });
-        const { client } = stubClient({ getLevel2TicksFromMid: ticksFn });
 
-        const promise = getBookTicks(client, "DEEP_SUI", 5);
-        await vi.advanceTimersByTimeAsync(DELAY_MS * 2);
+        const settled = getBookTicks(client, "DEEP_SUI", 5).catch((e: unknown) => e);
+        await vi.runAllTimersAsync();
 
-        await expect(promise).resolves.toEqual(TWO_SIDED);
+        expect(await settled).toEqual(TWO_SIDED);
         expect(ticksFn).toHaveBeenCalledTimes(3);
     });
 });
