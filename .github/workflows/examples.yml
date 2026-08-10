@@ -89,7 +89,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: sandbox/pnpm-lock.yaml
+          # This job installs both subprojects, so both lockfiles key the cache.
+          cache-dependency-path: |
+            sandbox/pnpm-lock.yaml
+            examples/sandbox/pnpm-lock.yaml
 
       - name: Install sandbox dependencies
         run: pnpm install --frozen-lockfile
