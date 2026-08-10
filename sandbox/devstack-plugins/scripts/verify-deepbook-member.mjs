@@ -31,6 +31,7 @@ import {
     deepbookMarginPackagesFromManifest,
     mainnetForkDeepbookIds,
 } from "../deepbook-known.ts";
+import { resolveForkCheckpoint } from "../fork-checkpoint.ts";
 
 const STACK = "deepbook-known-check";
 
@@ -39,7 +40,7 @@ const { runStack } = await import(pathToFileURL(DIST + "/api/run-stack.mjs").hre
 
 const ctx = process.env.FORK_IMAGE_CONTEXT?.trim();
 const FORK_REV = process.env.SUI_FORK_REV ?? "16f1402387c7ce0f9310e57610428efec930dbf4";
-const checkpoint = process.env.FORK_CHECKPOINT ? Number(process.env.FORK_CHECKPOINT) : undefined;
+const checkpoint = resolveForkCheckpoint(process.env.FORK_CHECKPOINT);
 const suiRef = sui({
     mode: "fork",
     upstream: "mainnet",

@@ -22,6 +22,7 @@ import { execSync } from "node:child_process";
 import { account, coin, dashboard, defineDevstack, sui } from "@mysten-incubation/devstack";
 
 import { deepFundingFromWhale, DEEP_COIN_TYPE } from "../deep-funding.ts";
+import { resolveForkCheckpoint } from "../fork-checkpoint.ts";
 import { usdcFundingFromCapOwner, USDC_COIN_TYPE } from "../usdc-funding.ts";
 import { ALICE_KEYPAIR } from "../__tests__/alice.ts";
 
@@ -42,12 +43,12 @@ const ctx = process.env.FORK_IMAGE_CONTEXT?.trim();
 // `image.build` is passed, so we resolve the precedence ourselves.
 const pulled = process.env.DEVSTACK_SUI_FORK_IMAGE?.trim();
 // Build the fork binary from a sui rev whose protocol config covers current
-// mainnet (protocol 128; this rev is max 130). `version` is passed to the patched
+// mainnet (protocol 130 since epoch 1205; this rev is max 130). `version` is passed to the patched
 // Dockerfile as SUI_FORK_REV (see devstack sui/mode/fork.mjs). Override via SUI_FORK_REV.
 const FORK_REV = process.env.SUI_FORK_REV ?? "16f1402387c7ce0f9310e57610428efec930dbf4";
-// Checkpoint pin no longer required (the binary supports current mainnet); kept
-// optional via FORK_CHECKPOINT for reproducibility / pre-upgrade state.
-const checkpoint = process.env.FORK_CHECKPOINT ? Number(process.env.FORK_CHECKPOINT) : undefined;
+// Checkpoint pin — required again since mainnet's protocol-130 framework
+// (2026-07-31); defaults to a pre-upgrade checkpoint. See ../fork-checkpoint.ts.
+const checkpoint = resolveForkCheckpoint(process.env.FORK_CHECKPOINT);
 // Precedence: prebuilt pull > patched build context > devstack default build.
 let imageOpt = {};
 if (pulled) imageOpt = { image: { pull: pulled } };

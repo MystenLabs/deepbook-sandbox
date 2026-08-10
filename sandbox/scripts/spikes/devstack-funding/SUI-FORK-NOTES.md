@@ -27,8 +27,52 @@ materialized), so the registry path resolves and never reaches the index.
 
 ## Environment
 
-- `sui-fork`: built from rev `16f1402387c7ce0f9310e57610428efec930dbf4` (sui `main`, 2026-07-08; MAX_PROTOCOL_VERSION 130, covers mainnet protocol 128; includes PR #26966's child-read fix), passed to the patched Dockerfile as `SUI_FORK_REV` (devstack 0.7.0's own default is still the older `62ee6ada`, protocol max v125, which can't fork current mainnet — see [[sui-fork-protocol-version-lag]]).
+- `sui-fork`: built from rev `16f1402387c7ce0f9310e57610428efec930dbf4` (sui `main`, 2026-07-08; MAX_PROTOCOL_VERSION 130, covers current mainnet protocol 130 by version number — but not its framework, see the protocol-130 skew bullet below; includes PR #26966's child-read fix), passed to the patched Dockerfile as `SUI_FORK_REV` (devstack 0.7.0's own default is still the older `62ee6ada`, protocol max v125, which can't fork current mainnet — see [[sui-fork-protocol-version-lag]]).
 - **Still NOT fixed upstream** at that rev: `get_coin_info` and siblings (`get_balance`, `dynamic_field_iter`, `balance_iter`, `package_versions_iter`) remain `todo!()` (`store.rs:1360`), so this bug (and our `get_coin_info -> Ok(None)` patch) still stands. PR #26966 fixed a _different_ sui-fork bug (the dynamic-field/child-read `STORAGE_ERROR`; see `../deepbook/SUI-FORK-BUG.md`), which is why we bumped to its merge commit — it's orthogonal to the coin-info panic.
+- **Protocol-130 framework skew (hit 2026-08-04):** mainnet upgraded to the
+  protocol-130 framework at epoch 1205 (2026-07-31), whose on-chain `0x2`
+  includes the new `scratch` module. The `16f1402387` binary (Jul 8 snapshot,
+  pre-`scratch`) cannot verify it — executing ANY transaction against
+  post-upgrade state fails with `MISSING_DEPENDENCY` on `0x2::scratch` and the
+  executor **panic-aborts the process** (`execution_status.rs:481` unwraps the
+  failure) instead of returning an error. Remedy while upstream is broken (see
+  next bullet): pin the fork to a pre-upgrade checkpoint — both
+  `devstack-plugins` configs (production + `__tests__`) default
+  `FORK_CHECKPOINT=304941000` (tail of epoch 1204, protocol 129; funding e2e
+  green there 2026-08-04). `FORK_CHECKPOINT=latest` unpins. The spike config
+  in this directory remains unpinned.
+- **Fork-genesis regression on newer sui (hit 2026-08-04):** bumping
+  `SUI_FORK_REV` past the framework skew is NOT currently possible — sui `main`
+  regressed fork startup somewhere between `16f1402387` (Jul 8, works) and
+  `cbadbb78` (Jul 24, broken): forking mainnet now panics during local genesis
+  ("Creating accounts and token allocations") with a `VMInvariantViolation` in
+  `0x2::object` (`ObjectRuntime::new_id` via `record_new_uid_from_hash`,
+  `sui-move-natives/src/object.rs:137`, unwrapped at
+  `sui-genesis-builder/src/lib.rs:999`) — the fork pre-seeds mainnet system
+  objects (e.g. `0x5`) before genesis runs, and genesis then re-creates those
+  IDs. Verified broken at `cbadbb78` (Jul 24), `fb7b6c2f62` (main head
+  2026-08-04), and the fix-branch head `eb46537f`. The Jul 24 hardening commit
+  `4d660d2b8d` is NOT the cause (its parent already fails). The Jul 8 → Jul 24
+  window is unbisected — a rev in it whose framework snapshot already carries
+  `0x2::scratch` (added Jul 10, `59cb8cc352`) but predates the genesis breaker
+  would remove the need for the checkpoint pin; worth bisecting if upstream
+  stalls (~30-60 min compile per probe).
+- **Fix-branch status (tested 2026-08-03):** the upstream rewrite branch
+  `fork-rpc-store-simulate-transaction` (PR MystenLabs/sui#27520, head
+  `eb46537f`, 135 commits ahead of main) removes the `todo!()` stubs and keeps
+  the same CLI, but its head **aborts during fork startup** — the new eager
+  seeding materializes mainnet system objects (e.g. `0x5`) into the local store
+  before the local genesis runs, and `generate_genesis_system_object` then
+  panics with a `VMInvariantViolation` in `0x2::object`
+  (`ObjectRuntime::new_id`, `sui-move-natives/src/object.rs:137`, via
+  `sui-genesis-builder/src/lib.rs:999`) at "Creating accounts and token
+  allocations". So the branch cannot boot this stack yet; the patched-main
+  image below remains required. `./build-branch-fork.sh` builds an image from
+  the branch (context `.fork-branch/images`, no patch) for retesting as it
+  evolves — point the e2e at it with
+  `FORK_IMAGE_CONTEXT=$PWD/.fork-branch/images SUI_FORK_REV=<branch sha>`.
+  (devstack's `image: {pull}` is a bare `docker pull`, so locally built images
+  must enter via the build context, not `DEVSTACK_SUI_FORK_IMAGE`.)
 - Network: `--upstream mainnet`.
 
 ## The panic (fork container log)

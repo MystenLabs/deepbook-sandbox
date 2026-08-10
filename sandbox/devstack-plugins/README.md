@@ -196,6 +196,19 @@ the live path needs the **patched** fork image. Full report + the patch:
 The plugin's logic is correct and unit-tested regardless; the e2e test needs the
 patched fork.
 
+**Additionally (since 2026-07-31)** the fork must be pinned to a
+pre-protocol-130 mainnet checkpoint: mainnet's epoch-1205 framework upgrade
+added `0x2::scratch`, which the pinned fork rev can't verify (any tx execution
+aborts with `MISSING_DEPENDENCY`), while every newer sui rev — current `main`
+and the sui#27520 fix branch alike — crashes fork _genesis_ on mainnet forks
+(`new_id` VMInvariantViolation). Both configs therefore default
+`FORK_CHECKPOINT` to `304941000` (tail of epoch 1204, protocol 129); pass
+`FORK_CHECKPOINT=latest` to fork the live tip once upstream fixes land. Donor
+coin ids are resolved at that checkpoint; `node scripts/refresh-donor-coins.mjs`
+rediscovers them from the **live tip** (not the pin), so after a refresh confirm
+the printed id also existed at the pinned checkpoint (a funding "Object … not
+found" at boot is the symptom when it didn't).
+
 ## Tests
 
 ```bash

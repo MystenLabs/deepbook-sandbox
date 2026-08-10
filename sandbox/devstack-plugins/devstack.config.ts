@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { account, coin, dashboard, defineDevstack, sui, wallet } from "@mysten-incubation/devstack";
 
 import { deepFundingFromWhale, DEEP_COIN_TYPE } from "./deep-funding.ts";
+import { resolveForkCheckpoint } from "./fork-checkpoint.ts";
 import {
     deepbookAdminAccountFromManifest,
     deepbookFromManifest,
@@ -38,7 +39,11 @@ const USDC_MINTER =
 // Build the fork binary from a sui rev whose MAX_PROTOCOL_VERSION covers
 // current mainnet (see dashboard-up.mjs for the full rationale).
 const FORK_REV = process.env.SUI_FORK_REV ?? "16f1402387c7ce0f9310e57610428efec930dbf4";
-const checkpoint = process.env.FORK_CHECKPOINT ? Number(process.env.FORK_CHECKPOINT) : undefined;
+// Checkpoint pin — defaults to a pre-protocol-130 mainnet checkpoint because
+// newer state aborts this fork rev and newer revs crash fork genesis; see
+// fork-checkpoint.ts for the full story. FORK_CHECKPOINT=<n> overrides;
+// FORK_CHECKPOINT=latest forks the live tip.
+const checkpoint = resolveForkCheckpoint(process.env.FORK_CHECKPOINT);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PATCHED_CONTEXT = resolve(

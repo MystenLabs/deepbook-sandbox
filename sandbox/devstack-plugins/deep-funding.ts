@@ -59,7 +59,7 @@ const DEEP_DECIMALS = 6n;
 // DEEP_DONOR_COIN_ID / SUI_GAS_COIN_ID, or refresh with
 // `node scripts/refresh-donor-coins.mjs`.
 const DEFAULT_DEEP_DONOR_COIN_ID =
-    "0x3b5cbb0b1bd8afd4dbbf5919e29e83a86ee99a2509c798950d07b4da3be2ded4";
+    "0x5f6e1d15c2b42ddbe4a827d509857184ea52c425fbe02ba91cae0cb71e40888e";
 const DEFAULT_SUI_GAS_COIN_ID =
     "0xc866352dd2574aa14752dd09afca89cd993f573c59218ff278c3dafbd24ca714";
 
