@@ -196,8 +196,8 @@ jobs:
           ADDR=0x$(openssl rand -hex 32)
           for a in 1 2 3; do
             if curl -sf -X POST http://localhost:9009/faucet \
-                 -H 'Content-Type: application/json' \
-                 -d "{\"address\":\"$ADDR\",\"token\":\"SUI\"}"; then
+              -H 'Content-Type: application/json' \
+              -d "{\"address\":\"$ADDR\",\"token\":\"SUI\"}"; then
               echo "faucet OK"
               exit 0
             fi

@@ -1,0 +1,10 @@
+# Approve dependency build scripts (pnpm 10+ blocks them by default).
+# pnpm 11 reads `allowBuilds` from here; the array form (`onlyBuiltDependencies`
+# in package.json) was removed in v11. esbuild ships a native-binary install
+# script, pulled in transitively via tsx/vitest.
+#
+# examples/sandbox did not need this until CI started running `pnpm install`
+# here — an ignored build script is a fatal ERR_PNPM_IGNORED_BUILDS in CI, so
+# the install failed before any test ran. Same fix as the service dirs (#77).
+allowBuilds:
+  esbuild: true
