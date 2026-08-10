@@ -439,7 +439,10 @@ export async function signAndExecute(
     const result = await client.core.signAndExecuteTransaction({
         transaction: tx,
         signer: keypair,
-        include: { effects: true },
+        // balanceChanges lets a caller prove what a transaction actually moved,
+        // straight from its own result. Asking the node afterwards is a separate,
+        // asynchronously-indexed read that can still show pre-transaction values.
+        include: { effects: true, balanceChanges: true },
     });
 
     if (result.$kind === "FailedTransaction") {
