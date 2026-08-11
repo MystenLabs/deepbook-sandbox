@@ -1,17 +1,29 @@
-# DeepBook Sandbox - Docker Compose (localnet only)
+# DeepBook Sandbox - Docker Compose (fork-stack remnant, DBSF-022)
 #
-# Usage:
-#   docker compose --profile localnet up -d   # Start postgres + sui-localnet + indexer
-#   docker compose --profile localnet down    # Stop services
-#   docker compose --profile localnet down -v # Stop and remove volumes
+# The devstack fork stack (`pnpm stack:up` → devstack-plugins/devstack.config.ts)
+# owns the chain (sui-fork), funding, and the devstack dashboard. This compose
+# file carries only the services devstack does not provide: Postgres, the
+# DeepBook indexer, and the DeepBook server.
 #
-#   View logs:
-#     docker compose logs -f
+# Usage (scripts/stack.ts — boots devstack detached, then this remnant):
+#   pnpm deploy-all               # fork stack + funding + dashboard + remnant
+#   pnpm down                     # compose down -v + stop supervisor + wipe
+#   docker compose build          # rebuild the indexer/server images explicitly
 #
-# Set SUI_TOOLS_IMAGE in .env based on your CPU (use a pinned release tag, not
-# the moving `compat` tags — see defaultSuiToolsImage() in scripts/utils/keygen.ts):
-#   - ARM64 (Apple Silicon): SUI_TOOLS_IMAGE=mysten/sui-tools:testnet-v1.75.1-arm64
-#   - x86_64 (Intel/AMD):    SUI_TOOLS_IMAGE=mysten/sui-tools:testnet-v1.75.1
+# The indexer ingests checkpoints from the fork over gRPC (sui-fork emits no
+# checkpoint files — see scripts/spikes/fork-indexer-checkpoints/SPIKE-NOTES.md).
+# Its image is built from docker/deepbook-indexer-fork/ (submodule source +
+# rpc-ingestion.patch). Coupling rules:
+#   - FIRST_CHECKPOINT must equal the fork checkpoint (FORK_CHECKPOINT pin);
+#     fork checkpoints continue mainnet sequence numbers.
+#   - Postgres must be wiped (down -v) whenever the fork chain is reset:
+#     pipelines resume from committer watermarks and ignore --first-checkpoint.
+#   - FORK_RPC_URL defaults to the devstack fork's published host port.
+#
+# Known gap (follow-up in DBSF-022): deepbook-server's live reads (orderbook,
+# DEEP supply, checkpoint lag) use JSON-RPC via sui-sdk, and sui-fork serves
+# gRPC only — those endpoints fail against the fork; Postgres-backed endpoints
+# work.
 
 networks:
   deepbook-net:
@@ -19,16 +31,6 @@ networks:
 
 volumes:
   postgres_data:
-    driver: local
-    driver_opts:
-      type: tmpfs
-      device: tmpfs
-  sui_data:
-    driver: local
-    driver_opts:
-      type: tmpfs
-      device: tmpfs
-  checkpoint_data:
     driver: local
     driver_opts:
       type: tmpfs
@@ -60,126 +62,36 @@ services:
     restart: unless-stopped
 
   # ============================================================
-  # Sui Localnet
-  # Start with: docker compose --profile localnet up -d
-  # Dumps checkpoints to shared volume for the indexer
-  # ============================================================
-  sui-localnet:
-    image: ${SUI_TOOLS_IMAGE:?Set SUI_TOOLS_IMAGE in .env to full image name, e.g. mysten/sui-tools:testnet-v1.75.1-arm64 (ARM) or mysten/sui-tools:testnet-v1.75.1 (x86)}
-    container_name: sui-localnet
-    profiles:
-      - localnet
-    environment:
-      FORCE_REGENESIS: ${FORCE_REGENESIS:-true}
-    command: >
-      sh -c '
-        sui client new-address ed25519 2>/dev/null;
-        cp /root/.sui/sui_config/sui.keystore /shared/.sui-keystore;
-        chmod 644 /shared/.sui-keystore;
-        export RUST_LOG="off,sui_node=info";
-        exec sui start --data-ingestion-dir /checkpoints --with-faucet ${FORCE_REGENESIS:+--force-regenesis}
-      '
-    ports:
-      - "9000:9000" # RPC
-      - "9123:9123" # Faucet
-    volumes:
-      - sui_data:/root/.sui
-      - checkpoint_data:/checkpoints
-      - ./deployments:/shared
-    networks:
-      - deepbook-net
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9000'"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 30s
-    restart: unless-stopped
-
-  # ============================================================
-  # Market Maker
-  # Automated market maker for localnet pools (DEEP/SUI + SUI/USDC)
-  # Started by deploy-all after pool creation (env vars set via .env)
-  # ============================================================
-  market-maker:
-    profiles:
-      - localnet
-    build:
-      context: .
-      dockerfile: ./scripts/market-maker/Dockerfile
-    image: ${MARKET_MAKER_IMAGE:-mysten/deepbook-sandbox-market-maker:4a196428f2e88c03abb7c81adf020c234cdc47e2-arm64}
-    container_name: deepbook-market-maker
-    environment:
-      RPC_URL: http://sui-localnet:9000
-      PRIVATE_KEY: ${MM_PRIVATE_KEY:-}
-      VERBOSE: "1"
-      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID}
-      DEPLOYER_ADDRESS: ${DEPLOYER_ADDRESS}
-      PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID}
-      MM_POOLS: ${MM_POOLS:-}
-      # Legacy single-pool fallback (used when MM_POOLS is not set)
-      POOL_ID: ${POOL_ID:-}
-      BASE_COIN_TYPE: ${BASE_COIN_TYPE:-}
-      DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID:-}
-      SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID:-}
-      MM_SPREAD_BPS: ${MM_SPREAD_BPS:-10}
-      MM_LEVELS_PER_SIDE: ${MM_LEVELS_PER_SIDE:-30}
-      MM_LEVEL_SPACING_BPS: ${MM_LEVEL_SPACING_BPS:-100}
-      MM_REBALANCE_INTERVAL_MS: ${MM_REBALANCE_INTERVAL_MS:-10000}
-      MM_HEALTH_CHECK_PORT: ${MM_HEALTH_CHECK_PORT:-3000}
-      MM_METRICS_PORT: ${MM_METRICS_PORT:-9090}
-    ports:
-      - "3001:3000" # Health check (offset to avoid host conflict)
-      - "9091:9090" # Prometheus metrics (offset)
-    networks:
-      - deepbook-net
-    depends_on:
-      sui-localnet:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 30s
-    restart: unless-stopped
-
-  # ============================================================
-  # DeepBook Indexer
-  # Indexes DeepBook events from Sui chain checkpoints
-  # Reads from shared checkpoint_data volume
+  # DeepBook Indexer (fork mode)
+  # Ingests DeepBook events from the sui-fork chain over gRPC
   # ============================================================
   deepbook-indexer:
-    profiles:
-      - localnet
-    image: ${INDEXER_IMAGE:-mysten/deepbookv3-sandbox-indexer:46d846e5eea615e0eac94bd801b3e82adbe5cf01-arm64}
+    image: ${INDEXER_IMAGE:-mysten/deepbook-sandbox-indexer-fork:local}
     build:
-      context: ../external/deepbook
-      dockerfile: docker/deepbook-sandbox/Dockerfile
+      context: ./docker/deepbook-indexer-fork
+      additional_contexts:
+        deepbook-src: ../external/deepbook
       args:
         PROFILE: release
         GIT_REVISION: ${GIT_REVISION:-local}
     container_name: deepbook-indexer
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-      NETWORK: localnet
       RUST_LOG: ${RUST_LOG:-info}
-      FIRST_CHECKPOINT: ${FIRST_CHECKPOINT:-}
-      LOCAL_CHECKPOINTS_DIR: ${LOCAL_CHECKPOINTS_DIR:-/checkpoints}
+      # Fork point: checkpoints continue mainnet numbering from here.
+      FIRST_CHECKPOINT: ${FORK_CHECKPOINT:-304941000}
+      # The devstack sui-fork's published gRPC port on the host.
+      RPC_API_URL: ${FORK_RPC_URL:-http://host.docker.internal:51002}
+      # Mainnet DeepBook package (originalId — event type tags carry it).
+      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809}
       MARGIN_PACKAGES: ${MARGIN_PACKAGES:-}
-      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-}
     ports:
       - "9184:9184" # Prometheus metrics
-    volumes:
-      - checkpoint_data:/checkpoints
     networks:
       - deepbook-net
     depends_on:
       postgres:
         condition: service_healthy
-      sui-localnet:
-        condition: service_healthy
-        required: false
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9184/metrics || exit 1"]
       interval: 30s
@@ -190,12 +102,10 @@ services:
 
   # ============================================================
   # DeepBook Server (REST API)
-  # Provides HTTP API for querying indexed DeepBook data
-  # Requires indexer to populate database
+  # Serves indexed data from Postgres; live-RPC endpoints are
+  # degraded on the fork (JSON-RPC vs gRPC-only fork, see header)
   # ============================================================
   deepbook-server:
-    profiles:
-      - localnet
     image: ${SERVER_IMAGE:-mysten/deepbookv3-server:46d846e5eea615e0eac94bd801b3e82adbe5cf01-arm64}
     build:
       context: ../external/deepbook
@@ -206,15 +116,17 @@ services:
     container_name: deepbook-server
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deepbook
-      RPC_URL: http://host.docker.internal:9000
-      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-}
-      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
+      RPC_URL: ${FORK_RPC_URL:-http://host.docker.internal:51002}
+      DEEPBOOK_PACKAGE_ID: ${DEEPBOOK_PACKAGE_ID:-0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809}
+      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270}
       DEEP_TREASURY_ID: ${DEEP_TREASURY_ID:-}
-      MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID:-}
+      MARGIN_PACKAGE_ID: ${MARGIN_PACKAGE_ID:-0x97d9473771b01f77b0940c589484184b49f6444627ec121314fae6a6d36fb86b}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       - "9008:9008" # REST API
-      - "9185:9184" # Prometheus metrics (offset to avoid conflict with indexer)
+      # Metrics offset from the indexer's 9184; NOT 9185 — the devstack router
+      # pre-claims that port on the host.
+      - "9186:9184"
     networks:
       - deepbook-net
     depends_on:
@@ -226,106 +138,4 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    restart: unless-stopped
-
-  # ============================================================
-  # DeepBook Sandbox API
-  # Unified service: faucet (SUI + DEEP) + trading routes
-  # ============================================================
-  deepbook-sandbox-api:
-    profiles:
-      - localnet
-    build:
-      context: ./api
-    image: ${API_IMAGE:-mysten/deepbook-sandbox-api:4a196428f2e88c03abb7c81adf020c234cdc47e2-arm64}
-    container_name: deepbook-sandbox-api
-    environment:
-      PRIVATE_KEY: ${PRIVATE_KEY:-}
-      DEEP_TOKEN_PACKAGE_ID: ${DEEP_TOKEN_PACKAGE_ID:-}
-      USDC_TOKEN_PACKAGE_ID: ${USDC_TOKEN_PACKAGE_ID:-}
-      RPC_URL: ${RPC_URL:-}
-      PORT: 9009
-      MAX_DEEP_PER_REQUEST: 10000
-      MAX_USDC_PER_REQUEST: 10000
-    ports:
-      - "9009:9009"
-    volumes:
-      - ./deployments:/app/deployments:ro
-      # Required by /services routes to stop/restart other containers via the host daemon.
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - deepbook-net
-    depends_on:
-      sui-localnet:
-        condition: service_healthy
-        required: false
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9009/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 15s
-    restart: unless-stopped
-
-  # ============================================================
-  # Dashboard
-  # Web UI for monitoring and interacting with the sandbox
-  # ============================================================
-  dashboard:
-    profiles:
-      - localnet
-    build:
-      context: ./dashboard
-      args:
-        PRIVATE_KEY: ${PRIVATE_KEY:-}
-    image: ${DASHBOARD_IMAGE:-}
-    container_name: deepbook-dashboard
-    ports:
-      - "5173:80"
-    networks:
-      - deepbook-net
-    depends_on:
-      sui-localnet:
-        condition: service_healthy
-        required: false
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 15s
-    restart: unless-stopped
-
-  # ============================================================
-  # Oracle Service
-  # Updates Pyth price feeds for SUI, DEEP, and USDC on localnet
-  # ============================================================
-  oracle-service:
-    profiles:
-      - localnet
-    build:
-      context: .
-      dockerfile: ./scripts/oracle-service/Dockerfile
-    image: ${ORACLE_SERVICE_IMAGE:-mysten/deepbook-sandbox-oracle-service:4a196428f2e88c03abb7c81adf020c234cdc47e2-arm64}
-    container_name: oracle-service
-    environment:
-      ORACLE_PRIVATE_KEY: ${ORACLE_PRIVATE_KEY:-}
-      RPC_URL: http://sui-localnet:9000
-      PYTH_PACKAGE_ID: ${PYTH_PACKAGE_ID:-}
-      DEEP_PRICE_INFO_OBJECT_ID: ${DEEP_PRICE_INFO_OBJECT_ID:-}
-      SUI_PRICE_INFO_OBJECT_ID: ${SUI_PRICE_INFO_OBJECT_ID:-}
-      USDC_PRICE_INFO_OBJECT_ID: ${USDC_PRICE_INFO_OBJECT_ID:-}
-    ports:
-      - "9010:9010"
-    networks:
-      - deepbook-net
-    depends_on:
-      sui-localnet:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9010/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
     restart: unless-stopped

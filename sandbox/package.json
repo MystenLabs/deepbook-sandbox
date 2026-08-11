@@ -5,8 +5,8 @@
     "private": true,
     "description": "DeepBook V3 localnet deployment sandbox",
     "scripts": {
-        "deploy-all": "tsx scripts/deploy-all.ts",
-        "down": "tsx scripts/down.ts",
+        "deploy-all": "tsx scripts/stack.ts up",
+        "down": "tsx scripts/stack.ts down",
         "oracle-service": "tsx scripts/oracle-service/index.ts",
         "market-maker": "tsx scripts/market-maker/index.ts",
         "stack:up": "pnpm -C devstack-plugins install --ignore-workspace && pnpm -C devstack-plugins exec devstack up",

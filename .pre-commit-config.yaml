@@ -1,4 +1,6 @@
-exclude: 'sandbox/localnet/crates/|^packages/|(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|Cargo\.lock|bun\.lockb|\.lock)$'
+# .patch excluded: diff context lines are whitespace-significant — the
+# trailing-whitespace hook would corrupt space-only context lines.
+exclude: 'sandbox/localnet/crates/|^packages/|(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|Cargo\.lock|bun\.lockb|\.lock|\.patch)$'
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
