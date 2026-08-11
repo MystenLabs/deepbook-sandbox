@@ -1,6 +1,6 @@
 # Spike: can the DeepBook indexer ingest sui-fork checkpoints? (DBSF-022 precondition)
 
-**Date:** 2026-08-11 · **Verdict: YES — via gRPC RPC ingestion, with a ~5-line indexer patch.**
+**Date:** 2026-08-11 · **Verdict: YES — via gRPC RPC ingestion, with a ~20-line indexer patch.**
 The classic shared-volume file path is dead; the RPC path is proven live against the
 patched fork image (rev `16f1402387`, the production `devstack.config.ts` stack).
 
@@ -46,10 +46,11 @@ patched fork image (rev `16f1402387`, the production `devstack.config.ts` stack)
 
 ## Consequence for DBSF-022 (indexer/server/Postgres remnant)
 
-1. Patch `external/deepbook/crates/indexer/src/main.rs` to flatten
-   `IngestionClientArgs` (~5 lines) so `--rpc-api-url http://<fork>:9000` is
-   reachable; pass it (plus optional `STREAMING_URL`) through the compose remnant's
-   entrypoint. Drop the `checkpoint_data` volume.
+1. Patch `external/deepbook/crates/indexer/src/main.rs` so
+   `--rpc-api-url http://<fork>:9000` is reachable (a `SandboxArgs` field feeding
+   `IngestionClientArgs`, not a flatten — the framework ArgGroup is `required` and
+   would break existing invocations); pass it (plus optional `STREAMING_URL`)
+   through the compose remnant's entrypoint. Drop the `checkpoint_data` volume.
 2. `FIRST_CHECKPOINT` must be the fork point (e.g. `304941000`) — fork checkpoints
    continue mainnet sequence numbers. Postgres must be fresh when switching stacks:
    pipelines resume from committer watermarks and ignore `--first-checkpoint`.
@@ -62,11 +63,41 @@ patched fork image (rev `16f1402387`, the production `devstack.config.ts` stack)
 
 ## Residual risk
 
-- BCS-decode skew: framework v1.68.1 (`testnet` branch) deserializing payloads from
-  fork rev `16f1402387` (1.76.0) is unproven until a patched indexer actually runs —
-  first implementation step, not part of this spike. The moving `branch = "testnet"`
-  pin means unlocked rebuilds silently shift the framework (accepted cost in the AC:
-  the indexer pin now tracks the fork rev).
+- ~~BCS-decode skew: framework v1.68.1 (`testnet` branch) deserializing payloads from
+  fork rev `16f1402387` (1.76.0) is unproven until a patched indexer actually runs.~~
+  **RESOLVED — see addendum below.** The moving `branch = "testnet"` pin still means
+  unlocked rebuilds silently shift the framework (accepted cost in the AC: the
+  indexer pin now tracks the fork rev).
+
+## Addendum 2026-08-11: patched indexer ran live against the fork — full pass
+
+Built and ran the actual `deepbook-indexer` with the patch sketched in Consequence
+#1 (uncommitted `external/deepbook` working-tree diff; durable upstreaming is
+remnant implementation work). Against the live fork + a throwaway Postgres:
+
+- **BCS decode works.** All fork checkpoints from the fork point ingested through
+  every pipeline; watermarks reached the fork tip with zero decode errors.
+- **Live-follow works.** A dashboard `fund` mutation sealed a new checkpoint and the
+  indexer's watermark advanced to it within ~5 s.
+- Two implementation findings the remnant work must carry:
+  1. **`ethnum` 1.5.2 fails to compile on rustc ≥ 1.97** (E0512) —
+     `cargo update -p ethnum` (→ 1.5.3) fixes it. Only bites host builds; the
+     pinned-rust Docker build is unaffected.
+  2. **Ingestion concurrency must be capped.** The fork's `GetCheckpoint` proxies
+     `get_lowest_available_checkpoint` to upstream mainnet GraphQL on every request
+     with no caching (`store.rs:284`); the framework's default adaptive concurrency
+     (up to 500 in-flight) plus 200 ms tip-retries trips the upstream rate limit and
+     stalls ingestion indefinitely ("Failed to query availableRange" retry storm).
+     `IngestConcurrencyConfig::Fixed { value: 1 }` + `retry_interval_ms: 2000` in the
+     indexer's `IngestionConfig` cleared it completely (zero retries, instant
+     backfill). A fork-side cache of the availableRange lookup would be the better
+     long-term fix (candidate for the patched-image Dockerfile).
+
+Patch summary (in `crates/indexer/src/main.rs`): add `--rpc-api-url: Option<Url>` to
+`SandboxArgs` (conflicts with `--local-ingestion-path`), prefer it in the localnet
+ingestion-source match, and replace `IngestionConfig::default()` with the capped
+config above. Verified `rpc_api_url` exists in `IngestionClientArgs` at the exact
+locked framework rev (`3c0f387e`), so no pin bump was needed.
 
 ## Repro
 
@@ -75,3 +106,7 @@ patched fork image (rev `16f1402387`, the production `devstack.config.ts` stack)
 cd sandbox/devstack-plugins   # for @mysten/sui module resolution
 node --input-type=module - < ../scripts/spikes/fork-indexer-checkpoints/checkpoint-probe.mjs
 ```
+
+The addendum's indexer run (BCS decode, live-follow) is not covered by this probe —
+it needs the patched indexer build + a Postgres; reproducing it is part of the
+remnant implementation work.
