@@ -5,8 +5,8 @@
     "private": true,
     "description": "DeepBook V3 localnet deployment sandbox",
     "scripts": {
-        "deploy-all": "docker ps --filter name=sui-fork --format '{{.Names}}' | grep -q \"${SANDBOX_STACK:-deepbook-sandbox}\" || { echo 'devstack fork stack is not running — run `pnpm stack:up` in another terminal first (it stays attached)'; exit 1; }; docker compose up -d --wait",
-        "down": "docker compose down -v; pnpm stack:wipe --yes",
+        "deploy-all": "tsx scripts/stack.ts up",
+        "down": "tsx scripts/stack.ts down",
         "oracle-service": "tsx scripts/oracle-service/index.ts",
         "market-maker": "tsx scripts/market-maker/index.ts",
         "stack:up": "pnpm -C devstack-plugins install --ignore-workspace && pnpm -C devstack-plugins exec devstack up",

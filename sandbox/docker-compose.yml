@@ -5,11 +5,9 @@
 # file carries only the services devstack does not provide: Postgres, the
 # DeepBook indexer, and the DeepBook server.
 #
-# Usage (two terminals — `devstack up` stays attached by design):
-#   pnpm stack:up                 # terminal 1: fork stack + funding + dashboard
-#   pnpm deploy-all               # terminal 2: this remnant (guarded: fails
-#                                 #   fast if the fork stack isn't running)
-#   pnpm down                     # compose down -v + devstack wipe
+# Usage (scripts/stack.ts — boots devstack detached, then this remnant):
+#   pnpm deploy-all               # fork stack + funding + dashboard + remnant
+#   pnpm down                     # compose down -v + stop supervisor + wipe
 #   docker compose build          # rebuild the indexer/server images explicitly
 #
 # The indexer ingests checkpoints from the fork over gRPC (sui-fork emits no

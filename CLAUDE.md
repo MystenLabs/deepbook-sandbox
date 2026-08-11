@@ -53,19 +53,24 @@ Postgres (`down -v`) whenever the fork chain is reset (watermarks ignore
 ```bash
 cd sandbox
 
-# Terminal 1: devstack fork stack (stays attached — devstack up has no detach)
-pnpm stack:up
+pnpm deploy-all   # everything: boots devstack detached (waits for fund-ready),
+                  # then the compose remnant. Idempotent — re-run freely.
+pnpm down         # everything: compose down -v + stop supervisor + devstack wipe
 
-# Terminal 2: compose remnant (guarded — fails fast if the fork isn't running)
-pnpm deploy-all
-
-# Full teardown (stop stack:up with Ctrl-C first, then:)
-pnpm down
+# Supervisor logs (devstack up runs detached; PID in .devstack-supervisor.pid)
+tail -f .devstack-supervisor.log
 
 # Remnant logs / explicit image rebuild
 docker compose logs -f deepbook-indexer
 docker compose build
 ```
+
+Both commands live in `scripts/stack.ts`. Prefer attached devstack logs? `pnpm
+stack:up` in its own terminal still works — `deploy-all` detects the live
+supervisor and skips the boot, and `down` refuses to wipe under a
+terminal-attached supervisor it doesn't own (Ctrl-C it first, then re-run
+`pnpm down`). Orphaned supervisors (no terminal — e.g. a dead session's
+background process) are stopped automatically.
 
 ## Development Commands
 
