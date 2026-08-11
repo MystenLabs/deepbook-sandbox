@@ -70,8 +70,9 @@ async function main() {
             defaults.FORCE_REGENESIS = "true";
         }
         if (Object.keys(defaults).length > 0) {
+            // updateEnvFile syncs process.env itself now, so every write site gets
+            // the behaviour this one call site used to have on its own (SEDEFI-442).
             updateEnvFile(sandboxRoot, defaults);
-            Object.assign(process.env, defaults);
         }
 
         // Start localnet
