@@ -14,13 +14,11 @@ const envSchema = z
     .object({
         PRIVATE_KEY: z.string().optional(),
         RPC_URL: z.string().optional(),
-        SUI_TOOLS_IMAGE: z.string().optional(),
     })
     .transform((raw) => ({
         privateKey: raw.PRIVATE_KEY?.trim(),
         network: "localnet" as const,
         rpcUrl: raw.RPC_URL?.trim() || undefined,
-        suiToolsImage: raw.SUI_TOOLS_IMAGE?.trim(),
     }));
 
 export type EnvConfig = z.infer<typeof envSchema>;

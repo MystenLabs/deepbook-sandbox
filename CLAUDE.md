@@ -24,63 +24,50 @@ This project provides a toolset for reducing builder friction with one-liner dep
 
 Run `ls`/`find` to explore the tree. Top-level: `sandbox/` (docker-compose stack, `dashboard/`, `api/`, `scripts/`), `examples/sandbox/` (SDK integration examples), and `external/deepbook/` (DeepBookV3 git submodule). Subsystem-specific guidance lives in nested `CLAUDE.md` files (`sandbox/dashboard/`, `sandbox/scripts/oracle-service/`, `sandbox/scripts/market-maker/`).
 
-## Docker Stack
+## The Stack (devstack mainnet fork + compose remnant)
 
-Docker compose file: `./sandbox/docker-compose.yml`
+The sandbox runs on a **mainnet fork** orchestrated by devstack
+(`sandbox/devstack-plugins/devstack.config.ts`): the `sui-fork` chain container,
+DEEP/USDC funding plugins, and the devstack dashboard (GraphQL `fund` mutation,
+routed by Host header `api.deepbook-sandbox.devstack-plugins.localhost` on port
+9810). `./sandbox/docker-compose.yml` carries only the **remnant** devstack
+doesn't provide (DBSF-022):
 
-Services in the stack:
+| Service              | Description                                              | Ports                |
+| -------------------- | -------------------------------------------------------- | -------------------- |
+| **PostgreSQL**       | Database for the indexer                                 | 5432                 |
+| **DeepBook Indexer** | Ingests DeepBook events from the fork over gRPC          | 9184 (metrics)       |
+| **DeepBook Server**  | REST API for indexed data (live-RPC endpoints degraded¹) | 9008, 9186 (metrics) |
 
-| Service              | Profile    | Description                                        | Ports                         |
-| -------------------- | ---------- | -------------------------------------------------- | ----------------------------- |
-| **PostgreSQL**       | (always)   | Database for the indexer                           | 5432                          |
-| **Sui Localnet**     | `localnet` | Local Sui blockchain for testing                   | 9000 (RPC), 9123 (faucet)     |
-| **Market Maker**     | `localnet` | Automated market maker for DEEP/SUI + SUI/USDC     | 3001 (health), 9091 (metrics) |
-| **DeepBook Indexer** | `localnet` | Indexes DeepBook events from checkpoints           | 9184 (metrics)                |
-| **DeepBook Server**  | `localnet` | REST API for querying indexed data                 | 9008                          |
-| **DeepBook Faucet**  | `localnet` | Distributes SUI (proxied), DEEP, and USDC tokens   | 9009                          |
-| **Oracle Service**   | `localnet` | Updates Pyth price feeds for DEEP/SUI every 10s    | 9010 (status)                 |
-| **Dashboard**        | `localnet` | Web UI for monitoring and interacting with sandbox | 5173 (HTTP)                   |
+¹ Degraded on the fork: the server's live reads are JSON-RPC and the fork is gRPC-only — see the compose file header.
+
+The indexer image is built from `sandbox/docker/deepbook-indexer-fork/`
+(submodule source + `rpc-ingestion.patch`); background in
+`sandbox/scripts/spikes/fork-indexer-checkpoints/SPIKE-NOTES.md`. The fork chain
+resumes mainnet checkpoint numbering from the `FORK_CHECKPOINT` pin — wipe
+Postgres (`down -v`) whenever the fork chain is reset (watermarks ignore
+`--first-checkpoint`).
 
 ### Running the Stack
 
 ```bash
 cd sandbox
 
-# Start localnet, deploy contracts, start all services
+# Terminal 1: devstack fork stack (stays attached — devstack up has no detach)
+pnpm stack:up
+
+# Terminal 2: compose remnant (guarded — fails fast if the fork isn't running)
 pnpm deploy-all
 
-# Full teardown (volumes, .env keys)
+# Full teardown (stop stack:up with Ctrl-C first, then:)
 pnpm down
 
-# Stop containers
-docker compose --profile localnet down
-
-# View logs
-docker compose logs -f
-docker compose logs -f market-maker       # Market maker logs only
+# Remnant logs / explicit image rebuild
+docker compose logs -f deepbook-indexer
+docker compose build
 ```
-
-> Run `pnpm deploy-all` to start localnet, deploy contracts, and automatically launch the oracle service and market maker containers with the correct env vars.
 
 ## Development Commands
-
-### Sandbox Deployment
-
-```bash
-cd sandbox
-
-# Deploy all contracts, start localnet + oracle service
-pnpm deploy-all
-
-# Stop all services
-pnpm down
-
-# Check oracle service status/prices
-curl http://localhost:9010/
-
-# View oracle service logs
-docker compose logs -f oracle-service
-```
 
 ### Git Submodules
 
@@ -104,46 +91,33 @@ sui move test --skip-fetch-latest-git-deps  # Skip fetching deps if unchanged
 bunx prettier-move -c *.move --write        # Format Move files
 ```
 
-## Sandbox Scripts
-
-```bash
-cd sandbox
-
-# Deploy DeepBook to localnet (starts containers, deploys packages, creates pools, starts MM)
-pnpm deploy-all
-
-# Full teardown (stops containers, removes volumes, cleans generated .env keys)
-pnpm down
-```
-
 ## Integration Tests
 
 ```bash
 cd sandbox
 
-# Run all integration tests
-pnpm test:integration
-
-# Run a specific test by filename pattern
-pnpm test:integration deploy-all-e2e
-pnpm test:integration deploy-pipeline
+# Devstack boot smoke (needs Docker + warm patched fork image; local-only)
+pnpm test:integration devstack-up
 ```
 
-Test files live in `sandbox/scripts/__tests__/**/*.integration.test.ts`. Vitest runs with `singleFork: true` to prevent concurrent localnet instances.
-
-**Key pattern — localnet key handling:** On localnet, `deploy-all.ts` always reads the container-generated key (from `deployments/.sui-keystore`) and calls `importKeyToHostCli()` to configure the host `sui` CLI. The `.env` `PRIVATE_KEY` is only a placeholder for `docker-compose.yml` variable validation (`${PRIVATE_KEY:?...}`). Tests that write a seed `.env` should include a placeholder `PRIVATE_KEY` but must not expect `deploy-all.ts` to use it — the container key always takes precedence on localnet.
-
-**CI workflow:** `.github/workflows/integration-tests.yml` runs both test suites in a matrix (parallel runners). Triggers on PRs/pushes that touch `sandbox/` or `external/deepbook/`, plus `workflow_dispatch`. The `sui` CLI is extracted from the pinned `SUI_TOOLS_IMAGE` Docker image to match the localnet container version. On failure, Docker logs are uploaded as artifacts.
-
-**Key pattern — pinned sui-tools image:** `SUI_TOOLS_IMAGE` is pinned to a released tag (`testnet-v1.75.1`) in the CI workflow env, `defaultSuiToolsImage()` in `sandbox/scripts/utils/keygen.ts`, `sandbox/.env.example`, and several docs (docker-compose.yml comments, READMEs). When bumping the pin, `grep -r "sui-tools:"` and update every reference. Never use the moving `compat`/`compat-arm64` tags — they track sui main and have broken CI before (sui 1.76 made the embedded rpc-store index asynchronous, which crash-loops `sui start --with-faucet` at startup; SEDEFI-348). When bumping the pin, verify the faucet comes up: run the image with `sui start --with-faucet --force-regenesis` and curl `http://127.0.0.1:9123/v1/status`.
+Test files live in `sandbox/scripts/__tests__/**/*.integration.test.ts`. The
+legacy localnet suites (deploy-pipeline, deploy-all-e2e) were deleted with the
+localnet stack (DBSF-022); CI currently runs unit tests only — fork-stack
+integration CI returns with DBSF-024/DBSF-025.
 
 ## Oracle Service
 
-Pyth price-feed updater (Docker, `localnet` profile, status on `http://localhost:9010`). Subsystem details — env vars, price-feed IDs — live in `sandbox/scripts/oracle-service/CLAUDE.md` (loads when you work in that dir); full docs in its `README.md`.
+Pyth price-feed updater (`sandbox/scripts/oracle-service/`). Its localnet
+container is retired; the code stays pending its devstack `hostService` reshape
+(DBSF-013) — the fork carries real mainnet Pyth state, so the mock-Pyth flow is
+a fallback only. Subsystem details in `sandbox/scripts/oracle-service/CLAUDE.md`.
 
 ## Market Maker
 
-Automated market maker (Docker, `localnet` profile). Config env vars (`MM_*`) live in `sandbox/scripts/market-maker/CLAUDE.md`; full docs in its `README.md`.
+Automated market maker (`sandbox/scripts/market-maker/`). Its localnet container
+is retired; the code stays pending its devstack `hostService` reshape (DBSF-022
+AC — blocked on fork gas funding, sui#27520). Config env vars (`MM_*`) in
+`sandbox/scripts/market-maker/CLAUDE.md`.
 
 ## Key Concepts
 
@@ -153,13 +127,23 @@ Automated market maker (Docker, `localnet` profile). Config env vars (`MM_*`) li
 
 ## Trading Page (Dashboard)
 
-Architecture notes for the dashboard's user-facing Trading page — user-driven BM creation, on-chain BM discovery, registry-map init, wallet-swap keying — live in `sandbox/dashboard/CLAUDE.md` (loads when you work under `sandbox/dashboard/`). Read that before touching any trading flow.
+The trading dashboard's localnet container and the `sandbox/api/` faucet/trading
+service were retired with the compose stack (DBSF-022); the dashboard code stays
+pending its devstack `hostService` reshape with fork-mode wiring (DBSF-022 AC).
+Architecture notes for the user-facing Trading page — user-driven BM creation,
+on-chain BM discovery, registry-map init, wallet-swap keying — live in
+`sandbox/dashboard/CLAUDE.md` (loads when you work under `sandbox/dashboard/`).
+Read that before touching any trading flow.
 
 ## SDK Integration Examples
 
 `examples/sandbox/` contains runnable TypeScript examples using the `@mysten/deepbook-v3` SDK. These demonstrate how external developers integrate with DeepBook — the pattern real builders would follow.
 
 Both `examples/sandbox/` and the sandbox dashboard use `@mysten/sui@v2` and the new SDK extension pattern (`client.$extend(deepbook(...))`). The examples have their own `package.json` and `node_modules/` for isolation, and track `@mysten/sui` independently — they sit on a newer minor (`^2.23.1`) than `sandbox/` because `@mysten/deepbook-v3@1.6.x` requires it.
+
+> **Status:** the examples are localnet-era; localnet was decommissioned
+> (DBSF-022) and fork-mode runs are blocked upstream (`simulate_transaction`,
+> SEDEFI-358), so they are not currently runnable on this branch.
 
 ```bash
 # Run examples (sandbox must be running first)

@@ -1,0 +1,61 @@
+diff --git a/crates/indexer/src/main.rs b/crates/indexer/src/main.rs
+index e95156d1..a18b89c4 100644
+--- a/crates/indexer/src/main.rs
++++ b/crates/indexer/src/main.rs
+@@ -69,7 +69,7 @@ use std::net::SocketAddr;
+ use std::path::PathBuf;
+ use sui_indexer_alt_framework::ingestion::ingestion_client::IngestionClientArgs;
+ use sui_indexer_alt_framework::ingestion::streaming_client::StreamingClientArgs;
+-use sui_indexer_alt_framework::ingestion::{ClientArgs, IngestionConfig};
++use sui_indexer_alt_framework::ingestion::{ClientArgs, IngestConcurrencyConfig, IngestionConfig};
+ use sui_indexer_alt_framework::{Indexer, IndexerArgs};
+ use sui_indexer_alt_metrics::db::DbConnectionStatsCollector;
+ use sui_indexer_alt_metrics::{MetricsArgs, MetricsService};
+@@ -130,9 +130,13 @@ struct SandboxArgs {
+     /// Margin package ID(s) — optional, skip margin indexing if omitted
+     #[clap(long)]
+     margin_packages: Vec<String>,
+-    /// Path to local checkpoint directory (required for localnet)
++    /// Path to local checkpoint directory (required for localnet unless --rpc-api-url is set)
+     #[clap(long)]
+     local_ingestion_path: Option<PathBuf>,
++    /// Fullnode gRPC URL to ingest checkpoints from instead of local files
++    /// (mainnet-fork nodes have no checkpoint directory)
++    #[clap(long, conflicts_with = "local_ingestion_path")]
++    rpc_api_url: Option<Url>,
+ }
+ 
+ #[derive(Debug, Clone, Copy, clap::ValueEnum)]
+@@ -179,10 +183,14 @@ async fn main() -> Result<(), anyhow::Error> {
+             );
+ 
+             let ingestion = match sb.env {
++                SandboxEnv::Localnet if sb.rpc_api_url.is_some() => IngestionClientArgs {
++                    rpc_api_url: sb.rpc_api_url,
++                    ..Default::default()
++                },
+                 SandboxEnv::Localnet => IngestionClientArgs {
+                     local_ingestion_path: Some(
+                         sb.local_ingestion_path
+-                            .context("--local-ingestion-path is required for localnet")?,
++                            .context("--local-ingestion-path or --rpc-api-url is required for localnet")?,
+                     ),
+                     ..Default::default()
+                 },
+@@ -237,7 +245,15 @@ async fn main() -> Result<(), anyhow::Error> {
+             ingestion: ingestion_args,
+             streaming: streaming_args,
+         },
+-        IngestionConfig::default(),
++        // Serialize checkpoint fetches and slow tip-polling: the fork's
++        // GetCheckpoint proxies availableRange to upstream mainnet GraphQL per
++        // request, and the default adaptive concurrency (up to 500) plus 200ms
++        // retries trips its rate limit.
++        IngestionConfig {
++            ingest_concurrency: IngestConcurrencyConfig::Fixed { value: 1 },
++            retry_interval_ms: 2000,
++            ..Default::default()
++        },
+         None,
+         metrics.registry(),
+     )
