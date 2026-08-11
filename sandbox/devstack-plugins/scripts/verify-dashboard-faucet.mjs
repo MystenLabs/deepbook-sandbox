@@ -25,6 +25,7 @@ import { execSync } from "node:child_process";
 import { account, coin, dashboard, defineDevstack, sui } from "@mysten-incubation/devstack";
 
 import { deepFundingFromWhale, DEEP_COIN_TYPE } from "../deep-funding.ts";
+import { resolveForkCheckpoint } from "../fork-checkpoint.ts";
 import { usdcFundingFromCapOwner, USDC_COIN_TYPE } from "../usdc-funding.ts";
 
 const DONOR =
@@ -39,10 +40,10 @@ const DIST = resolve("node_modules/@mysten-incubation/devstack/dist");
 const { runStack } = await import(pathToFileURL(DIST + "/api/run-stack.mjs").href);
 
 const ctx = process.env.FORK_IMAGE_CONTEXT?.trim();
-// Fork binary built from a sui rev covering current mainnet protocol (128; this
-// rev is max 130); passed to the patched Dockerfile as SUI_FORK_REV. Override via SUI_FORK_REV.
+// Fork binary built from a sui rev covering current mainnet protocol (130 since
+// epoch 1205; this rev is max 130); passed to the patched Dockerfile as SUI_FORK_REV. Override via SUI_FORK_REV.
 const FORK_REV = process.env.SUI_FORK_REV ?? "16f1402387c7ce0f9310e57610428efec930dbf4";
-const checkpoint = process.env.FORK_CHECKPOINT ? Number(process.env.FORK_CHECKPOINT) : undefined;
+const checkpoint = resolveForkCheckpoint(process.env.FORK_CHECKPOINT);
 const suiRef = sui({
     mode: "fork",
     upstream: "mainnet",

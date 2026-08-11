@@ -159,7 +159,7 @@ Architecture notes for the dashboard's user-facing Trading page — user-driven 
 
 `examples/sandbox/` contains runnable TypeScript examples using the `@mysten/deepbook-v3` SDK. These demonstrate how external developers integrate with DeepBook — the pattern real builders would follow.
 
-Both `examples/sandbox/` and the sandbox dashboard use `@mysten/sui@v2` and the new SDK extension pattern (`client.$extend(deepbook(...))`). The examples have their own `package.json` and `node_modules/` for isolation, but the SDK version is the same as the rest of the project.
+Both `examples/sandbox/` and the sandbox dashboard use `@mysten/sui@v2` and the new SDK extension pattern (`client.$extend(deepbook(...))`). The examples have their own `package.json` and `node_modules/` for isolation, and track `@mysten/sui` independently — they sit on a newer minor (`^2.23.1`) than `sandbox/` because `@mysten/deepbook-v3@1.6.x` requires it.
 
 ```bash
 # Run examples (sandbox must be running first)

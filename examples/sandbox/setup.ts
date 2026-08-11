@@ -23,12 +23,16 @@ import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { Transaction } from "@mysten/sui/transactions";
 import { SUI_FRAMEWORK_ADDRESS } from "@mysten/sui/utils";
 
+import { createBalanceManager } from "./bm.js";
+
+const IS_FORK = process.env.SANDBOX_ENV === "fork";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 /** Shape of the deployment manifest written by deploy-all.ts */
-interface DeploymentManifest {
+export interface DeploymentManifest {
     network: { type: string; rpcUrl: string; faucetUrl: string };
     packages: Record<
         string,
@@ -205,6 +209,7 @@ export async function createReadOnlyClient(): Promise<{
     client: SandboxClient;
     manifest: DeploymentManifest;
 }> {
+    if (IS_FORK) return (await import("./fork.js")).createReadOnlyClientFork();
     const manifest = await loadManifest();
     // Use a zero address for read-only queries
     const zeroAddress = "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -217,6 +222,7 @@ export async function createReadOnlyClient(): Promise<{
  * Suitable for swaps (no BalanceManager needed).
  */
 export async function setupSandbox(): Promise<SandboxConfig> {
+    if (IS_FORK) return (await import("./fork.js")).setupSandboxFork();
     const manifest = await loadManifest();
     const keypair = new Ed25519Keypair();
     const address = keypair.toSuiAddress();
@@ -239,6 +245,7 @@ export async function setupSandbox(): Promise<SandboxConfig> {
  *   2. Re-create client with BM registered under MANAGER_1 key
  */
 export async function setupWithBalanceManager(): Promise<SandboxConfigWithBM> {
+    if (IS_FORK) return (await import("./fork.js")).setupWithBalanceManagerFork();
     const { keypair, address, manifest } = await setupSandbox();
 
     // Step 1: Create a temporary client (no balance managers)
@@ -246,40 +253,10 @@ export async function setupWithBalanceManager(): Promise<SandboxConfigWithBM> {
 
     // Step 2: Create BalanceManager on-chain
     console.log("Creating BalanceManager on-chain...");
-    const tx = new Transaction();
-    tempClient.deepbook.balanceManager.createAndShareBalanceManager()(tx);
-
-    const result = await tempClient.core.signAndExecuteTransaction({
-        transaction: tx,
-        signer: keypair,
-        include: { effects: true, objectTypes: true },
-    });
-
-    if (result.$kind === "FailedTransaction") {
-        throw new Error(
-            `BalanceManager creation failed: ${JSON.stringify(result.FailedTransaction)}`,
-        );
-    }
-
-    // Step 3: Extract the created BalanceManager object ID
-    const objectTypes = result.Transaction?.objectTypes ?? {};
-    const balanceManagerId = result.Transaction?.effects?.changedObjects?.find(
-        (obj) =>
-            obj.idOperation === "Created" && objectTypes[obj.objectId]?.includes("BalanceManager"),
-    )?.objectId;
-
-    if (!balanceManagerId) {
-        throw new Error("Failed to extract BalanceManager ID from transaction result");
-    }
-
-    // Wait for the transaction to be fully indexed by the gRPC node.
-    // Without this, the next transaction may fail with "Object not found"
-    // because the shared BalanceManager hasn't been processed yet.
-    await tempClient.core.waitForTransaction({ digest: result.Transaction!.digest });
-
+    const balanceManagerId = await createBalanceManager(tempClient, keypair);
     console.log(`BalanceManager created: ${balanceManagerId}\n`);
 
-    // Step 4: Re-create client with BM registered
+    // Step 3: Re-create client with BM registered
     const client = createClient(address, manifest, {
         [BALANCE_MANAGER_KEY]: { address: balanceManagerId },
     });

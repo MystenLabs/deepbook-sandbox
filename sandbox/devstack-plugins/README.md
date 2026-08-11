@@ -149,6 +149,31 @@ Swapping the legacy manifest reads (market-maker, examples, dashboard) over to
 the member's codegen bindings happens with the runtime composition
 (SEDEFI-325/326), same as the faucet/dashboard wiring below.
 
+## `devstack.config.ts` — the production stack (DBSF-021)
+
+The composed fork runtime `devstack up` boots: fork + DEEP/USDC funding +
+`deepbook()` (known) + margin/liquidation pins + the impersonated DeepBook
+admin + devstack's `dashboard()` + `wallet({ accounts: 'all' })`. Run it from
+`sandbox/`:
+
+```bash
+pnpm stack:up     # devstack up (cwd devstack-plugins, so the CLI finds the config)
+pnpm stack:wipe   # devstack wipe --stack deepbook-sandbox (wipe ignores the config's stackName)
+```
+
+- Stack name `deepbook-sandbox` (override: `SANDBOX_STACK`); image precedence
+  as in the scripts: `DEVSTACK_SUI_FORK_IMAGE` (pull) → `FORK_IMAGE_CONTEXT` /
+  default patched context (build) → devstack default (STOCK — survives
+  boot-and-teardown checks like the smoke, but a sustained stack crashes
+  seconds after boot when the funding members' donor-coin reads hit the
+  fork's unimplemented store path; the patched image is required for real
+  sessions. See the Known blocker below).
+- Deliberately not composed yet: the oracle hostService (SEDEFI-317) and the
+  create-sandbox-pool action (SEDEFI-324) — additive when their tickets land.
+- Smoke: `pnpm smoke` here, or `pnpm test:integration devstack-up` from
+  `sandbox/` (< 3 min on a warm image; skips without Docker/Node 24).
+- The `__tests__/devstack.config.ts` fixture (funded alice) stays e2e-only.
+
 ## Faucet & dashboard
 
 devstack's built-in dashboard auto-surfaces the `coinType:<DEEP>` and
@@ -160,14 +185,29 @@ migration) is in
 
 ## ⚠️ Known blocker — sui-fork
 
-Executing a non-SUI coin transfer **or mint** on a **stock** sui-fork aborts the
-fork process: the SDK enriches the tx's balance-changes via `GetCoinInfo`, which
-on the fork misses the (un-materialized) shared CoinRegistry `Currency` object and
-hits an unimplemented index `todo!()`. Until sui-fork fixes that, the live path
-needs the **patched** fork image. Full report + the patch:
+A **stock** sui-fork crashes on any access to donor coins (transfer, mint, or
+balance-read via `getObject`): the SDK enriches the tx's balance-changes via
+`GetCoinInfo`, which on the fork misses the (un-materialized) shared
+CoinRegistry `Currency` object and hits an unimplemented index `todo!()` in
+`store.rs:1361`. Dashboard faucet requests and the `remainingDeep` Effect both
+touch donor coins and thus both crash a stock fork. Until sui-fork fixes that,
+the live path needs the **patched** fork image. Full report + the patch:
 [`../scripts/spikes/devstack-funding/SUI-FORK-NOTES.md`](../scripts/spikes/devstack-funding/SUI-FORK-NOTES.md).
 The plugin's logic is correct and unit-tested regardless; the e2e test needs the
 patched fork.
+
+**Additionally (since 2026-07-31)** the fork must be pinned to a
+pre-protocol-130 mainnet checkpoint: mainnet's epoch-1205 framework upgrade
+added `0x2::scratch`, which the pinned fork rev can't verify (any tx execution
+aborts with `MISSING_DEPENDENCY`), while every newer sui rev — current `main`
+and the sui#27520 fix branch alike — crashes fork _genesis_ on mainnet forks
+(`new_id` VMInvariantViolation). Both configs therefore default
+`FORK_CHECKPOINT` to `304941000` (tail of epoch 1204, protocol 129); pass
+`FORK_CHECKPOINT=latest` to fork the live tip once upstream fixes land. Donor
+coin ids are resolved at that checkpoint; `node scripts/refresh-donor-coins.mjs`
+rediscovers them from the **live tip** (not the pin), so after a refresh confirm
+the printed id also existed at the pinned checkpoint (a funding "Object … not
+found" at boot is the symptom when it didn't).
 
 ## Tests
 

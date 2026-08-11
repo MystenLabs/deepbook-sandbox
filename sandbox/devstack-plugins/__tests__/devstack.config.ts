@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { account, coin, defineDevstack, sui } from "@mysten-incubation/devstack";
 
 import { deepFundingFromWhale, DEEP_COIN_TYPE } from "../deep-funding.ts";
+import { resolveForkCheckpoint } from "../fork-checkpoint.ts";
 import { deepbookFromManifest, deepbookMarginPackagesFromManifest } from "../deepbook-known.ts";
 import { usdcFundingFromCapOwner, USDC_COIN_TYPE } from "../usdc-funding.ts";
 import { ALICE_KEYPAIR } from "./alice.ts";
@@ -47,10 +48,16 @@ const forkRev = process.env.SUI_FORK_REV ?? "16f1402387c7ce0f9310e57610428efec93
 // which would abort at the funding pass.
 const prebuiltImage = process.env.DEVSTACK_SUI_FORK_IMAGE?.trim();
 
+// Checkpoint pin (same policy as the production config) — defaults to a
+// pre-protocol-130 mainnet checkpoint; see ../fork-checkpoint.ts for the full
+// story. FORK_CHECKPOINT=<n> overrides; FORK_CHECKPOINT=latest forks the tip.
+const checkpoint = resolveForkCheckpoint(process.env.FORK_CHECKPOINT);
+
 const suiRef = sui({
     mode: "fork",
     upstream: "mainnet",
     version: forkRev,
+    ...(checkpoint !== undefined ? { checkpoint } : {}),
     image: prebuiltImage
         ? { pull: prebuiltImage }
         : { build: { context: forkImageContext, dockerfile: "sui-fork/Dockerfile" } },

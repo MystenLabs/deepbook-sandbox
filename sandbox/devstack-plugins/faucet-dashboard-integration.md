@@ -65,9 +65,8 @@ mints, so there's no donor balance to drain.)
    devstack's panel covers SUI + every contributed coin strategy (DEEP and
    USDC), with editable amounts, for free.
 2. **`POST /faucet`** — keep as a **thin proxy** that routes DEEP through
-   devstack's faucet (the contributed strategy / the dashboard's `fundCoin`
-   mutation), for backward compatibility with builders/scripts pointing at the
-   legacy endpoint. Retire it entirely only if no legacy consumers remain — final
+   devstack's faucet (the contributed strategy / the dashboard's `fund` mutation (`fund(input: { recipient, coinType?, amountBaseUnits? })`)),
+   for backward compatibility with builders/scripts pointing at the legacy endpoint. Retire it entirely only if no legacy consumers remain — final
    call when the proxy target exists.
 3. **Remaining-balance indicator** — surface `remainingDeep`. It reads the
    donor's funding-source coin by known id (`getObject` with

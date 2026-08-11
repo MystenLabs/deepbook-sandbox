@@ -14,7 +14,8 @@
         "verify:deepbook-ids": "node scripts/verify-deepbook-ids.mjs",
         "verify:deepbook-member": "node scripts/verify-deepbook-member.mjs",
         "verify:usdc-minter": "node scripts/verify-usdc-minter.mjs",
-        "dashboard:up": "node scripts/dashboard-up.mjs"
+        "dashboard:up": "node scripts/dashboard-up.mjs",
+        "smoke": "node scripts/stack-smoke.mjs"
     },
     "devDependencies": {
         "@mysten-incubation/devstack": "0.7.0",

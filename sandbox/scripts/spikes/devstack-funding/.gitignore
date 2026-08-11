@@ -5,3 +5,5 @@ node_modules/
 src/generated/
 # patched sui-fork image build context (validation artifact; see SUI-FORK-NOTES.md)
 .fork-patched/
+# upstream-branch sui-fork image build context (see build-branch-fork.sh)
+.fork-branch/
