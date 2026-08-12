@@ -5,8 +5,14 @@
         "moduleResolution": "Bundler",
         "esModuleInterop": true,
         "rootDir": ".",
-        "types": ["node"]
+        "types": ["node"],
+        // scripts are tsx-run (never emitted); .ts-suffixed imports let them
+        // share modules with devstack-plugins/ (pools-seed-sql.ts).
+        "noEmit": true,
+        "allowImportingTsExtensions": true
     },
     "include": ["scripts/**/*"],
-    "exclude": ["node_modules", "dist"]
+    // Spikes are frozen exploration records with their own (absent) dep
+    // trees — excluding them makes `pnpm exec tsc` a usable gate.
+    "exclude": ["node_modules", "dist", "scripts/spikes"]
 }

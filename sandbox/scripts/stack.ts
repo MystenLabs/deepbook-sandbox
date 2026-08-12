@@ -1,13 +1,22 @@
-// Single-command stack lifecycle (DBSF-022): `pnpm deploy-all` / `pnpm down`.
+// Single-command stack lifecycle: `pnpm deploy-all` / `pnpm down`.
+//
+// Since SEDEFI-445 (DBSF-032) the stack is a SINGLE orchestrator: postgres,
+// the DeepBook indexer, and the DeepBook server are container-backed devstack
+// members (devstack-plugins/{postgres,indexer,server}-member.ts, plus the
+// pools-seed task member), so there is no compose side-channel left — this
+// script is a pure devstack wrapper.
 //
 // `devstack up` has no detach mode — it boots the stack and stays attached,
 // and its process hosts the dashboard GraphQL API (the `fund` mutation), so it
 // must outlive this script. `up` therefore spawns `pnpm stack:up` into its own
 // process group (PID + logs in .devstack-supervisor.*), waits until the
-// funding strategies answer on the dashboard GraphQL, then brings up the
-// compose remnant. `down` reverses it: compose down -v (fork resets require a
-// Postgres wipe — watermarks ignore --first-checkpoint), SIGINT to the
-// supervisor's process group, then `devstack wipe`.
+// funding strategies answer on the dashboard GraphQL, then polls the same API
+// (`services` — the supervisor's live member projection) until every member
+// settles ready/done. `down` SIGINTs the supervisor's process group, then
+// runs `devstack wipe` — which removes the managed containers including
+// Postgres, and with it the indexer's committer watermarks (fork resets
+// REQUIRE a Postgres wipe: watermarks resume mainnet checkpoint numbering and
+// ignore --first-checkpoint).
 //
 // An attached `pnpm stack:up` in another terminal still works: `up` detects a
 // live supervisor and skips the spawn; `down` refuses to wipe under a
@@ -28,7 +37,24 @@ const DASHBOARD_PORT = 9810;
 const DASHBOARD_HOST = `api.${STACK}.devstack-plugins.localhost`;
 const PID_FILE = resolve(SANDBOX_DIR, ".devstack-supervisor.pid");
 const LOG_FILE = resolve(SANDBOX_DIR, ".devstack-supervisor.log");
-const READY_TIMEOUT_MS = 480_000;
+/** An env-overridable timeout; a non-numeric override must fail loudly, not
+ *  turn every deadline comparison into `x > NaN` (never true — an infinite
+ *  loop). */
+const timeoutFromEnv = (name: string, defaultMs: number): number => {
+    const raw = process.env[name]?.trim();
+    if (raw === undefined || raw === "") return defaultMs;
+    const ms = Number(raw);
+    if (!Number.isFinite(ms) || ms <= 0) {
+        console.error(`[stack] ${name} must be a positive number of milliseconds (got "${raw}")`);
+        process.exit(1);
+    }
+    return ms;
+};
+const READY_TIMEOUT_MS = timeoutFromEnv("STACK_READY_TIMEOUT_MS", 480_000);
+// Member settling includes first-time image work (the indexer is a local Rust
+// release build; the server image a pull) — a cold cache legitimately takes
+// an hour+, and failed members cut the wait short, so default long.
+const SETTLE_TIMEOUT_MS = timeoutFromEnv("STACK_SETTLE_TIMEOUT_MS", 5_400_000);
 const POLL_MS = 3_000;
 const STOP_TIMEOUT_MS = 90_000;
 
@@ -38,11 +64,10 @@ const fail = (msg: string): never => {
     process.exit(1);
 };
 
-/** Is the devstack supervisor serving the dashboard API? The router container
- *  owns the port permanently, so only a routed GraphQL answer (not a mere TCP
- *  accept) proves the supervisor process is alive. Funding strategies register
- *  at the end of boot, so a non-empty fundableCoins doubles as fund-readiness. */
-const supervisorReady = (): Promise<boolean> =>
+/** POST one query to the supervisor's routed dashboard GraphQL. Resolves to
+ *  the response's `data`, or null on any transport/parse/GraphQL failure —
+ *  callers treat null as "supervisor not (yet) serving". */
+const gql = (query: string): Promise<Record<string, unknown> | null> =>
     new Promise((done) => {
         const req = request(
             {
@@ -58,21 +83,52 @@ const supervisorReady = (): Promise<boolean> =>
                 res.on("data", (c) => (body += c));
                 res.on("end", () => {
                     try {
-                        const coins = JSON.parse(body)?.data?.fundableCoins;
-                        done(Array.isArray(coins) && coins.length > 0);
+                        done(JSON.parse(body)?.data ?? null);
                     } catch {
-                        done(false);
+                        done(null);
                     }
                 });
             },
         );
-        req.on("error", () => done(false));
+        req.on("error", () => done(null));
         req.on("timeout", () => {
             req.destroy();
-            done(false);
+            done(null);
         });
-        req.end(JSON.stringify({ query: "{ fundableCoins { symbol } }" }));
+        req.end(JSON.stringify({ query }));
     });
+
+/** Is the devstack supervisor serving the dashboard API? The router container
+ *  owns the port permanently, so only a routed GraphQL answer (not a mere TCP
+ *  accept) proves the supervisor process is alive. Funding strategies register
+ *  at the end of boot, so a non-empty fundableCoins doubles as fund-readiness. */
+const supervisorReady = async (): Promise<boolean> => {
+    const data = await gql("{ fundableCoins { symbol } }");
+    const coins = (data as { fundableCoins?: unknown } | null)?.fundableCoins;
+    return Array.isArray(coins) && coins.length > 0;
+};
+
+type MemberRow = {
+    key: string;
+    status: string;
+    phase: string | null;
+    lastError: { tag: string } | null;
+};
+
+/** The supervisor's LIVE member projection (the `devstack status` CLI only
+ *  serves a degraded offline view with empty rows — the dashboard GraphQL is
+ *  the one queryable live source once the supervisor is up). `first: 100` is
+ *  the relay maxSize; the default page is 20, one config growth spurt away
+ *  from silently truncating exactly the newest members. */
+const memberRows = async (): Promise<MemberRow[] | null> => {
+    const data = await gql(
+        "{ services(first: 100) { edges { node { key status phase lastError { tag } } } } }",
+    );
+    const edges = (data as { services?: { edges?: { node: MemberRow }[] } } | null)?.services
+        ?.edges;
+    if (!Array.isArray(edges)) return null;
+    return edges.map((e) => e.node);
+};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -140,6 +196,65 @@ const logTail = () => {
     console.error(readFileSync(LOG_FILE, "utf8").split("\n").slice(-25).join("\n"));
 };
 
+/** Block until every member row settles ready/done. Fails fast on a `failed`
+ *  row — a dependency-cascade means one broken member fails its dependents in
+ *  the same sweep, so the first failed row is the root cause to surface. The
+ *  supervisor was answering GraphQL when this is called, so a sustained run
+ *  of unanswered polls means it died mid-settle (e.g. a fork abort) — bail
+ *  out instead of spinning silently to the deadline. */
+const awaitMembersSettled = async (): Promise<void> => {
+    const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+    const MAX_CONSECUTIVE_NULLS = 10; // × POLL_MS = 30s of GraphQL silence
+    let nullStreak = 0;
+    let lastNarration = "";
+    let lastNarratedAt = 0;
+    for (;;) {
+        const rows = await memberRows();
+        if (rows === null) {
+            nullStreak += 1;
+            if (nullStreak >= MAX_CONSECUTIVE_NULLS) {
+                logTail();
+                fail(
+                    "the supervisor stopped answering while members were settling " +
+                        "(died mid-boot? see log above) — re-run `pnpm down && pnpm deploy-all`",
+                );
+            }
+        } else {
+            nullStreak = 0;
+        }
+        if (rows !== null && rows.length > 0) {
+            const failed = rows.filter((r) => r.status === "failed");
+            if (failed.length > 0) {
+                logTail();
+                fail(
+                    "stack member(s) failed: " +
+                        failed
+                            .map((r) => `${r.key} (${r.lastError?.tag ?? "unknown error"})`)
+                            .join(", ") +
+                        " — see log above; recover with `pnpm down && pnpm deploy-all`",
+                );
+            }
+            const unsettled = rows.filter((r) => r.status !== "ready" && r.status !== "done");
+            if (unsettled.length === 0) return;
+            const narration = unsettled.map((r) => `${r.key} (${r.phase ?? r.status})`).join(", ");
+            if (narration !== lastNarration || Date.now() - lastNarratedAt > 60_000) {
+                log(`waiting on: ${narration}`);
+                lastNarration = narration;
+                lastNarratedAt = Date.now();
+            }
+        }
+        if (Date.now() > deadline) {
+            logTail();
+            fail(
+                `stack members not settled after ${SETTLE_TIMEOUT_MS / 1000}s — see log above ` +
+                    "(a cold indexer image build is a full Rust release build and can exceed an hour; " +
+                    "raise STACK_SETTLE_TIMEOUT_MS if that's what this is)",
+            );
+        }
+        await sleep(POLL_MS);
+    }
+};
+
 async function up(): Promise<void> {
     if (await supervisorReady()) {
         log("devstack supervisor already running — skipping boot");
@@ -164,6 +279,21 @@ async function up(): Promise<void> {
                 logTail();
                 fail("devstack supervisor exited during boot — see log above");
             }
+            // The dashboard can be serving while boot is doomed (e.g. the fork
+            // member failed and cascaded) — fundableCoins would then stay empty
+            // until the timeout. Spot failed rows and bail out early instead.
+            const rows = await memberRows();
+            const failed = rows?.filter((r) => r.status === "failed") ?? [];
+            if (failed.length > 0) {
+                logTail();
+                fail(
+                    "stack member(s) failed during boot: " +
+                        failed
+                            .map((r) => `${r.key} (${r.lastError?.tag ?? "unknown error"})`)
+                            .join(", ") +
+                        " — see log above",
+                );
+            }
             if (Date.now() > deadline) {
                 logTail();
                 fail(`devstack not fund-ready after ${READY_TIMEOUT_MS / 1000}s — see log above`);
@@ -173,30 +303,15 @@ async function up(): Promise<void> {
         log("devstack fund-ready (funding strategies registered)");
     }
 
-    log("starting compose remnant (postgres, indexer, server)");
-    run("docker", ["compose", "up", "-d", "--wait"]);
+    // Container-backed members (postgres, indexer, server, pools-seed) settle
+    // on their own devstack dependency edges; pools seeding is the pools-seed
+    // task member, so a settled stack is a fully seeded stack.
+    await awaitMembersSettled();
+    log("all stack members settled");
     log(`stack is up — fund via GraphQL on :${DASHBOARD_PORT} (Host: ${DASHBOARD_HOST})`);
-    // The server's `pools` table is manual config the indexer never writes —
-    // seed it from the manifest so per-pool endpoints resolve (idempotent).
-    // The stack above is already fully up, so a seed failure must not read as
-    // a stack failure: point at the standalone retry instead.
-    log("seeding pools config table from deployments/mainnet-fork.json");
-    const seed = spawnSync("pnpm", ["exec", "tsx", "scripts/seed-pools.ts"], {
-        cwd: SANDBOX_DIR,
-        stdio: "inherit",
-    });
-    if (seed.status !== 0) {
-        fail(
-            "pool seeding failed — the stack itself is UP; fix the cause and re-run " +
-                "`pnpm exec tsx scripts/seed-pools.ts` (per-pool server endpoints 404 until seeded)",
-        );
-    }
 }
 
 async function down(): Promise<void> {
-    log("stopping compose remnant (down -v: fork resets require a Postgres wipe)");
-    run("docker", ["compose", "down", "-v"]);
-
     const pid = ownPid();
     if (pid !== null) {
         log(`stopping devstack supervisor (pid ${pid})`);
@@ -250,6 +365,9 @@ async function down(): Promise<void> {
     }
     rmSync(PID_FILE, { force: true });
 
+    // The wipe removes the managed containers (incl. Postgres — the indexer
+    // watermark reset that used to be `docker compose down -v`), networks,
+    // and the stack's runtime state.
     log("wiping devstack stack state");
     run("pnpm", ["stack:wipe", "--yes"]);
     log("stack is down");

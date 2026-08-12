@@ -2,12 +2,14 @@ name: Integration Tests
 
 # The legacy localnet integration suites (deploy-pipeline, deploy-all-e2e) were
 # decommissioned with the compose localnet stack (DBSF-022): the sandbox now
-# runs on the devstack mainnet-fork stack (`pnpm deploy-all` → devstack up +
-# the postgres/indexer/server compose remnant). The devstack-up smoke exists
-# (`pnpm test:integration devstack-up`) but needs a warm patched fork image —
-# a cold CI source build blows its boot budget, so it is local-only for now.
-# Fork-stack CI returns with DBSF-024 (devstack/vitest runner) and DBSF-025
-# (pinned fork checkpoint + image caching per CI run).
+# runs entirely on the devstack mainnet-fork stack — postgres/indexer/server
+# are container-backed devstack members since DBSF-032 (`pnpm deploy-all` is a
+# pure devstack wrapper). The devstack-up smoke exists
+# (`pnpm test:integration devstack-up`) but needs warm images (patched fork +
+# the locally-built fork indexer) — a cold CI source build blows its boot
+# budget, so it is local-only for now. Fork-stack CI returns with DBSF-024
+# (devstack/vitest runner) and DBSF-025 (pinned fork checkpoint + image
+# caching per CI run).
 
 on:
   pull_request:

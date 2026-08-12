@@ -56,6 +56,8 @@ import { Transaction, TransactionDataBuilder } from "@mysten/sui/transactions";
 import { deriveDynamicFieldID } from "@mysten/sui/utils";
 import { bcs } from "@mysten/sui/bcs";
 
+import { postgresContainer } from "./utils/devstack-containers.ts";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = resolve(HERE, "..", "deployments", "mainnet-fork.json");
 const STATE_PATH = resolve(HERE, "..", ".seed-trades-state.json");
@@ -689,7 +691,7 @@ const main = async () => {
         "docker",
         [
             "exec",
-            "deepbook-postgres",
+            postgresContainer(),
             "psql",
             "-U",
             "postgres",

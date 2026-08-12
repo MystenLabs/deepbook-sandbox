@@ -2,6 +2,14 @@
 
 A one-command local development environment for DeepBook V3 — the decentralized order book on Sui.
 
+> **⚠️ This README describes the RETIRED localnet stack.** The sandbox now runs
+> a devstack-orchestrated **mainnet fork** — localnet, `docker-compose.yml`,
+> and the faucet/oracle/market-maker containers referenced below were
+> decommissioned (DBSF-022, DBSF-032). Until this document is rewritten, the
+> current quick start is: `cd sandbox && pnpm deploy-all` / `pnpm down`, with
+> the up-to-date architecture and commands in [`CLAUDE.md`](./CLAUDE.md)
+> ("The Stack") and [`sandbox/devstack-plugins/README.md`](./sandbox/devstack-plugins/README.md).
+
 ---
 
 ## 1. What Is This?

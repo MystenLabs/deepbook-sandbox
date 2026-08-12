@@ -111,7 +111,10 @@ SEDEFI-326): the runtime migration builds on devstack's **first-party
 liquidity, mock-Pyth initial feeds, codegen bindings) rather than porting
 `MoveDeployer`/`pool.ts`. The member does **not** cover the indexer, server,
 market-maker, the oracle-service's ongoing price updates, or non-SUI funding on
-a mainnet fork — this package's funding plugins remain necessary alongside it.
+a mainnet fork — this package's funding plugins remain necessary alongside it,
+and since SEDEFI-445 (DBSF-032) the indexer/server/postgres gap is closed by
+this package's own container-backed members (`postgres-member.ts`,
+`indexer-member.ts`, `server-member.ts`, plus the `pools-seed.ts` task).
 
 ## `deepbook-known.ts` — DeepBook on the fork (DBSF-017)
 

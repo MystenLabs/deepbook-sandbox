@@ -1,0 +1,12 @@
+# Per-Dockerfile ignore (BuildKit picks <Dockerfile>.dockerignore over the
+# context root's). The build context is the REPO ROOT — see the Dockerfile
+# header — so allowlist exactly what it COPYs; everything else (node_modules,
+# .git, dashboard builds, target/ trees) must not ship to the daemon.
+*
+!sandbox/docker/deepbook-indexer-fork/rpc-ingestion.patch
+!sandbox/docker/deepbook-indexer-fork/entry-fork.sh
+!external/deepbook/Cargo.toml
+!external/deepbook/Cargo.lock
+!external/deepbook/crates
+# Host-build leftovers inside the submodule crates tree stay out.
+external/deepbook/crates/**/target
