@@ -1,5 +1,5 @@
-// Seed demo trades on the fork's DEEP_SUI pool so the dashboard's DeepBook
-// page has real candles/ticker data to show.
+// Seed demo trades on the fork's DeepBook pools (DEEP_SUI, SUI_USDC,
+// DEEP_USDC) so the dashboard's DeepBook page has real candles/ticker data.
 //
 // Mechanics (all empirically debugged against the fork — see SUI-FORK-NOTES):
 //   - Impersonates the DEEP whale via empty-signature `executeTransaction`
@@ -8,9 +8,11 @@
 //   - Pre-warms the pool's Versioned inner by id first: execution-path child
 //     reads do NOT lazy-fetch on the fork, so the first order would abort in
 //     dynamic_field::borrow_child_object without it.
-//   - One-time setup: create+share a BalanceManager (persisted in
+//   - Setup: create+share a BalanceManager (persisted in
 //     .seed-trades-state.json and reused — the whale's known SUI coin is
-//     nearly empty, so parked BM funds must not leak), deposit DEEP + SUI.
+//     nearly empty, so parked BM funds must not leak); deposits are computed
+//     per selected pool (DEEP from the whale coin, SUI from its gas coin,
+//     USDC minted via the boot-configured MintCap, sponsored by the whale).
 //   - Each batch: one PTB placing a bid INSIDE the mainnet spread and an IOC
 //     ask at the same price — a pure self-fill (SELF_MATCHING_ALLOWED) that
 //     recycles the scarce SUI in-tx and avoids a pin-era maker whose account
@@ -24,15 +26,22 @@
 //   - Ends with `CALL update_all_ohclv(...)` in Postgres (production runs it
 //     on a scheduler this stack doesn't have) and polls /ohclv.
 //
-// DEEP_SUI is whitelisted (zero fees, `pay_with_deep: false`), so no DEEP fee
-// staking is needed. Trades are demo data — this script is manual, not part
-// of `deploy-all`.
+// Fees: DEEP_SUI is whitelisted (zero fees); SUI_USDC and DEEP_USDC are not,
+// and their input-token fees leak a little per fill — expect some later
+// batches to skip with balance-too-low until the next run's top-up. Trades
+// are demo data — this script is manual, not part of `deploy-all`.
 //
 // Run (stack must be up): pnpm exec tsx scripts/seed-trades.ts
-// Knobs: TRADE_BATCHES (default 8 — note a rerun soon after a successful one
-//        finds the fork clock already at wall time, so its fills cluster into
-//        one candle bucket instead of one per batch; spread returns once wall
-//        time moves on), TRADE_QTY_DEEP (default 40), FORK_RPC_URL (overrides
+// Knobs: TRADE_POOLS (default "DEEP_SUI,SUI_USDC,DEEP_USDC" — manifest pool
+//        names, seeded sequentially so the scarce funds recycle between
+//        pools), TRADE_BATCHES per pool (default 8 — note a rerun soon after
+//        a successful one finds the fork clock already at wall time, so its
+//        fills cluster into one candle bucket instead of one per batch;
+//        spread returns once wall time moves on), TRADE_STEP_MS (fork-clock
+//        ms between batches, default 60000 = one 1m candle bucket per batch
+//        while staying behind wall time), TRADE_TICK_BIAS (signed tick shift
+//        applied to every pool's price grid — probe tool for hostile book
+//        regions), FORK_RPC_URL (overrides
 //        the RPC url only — clock control still targets the first `sui-fork`
 //        container Docker lists), DASHBOARD_URL, DASHBOARD_HOST.
 
@@ -71,13 +80,11 @@ const DASHBOARD_HOST =
 const SERVER_URL = process.env.DEEPBOOK_SERVER_URL ?? "http://127.0.0.1:9008";
 
 const BATCHES = Number(process.env.TRADE_BATCHES ?? 8);
-const QTY_DEEP = Number(process.env.TRADE_QTY_DEEP ?? 40);
-const CANDLE_STEP_MS = 6 * 60 * 1000; // > one 5m bucket per batch
+// Spacing between batches in fork-clock time. 60s = one 1m candle bucket per
+// batch AND (unlike wider steps) the clock stays behind wall time, so fills
+// are visible the moment they index instead of after a catch-up lag.
+const CANDLE_STEP_MS = Number(process.env.TRADE_STEP_MS ?? 60_000);
 
-// DeepBook scalars for DEEP(6)/SUI(9); price u64 = float × 1e9 × qScalar/bScalar.
-const DEEP_SCALAR = 1_000_000n;
-const PRICE_MULT = 1_000_000_000_000n; // 1e9 × 1e9 / 1e6
-const TICK_SIZE = 10_000_000n; // DEEP_SUI tick from the manifest
 const MAX_TIMESTAMP = 1_844_674_407_370_955_161n; // SDK MAX_TIMESTAMP
 const CLOCK_ID = "0x0000000000000000000000000000000000000000000000000000000000000006";
 
@@ -125,8 +132,12 @@ const objectRef = async (core: Core, objectId: string): Promise<ObjectRef> => {
     return { objectId: o.objectId, version: String(o.version), digest: o.digest };
 };
 
-const buildImpersonationBytes = async (tx: Transaction, gas: ObjectRef): Promise<Uint8Array> => {
-    tx.setSender(WHALE);
+const buildImpersonationBytes = async (
+    tx: Transaction,
+    gas: ObjectRef,
+    sender: string = WHALE,
+): Promise<Uint8Array> => {
+    tx.setSender(sender);
     tx.setGasBudget(GAS_BUDGET);
     tx.setGasPrice(GAS_PRICE);
     tx.setGasOwner(WHALE);
@@ -162,8 +173,9 @@ const execute = async (
     tx: Transaction,
     gas: ObjectRef,
     label: string,
+    sender: string = WHALE,
 ): Promise<unknown> => {
-    const bytes = await buildImpersonationBytes(tx, gas);
+    const bytes = await buildImpersonationBytes(tx, gas, sender);
     const raw = await core
         .executeTransaction({
             transaction: bytes,
@@ -276,7 +288,9 @@ const advanceClockBy = (byMs: bigint): void => {
     );
 };
 
-const pythImpliedMid = async (): Promise<number> => {
+/** Oracle USD prices from the dashboard's Pyth feeds, with pin-era fallbacks. */
+const pythUsd = async (): Promise<Record<string, number>> => {
+    const fallback: Record<string, number> = { DEEP: 0.0162, SUI: 0.692, USDC: 1.0 };
     try {
         const data = await graphql(`
             {
@@ -292,24 +306,96 @@ const pythImpliedMid = async (): Promise<number> => {
         const feeds = (
             data.deepbookInfo as { pythFeeds: { symbol: string; price: string; expo: number }[] }[]
         )[0]?.pythFeeds;
-        const usd = (symbol: string) => {
-            const f = feeds?.find((x) => x.symbol === symbol);
-            return f ? Number(f.price) * Math.pow(10, f.expo) : null;
-        };
-        const deep = usd("DEEP");
-        const sui = usd("SUI");
-        if (deep !== null && sui !== null && sui !== 0) return deep / sui;
+        for (const feed of feeds ?? []) {
+            const value = Number(feed.price) * Math.pow(10, feed.expo);
+            if (Number.isFinite(value) && value > 0) fallback[feed.symbol] = value;
+        }
     } catch {
-        /* fall through to the pin-era constant */
+        /* pin-era fallbacks stand */
     }
-    return 0.0234;
+    return fallback;
+};
+
+const coinSymbol = (coinType: string): string => coinType.split("::").pop() ?? coinType;
+
+// Circle stablecoin framework pins (same as devstack-plugins/usdc-funding.ts).
+const STABLECOIN_PACKAGE = "0xecf47609d7da919ea98e7fd04f6e0648a0a79b337aaad373fa37aac8febf19c8";
+const USDC_TREASURY = {
+    objectId: "0x57d6725e7a8b49a7b2a612f6bd66ab5f39fc95332ca48be421c3229d514a6de7",
+    initialSharedVersion: "313333795",
+    mutable: true,
+};
+const DENY_LIST = {
+    objectId: "0x0000000000000000000000000000000000000000000000000000000000000403",
+    initialSharedVersion: "65624845",
+    mutable: true,
+};
+const MASTER_MINTER =
+    process.env.USDC_MINTER_ADDRESS ??
+    "0x41c0c6d67577b39f31a5fe4052314fd3a8b7c7f890676f60e007bd390e397ac1";
+
+/** Balance held by the manager for `coinType` (0n when the field is absent).
+ *  The balances live in a Bag whose UID sits at bytes 64..96 of the manager;
+ *  keys are `BalanceKey<T>` at the ORIGINAL package id with the hidden
+ *  `dummy_field: bool` an empty Move struct carries (BCS = [0]). */
+const readBmBalance = async (
+    core: Core,
+    bmId: string,
+    originalPkg: string,
+    coinType: string,
+): Promise<bigint> => {
+    const bmObj = await core.getObject({ objectId: bmId, include: { content: true } });
+    const content = bmObj.object?.content;
+    if (!content || content.length < 96) return 0n;
+    const bagUid = `0x${Buffer.from(content.slice(64, 96)).toString("hex")}`;
+    const fieldId = deriveDynamicFieldID(
+        bagUid,
+        `${originalPkg}::balance_manager::BalanceKey<${coinType}>`,
+        new Uint8Array([0]),
+    );
+    try {
+        const field = await core.getObject({ objectId: fieldId, include: { content: true } });
+        const bytes = field.object?.content;
+        if (!bytes || bytes.length < 41) return 0n;
+        return new DataView(bytes.buffer, bytes.byteOffset + 33, 8).getBigUint64(0, true);
+    } catch {
+        return 0n;
+    }
+};
+
+/** Mint USDC to the whale via the boot-configured MintCap (a fork-local object
+ *  owned by Circle's master-minter — discovered by enumeration, which works
+ *  for fork-local objects). Sponsored: sender = master-minter, gas = whale. */
+const mintUsdcToWhale = async (core: Core, usdcType: string, amount: bigint): Promise<void> => {
+    const owned = await core.listOwnedObjects({ owner: MASTER_MINTER });
+    const cap = (owned.objects ?? []).find((o) => (o.type ?? "").includes("::treasury::MintCap<"));
+    if (!cap) {
+        return fail(
+            "no MintCap owned by the master-minter on this fork — boot funding never configured one (fresh fork?); run pnpm deploy-all first",
+        );
+    }
+    const gas = await objectRef(core, WHALE_GAS_COIN);
+    const capRef = await objectRef(core, cap.objectId);
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${STABLECOIN_PACKAGE}::treasury::mint`,
+        typeArguments: [usdcType],
+        arguments: [
+            tx.sharedObjectRef(USDC_TREASURY),
+            tx.objectRef(capRef),
+            tx.sharedObjectRef(DENY_LIST),
+            tx.pure.u64(amount),
+            tx.pure.address(WHALE),
+        ],
+    });
+    await execute(core, tx, gas, "mint USDC", MASTER_MINTER);
 };
 
 // ---------------------------------------------------------------------------
 const main = async () => {
     const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as {
         deepbook: {
-            packages: { deepbook: { latestId: string } };
+            packages: { deepbook: { originalId: string; latestId: string } };
             pools: Record<
                 string,
                 {
@@ -317,59 +403,39 @@ const main = async () => {
                     initialSharedVersion: string;
                     baseType: string;
                     quoteType: string;
+                    tickSize: number;
                 }
             >;
         };
     };
     const pkg = manifest.deepbook.packages.deepbook.latestId;
-    const pool = manifest.deepbook.pools.DEEP_SUI;
-    if (!pool) return fail("manifest has no DEEP_SUI pool pin");
+    const origPkg = manifest.deepbook.packages.deepbook.originalId;
+
+    const SEED_POOLS = (process.env.TRADE_POOLS ?? "DEEP_SUI,SUI_USDC,DEEP_USDC")
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean);
+    /** Per-coin decimals for the manifest's pool assets. */
+    const DECIMALS: Record<string, number> = { DEEP: 6, SUI: 9, USDC: 6 };
+    /** Base quantity per fill, in base units — sized so the transient quote
+     *  lock fits the manager's scarce SUI (pools run sequentially and every
+     *  self-fill settles back, so only one pool's needs are live at a time). */
+    const POOL_QTY: Record<string, bigint> = {
+        DEEP_SUI: 40_000_000n, // 40 DEEP
+        DEEP_USDC: 40_000_000n, // 40 DEEP
+        SUI_USDC: 1_000_000_000n, // 1 SUI (the pool's min size)
+    };
 
     const rpc = forkRpcUrl();
     log(`fork RPC: ${rpc}`);
     const core = new SuiGrpcClient({ network: "mainnet", baseUrl: rpc }).core as Core;
 
-    const mid = await pythImpliedMid();
-    log(`Pyth-implied DEEP_SUI mid: ${mid.toFixed(6)} SUI/DEEP`);
+    const usd = await pythUsd();
 
-    const poolRef = (tx: Transaction) =>
-        tx.sharedObjectRef({
-            objectId: pool.objectId,
-            initialSharedVersion: pool.initialSharedVersion,
-            mutable: true,
-        });
-
-    // Pre-warm the pool's Versioned inner (a dynamic-field child): execution
-    // child reads do NOT lazy-fetch on the fork, so the first order would
-    // abort in dynamic_field::borrow_child_object without this. The gRPC
-    // GetObject below materializes it into the fork's store.
-    {
-        const poolObj = await core.getObject({
-            objectId: pool.objectId,
-            include: { content: true },
-        });
-        const content = poolObj.object?.content;
-        if (!content || content.length < 72) return fail("could not read the pool object content");
-        const innerUid = `0x${Buffer.from(content.slice(32, 64)).toString("hex")}`;
-        const innerVersion = new DataView(content.buffer, content.byteOffset + 64, 8).getBigUint64(
-            0,
-            true,
-        );
-        const innerFieldId = deriveDynamicFieldID(
-            innerUid,
-            "u64",
-            bcs.u64().serialize(innerVersion).toBytes(),
-        );
-        await core
-            .getObject({ objectId: innerFieldId })
-            .catch(() => fail(`could not pre-warm pool inner ${innerFieldId}`));
-    }
-
-    // --- 1. reuse or create+fund a BalanceManager --------------------------
-    // The whale's known SUI coin is small and every BM creation+deposit drains
-    // it permanently (funds park in the shared BM), so the BM is created ONCE
-    // and persisted; reruns reuse it. A fork wipe invalidates the state file —
-    // detected by the existence probe below.
+    // --- 1. reuse or create a BalanceManager -------------------------------
+    // Created ONCE and persisted — the whale's known SUI coin is nearly empty
+    // and funds parked in the shared manager would leak on every recreation.
+    // A fork wipe invalidates the state file (existence probe below).
     let bm: { objectId: string; version: string } | null = null;
     if (existsSync(STATE_PATH)) {
         const saved = JSON.parse(readFileSync(STATE_PATH, "utf8")) as {
@@ -380,13 +446,12 @@ const main = async () => {
             const alive = await core.getObject({ objectId: saved.objectId }).catch(() => null);
             if (alive?.object) {
                 bm = { objectId: saved.objectId, version: saved.version };
-                log(`reusing BalanceManager ${bm.objectId} (already funded)`);
+                log(`reusing BalanceManager ${bm.objectId}`);
             } else {
                 log("saved BalanceManager not on this fork (wiped?) — creating a fresh one");
             }
         }
     }
-    const firstRun = bm === null;
     if (bm === null) {
         log("creating BalanceManager...");
         const gasCreate = await objectRef(core, WHALE_GAS_COIN);
@@ -400,165 +465,216 @@ const main = async () => {
         const createRaw = await execute(core, txCreate, gasCreate, "create BalanceManager");
         bm = findCreatedBalanceManager(createRaw);
         log(`BalanceManager: ${bm.objectId} (initial shared version ${bm.version})`);
+        writeFileSync(STATE_PATH, JSON.stringify(bm, null, 4) + "\n");
     }
-    let gas = await objectRef(core, WHALE_GAS_COIN);
+    const bmFinal = bm;
     const bmRef = (tx: Transaction) =>
         tx.sharedObjectRef({
-            objectId: bm.objectId,
-            initialSharedVersion: bm.version,
+            objectId: bmFinal.objectId,
+            initialSharedVersion: bmFinal.version,
             mutable: true,
         });
 
-    // --- 2. deposit DEEP + SUI ---------------------------------------------
-    // Self-matching returns both legs to the same BalanceManager after every
-    // fill (zero fees on the whitelisted pool), so ONE fill's worth of each
-    // asset suffices — important for SUI: the whale's known coin holds only a
-    // few SUI, and fork-side coin enumeration is stubbed empty so bigger
-    // coins can't be discovered.
-    const deepDeposit = BigInt(QTY_DEEP * 2) * DEEP_SCALAR;
-    const suiDeposit = BigInt(Math.ceil(QTY_DEEP * mid * 1.1 * 1e9));
-    if (firstRun) {
-        log(`depositing ${deepDeposit / DEEP_SCALAR} DEEP + ${suiDeposit / 1_000_000_000n} SUI...`);
-        gas = await objectRef(core, WHALE_GAS_COIN);
-        const deepCoin = await objectRef(core, WHALE_DEEP_COIN);
-        const txDeposit = new Transaction();
-        const [deepChunk] = txDeposit.splitCoins(txDeposit.objectRef(deepCoin), [
-            txDeposit.pure.u64(deepDeposit),
-        ]);
-        txDeposit.moveCall({
-            target: `${pkg}::balance_manager::deposit`,
-            arguments: [bmRef(txDeposit), deepChunk],
-            typeArguments: [pool.baseType],
-        });
-        const [suiChunk] = txDeposit.splitCoins(txDeposit.gas, [txDeposit.pure.u64(suiDeposit)]);
-        txDeposit.moveCall({
-            target: `${pkg}::balance_manager::deposit`,
-            arguments: [bmRef(txDeposit), suiChunk],
-            typeArguments: [pool.quoteType],
-        });
-        await execute(core, txDeposit, gas, "deposit DEEP+SUI");
-        // Persist only a FUNDED manager — recording it before the deposit would
-        // make every later run reuse an empty one.
-        writeFileSync(STATE_PATH, JSON.stringify(bm, null, 4) + "\n");
-    }
-
-    // --- 2b. top up the manager's SUI from the whale's coin ----------------
-    // Fills recycle SUI within each batch, but the manager needs one fill's
-    // worth up-front and the whale's known coin is nearly drained — deposit
-    // whatever it holds beyond a gas reserve.
-    {
-        const gasObj = await core.getObject({
-            objectId: WHALE_GAS_COIN,
-            include: { content: true },
-        });
-        const content = gasObj.object?.content;
-        const gasBal = content
-            ? new DataView(content.buffer, content.byteOffset + 32, 8).getBigUint64(0, true)
-            : 0n;
-        const reserve = 400_000_000n; // 0.4 SUI for remaining gas budgets
-        if (gasBal > reserve + 100_000_000n) {
-            const topUp = gasBal - reserve;
-            log(`topping up manager SUI by ${Number(topUp) / 1e9}...`);
-            gas = await objectRef(core, WHALE_GAS_COIN);
-            const txTop = new Transaction();
-            const [suiChunk] = txTop.splitCoins(txTop.gas, [txTop.pure.u64(topUp)]);
-            txTop.moveCall({
-                target: `${pkg}::balance_manager::deposit`,
-                arguments: [bmRef(txTop), suiChunk],
-                typeArguments: [pool.quoteType],
-            });
-            await execute(core, txTop, gas, "top up SUI");
+    // --- 2. per-pool funding helper ----------------------------------------
+    // Called before EACH pool's batches (not once up-front): input-token fees
+    // on the non-whitelisted pools leak a little per fill, so a later pool
+    // can be short even though the up-front math covered it.
+    const ensureFunded = async (needs: Map<string, bigint>) => {
+        for (const [coinType, needed] of needs) {
+            const have = await readBmBalance(core, bmFinal.objectId, origPkg, coinType);
+            if (have >= needed) continue;
+            const shortfall = needed - have;
+            const sym = coinSymbol(coinType);
+            log(
+                `funding manager: +${shortfall.toString()} ${sym} base units (have ${have.toString()})`,
+            );
+            let gas = await objectRef(core, WHALE_GAS_COIN);
+            const tx = new Transaction();
+            if (sym === "SUI") {
+                const [chunk] = tx.splitCoins(tx.gas, [tx.pure.u64(shortfall)]);
+                tx.moveCall({
+                    target: `${pkg}::balance_manager::deposit`,
+                    arguments: [bmRef(tx), chunk],
+                    typeArguments: [coinType],
+                });
+            } else if (sym === "DEEP") {
+                const deepCoin = await objectRef(core, WHALE_DEEP_COIN);
+                const [chunk] = tx.splitCoins(tx.objectRef(deepCoin), [tx.pure.u64(shortfall)]);
+                tx.moveCall({
+                    target: `${pkg}::balance_manager::deposit`,
+                    arguments: [bmRef(tx), chunk],
+                    typeArguments: [coinType],
+                });
+            } else if (sym === "USDC") {
+                await mintUsdcToWhale(core, coinType, shortfall + 10_000_000n);
+                // Pick a coin that actually covers the split — the whale may hold
+                // dust coins from earlier probes.
+                const coins = await core.listCoins({ owner: WHALE, coinType });
+                let fundingCoin: string | null = null;
+                for (const candidate of coins.objects ?? []) {
+                    const obj = await core.getObject({
+                        objectId: candidate.objectId,
+                        include: { content: true },
+                    });
+                    const bytes = obj.object?.content;
+                    if (!bytes || bytes.length < 40) continue;
+                    const bal = new DataView(bytes.buffer, bytes.byteOffset + 32, 8).getBigUint64(
+                        0,
+                        true,
+                    );
+                    if (bal >= shortfall) {
+                        fundingCoin = candidate.objectId;
+                        break;
+                    }
+                }
+                if (!fundingCoin)
+                    return fail("minted USDC but found no whale coin covering the deposit");
+                const coinRef = await objectRef(core, fundingCoin);
+                const [chunk] = tx.splitCoins(tx.objectRef(coinRef), [tx.pure.u64(shortfall)]);
+                tx.moveCall({
+                    target: `${pkg}::balance_manager::deposit`,
+                    arguments: [bmRef(tx), chunk],
+                    typeArguments: [coinType],
+                });
+            } else {
+                return fail(`no funding source for ${coinType}`);
+            }
+            await execute(core, tx, gas, `deposit ${sym}`);
         }
-    }
+    };
 
     // --- 3. position the fork clock ----------------------------------------
     // The fork clock starts at the FORK_CHECKPOINT pin (days in the past), so
-    // fills would be timestamped outside every "last 24h" server window
-    // (/ticker, /ohclv defaults) and never show up. Jump to slightly LESS
-    // than now — batches then advance towards wall time so every fill lands
-    // in the visible past, spread across candle buckets. The clock only
-    // moves forward, so a rerun that finds it at/ahead of wall time simply
-    // clusters its fills near now.
+    // fills would be timestamped outside every "last 24h" server window and
+    // never show up. Jump to slightly LESS than now — batches then advance
+    // towards wall time so every fill lands in the visible past. The clock
+    // only moves forward; a rerun that finds it at wall time clusters fills.
+    const totalBatches = SEED_POOLS.length * BATCHES;
     const wallNow = BigInt(Date.now());
     const chainNow = await clockNowMs(core);
-    const target = wallNow - BigInt((BATCHES + 1) * CANDLE_STEP_MS);
+    const target = wallNow - BigInt((totalBatches + 1) * CANDLE_STEP_MS);
     if (chainNow < target) {
-        log(
-            `advancing fork clock ${((target - chainNow) / 3_600_000n).toString()}h to ${new Date(
-                Number(target),
-            ).toISOString()}...`,
-        );
+        log(`advancing fork clock to ${new Date(Number(target)).toISOString()}...`);
         advanceClockBy(target - chainNow);
     }
 
-    // --- 4. trade batches: self-fills INSIDE the mainnet spread ------------
-    // Crossing the real book works (verified) but the pin-era bid book has a
-    // maker whose account state can't be materialized — every sell that
-    // reaches it aborts. Instead each batch places a bid INSIDE the spread
-    // (above every real bid, below every real ask) and an IOC ask at the
-    // same price: a pure self-fill (allowed by SELF_MATCHING_ALLOWED) that
-    // never touches foreign makers and recycles the scarce SUI in-tx. The
-    // price walks a few ticks so candles show structure.
-    const qty = BigInt(QTY_DEEP) * DEEP_SCALAR;
-    const SPREAD_TICKS = [2336n, 2337n, 2338n, 2339n, 2338n, 2337n]; // ×1e7 = inside the DEEP_SUI spread
-    let filled = 0;
-    for (let i = 0; i < BATCHES; i += 1) {
-        if (i > 0) {
-            // Advance one candle bucket, but never past wall time — future
-            // timestamps are invisible to the server's windowed queries.
-            const chain = await clockNowMs(core);
-            const room = BigInt(Date.now()) - chain;
-            advanceClockBy(room > BigInt(CANDLE_STEP_MS) ? BigInt(CANDLE_STEP_MS) : 1n);
-        }
-        const priceU64 = SPREAD_TICKS[i % SPREAD_TICKS.length]! * TICK_SIZE;
-        gas = await objectRef(core, WHALE_GAS_COIN);
-        const tx = new Transaction();
-        const proof = tx.moveCall({
-            target: `${pkg}::balance_manager::generate_proof_as_owner`,
-            arguments: [bmRef(tx)],
+    // --- 4. per pool: prewarm, then self-fill batches inside the spread ----
+    let totalFilled = 0;
+    for (const name of SEED_POOLS) {
+        const pin = manifest.deepbook.pools[name]!;
+        const qty = POOL_QTY[name] ?? 10_000_000n;
+        const baseSym = coinSymbol(pin.baseType);
+        const quoteSym = coinSymbol(pin.quoteType);
+        const baseDec = DECIMALS[baseSym] ?? 9;
+        const quoteDec = DECIMALS[quoteSym] ?? 9;
+        const mid = (usd[baseSym] ?? 1) / (usd[quoteSym] ?? 1);
+        // Top up this pool's transient needs (bid lock + base leg + margin).
+        const poolNeeds = new Map<string, bigint>();
+        poolNeeds.set(pin.baseType, (qty * 23n) / 20n);
+        poolNeeds.set(
+            pin.quoteType,
+            BigInt(Math.ceil(Number(qty) * mid * Math.pow(10, quoteDec - baseDec) * 1.15)),
+        );
+        await ensureFunded(poolNeeds);
+        // DeepBook order price = float × 1e9 × 10^quoteDec / 10^baseDec.
+        const priceMult = 10n ** BigInt(9 + quoteDec - baseDec);
+        const tick = BigInt(pin.tickSize);
+        const centerTicks =
+            BigInt(Math.round((mid * Number(priceMult)) / Number(tick))) +
+            BigInt(process.env.TRADE_TICK_BIAS ?? 0);
+        // Small walk around the oracle mid — inside the spread on a calm
+        // book; a batch that reaches hostile/unmaterialized book state is
+        // skipped, not fatal.
+        const OFFSETS = [-2n, -1n, 0n, 1n, 2n, 1n, 0n, -1n];
+
+        // Pre-warm the pool's Versioned inner (a dynamic-field child):
+        // execution child reads do NOT lazy-fetch on the fork.
+        const poolObj = await core.getObject({
+            objectId: pin.objectId,
+            include: { content: true },
         });
-        // Reclaim the previous batch's parked fill proceeds first.
-        tx.moveCall({
-            target: `${pkg}::pool::withdraw_settled_amounts`,
-            arguments: [poolRef(tx), bmRef(tx), proof],
-            typeArguments: [pool.baseType, pool.quoteType],
-        });
-        const order = (isBid: boolean, orderType: number, clientOrderId: bigint) =>
-            tx.moveCall({
-                target: `${pkg}::pool::place_limit_order`,
-                arguments: [
-                    poolRef(tx),
-                    bmRef(tx),
-                    proof,
-                    tx.pure.u64(clientOrderId),
-                    tx.pure.u8(orderType),
-                    tx.pure.u8(0), // SELF_MATCHING_ALLOWED
-                    tx.pure.u64(priceU64),
-                    tx.pure.u64(qty),
-                    tx.pure.bool(isBid),
-                    tx.pure.bool(false), // whitelisted pool: no DEEP fees
-                    tx.pure.u64(MAX_TIMESTAMP),
-                    tx.object.clock(),
-                ],
-                typeArguments: [pool.baseType, pool.quoteType],
+        const content = poolObj.object?.content;
+        if (!content || content.length < 72) return fail(`could not read pool object for ${name}`);
+        const innerUid = `0x${Buffer.from(content.slice(32, 64)).toString("hex")}`;
+        const innerVersion = new DataView(content.buffer, content.byteOffset + 64, 8).getBigUint64(
+            0,
+            true,
+        );
+        const innerFieldId = deriveDynamicFieldID(
+            innerUid,
+            "u64",
+            bcs.u64().serialize(innerVersion).toBytes(),
+        );
+        await core
+            .getObject({ objectId: innerFieldId })
+            .catch(() => fail(`could not pre-warm pool inner for ${name}`));
+
+        const poolRef = (tx: Transaction) =>
+            tx.sharedObjectRef({
+                objectId: pin.objectId,
+                initialSharedVersion: pin.initialSharedVersion,
+                mutable: true,
             });
-        order(true, 0, BigInt(i * 2 + 1)); // resting bid inside the spread (NO_RESTRICTION)
-        order(false, 1, BigInt(i * 2 + 2)); // IOC ask at the same price -> self-fill
-        // A batch can still hit an unmaterialized corner of mainnet state —
-        // skip it, keep seeding.
-        try {
-            await execute(core, tx, gas, `trade batch ${i + 1}/${BATCHES}`);
-            filled += 1;
-            log(
-                `batch ${i + 1}/${BATCHES}: self-fill ${QTY_DEEP} DEEP @ ${(
-                    Number(priceU64) / Number(PRICE_MULT)
-                ).toFixed(6)}`,
-            );
-        } catch (cause) {
-            log(`batch ${i + 1}/${BATCHES}: skipped (${String(cause).slice(0, 160)})`);
+
+        let filled = 0;
+        for (let i = 0; i < BATCHES; i += 1) {
+            if (totalFilled + i > 0) {
+                // One candle bucket per batch, capped at wall time — future
+                // timestamps are invisible to the server's windowed queries.
+                const chain = await clockNowMs(core);
+                const room = BigInt(Date.now()) - chain;
+                advanceClockBy(room > BigInt(CANDLE_STEP_MS) ? BigInt(CANDLE_STEP_MS) : 1n);
+            }
+            const priceU64 = (centerTicks + OFFSETS[i % OFFSETS.length]!) * tick;
+            const gas = await objectRef(core, WHALE_GAS_COIN);
+            const tx = new Transaction();
+            const proof = tx.moveCall({
+                target: `${pkg}::balance_manager::generate_proof_as_owner`,
+                arguments: [bmRef(tx)],
+            });
+            // Reclaim the previous batch's parked fill proceeds first.
+            tx.moveCall({
+                target: `${pkg}::pool::withdraw_settled_amounts`,
+                arguments: [poolRef(tx), bmRef(tx), proof],
+                typeArguments: [pin.baseType, pin.quoteType],
+            });
+            const order = (isBid: boolean, orderType: number, clientOrderId: bigint) =>
+                tx.moveCall({
+                    target: `${pkg}::pool::place_limit_order`,
+                    arguments: [
+                        poolRef(tx),
+                        bmRef(tx),
+                        proof,
+                        tx.pure.u64(clientOrderId),
+                        tx.pure.u8(orderType),
+                        tx.pure.u8(0), // SELF_MATCHING_ALLOWED
+                        tx.pure.u64(priceU64),
+                        tx.pure.u64(qty),
+                        tx.pure.bool(isBid),
+                        tx.pure.bool(false), // fees in input token (zero on whitelisted pools)
+                        tx.pure.u64(MAX_TIMESTAMP),
+                        tx.object.clock(),
+                    ],
+                    typeArguments: [pin.baseType, pin.quoteType],
+                });
+            order(true, 0, BigInt(i * 2 + 1)); // resting bid inside the spread
+            order(false, 1, BigInt(i * 2 + 2)); // IOC ask at the same price -> self-fill
+            try {
+                await execute(core, tx, gas, `${name} batch ${i + 1}/${BATCHES}`);
+                filled += 1;
+                log(
+                    `${name} ${i + 1}/${BATCHES}: self-fill @ ${(
+                        Number(priceU64) / Number(priceMult)
+                    ).toFixed(6)}`,
+                );
+            } catch (cause) {
+                log(`${name} ${i + 1}/${BATCHES}: skipped (${String(cause).slice(0, 140)})`);
+            }
         }
+        totalFilled += filled;
+        log(`${name}: ${filled}/${BATCHES} fills`);
     }
-    if (filled === 0)
+    if (totalFilled === 0)
         return fail(
             "no batch executed — nothing to index (a stale .seed-trades-state.json pointing at an unfunded/wiped BalanceManager is the usual cause; delete it and rerun)",
         );
@@ -566,9 +682,8 @@ const main = async () => {
     // --- 5. aggregate candles ----------------------------------------------
     // The server's /ohclv reads the ohclv_1m/ohclv_1d tables, which
     // production fills via a scheduled `CALL update_all_ohclv()` this stack
-    // doesn't run —
-    // call it here with an explicit full range (the default window skips
-    // anything the fork clock stamped ahead of the DB's wall clock).
+    // doesn't run — call it with an explicit full range (the default window
+    // skips anything the fork clock stamped ahead of the DB's wall clock).
     log("aggregating OHLCV buckets...");
     execFileSync(
         "docker",
@@ -589,21 +704,20 @@ const main = async () => {
     // --- 6. wait for the indexer to serve the trades -----------------------
     log("waiting for the indexer to ingest the fills...");
     for (let i = 0; i < 30; i += 1) {
-        const res = await fetch(`${SERVER_URL}/ohclv/DEEP_SUI`).catch(() => null);
+        const first = SEED_POOLS[0]!;
+        const res = await fetch(`${SERVER_URL}/ohclv/${first}`).catch(() => null);
         const candles = res?.ok
             ? ((await res.json()) as { candles?: unknown[] }).candles
             : undefined;
         if (candles && candles.length > 0) {
             log(
-                `DONE — ${candles.length} candle(s) served by /ohclv/DEEP_SUI; refresh the dashboard.`,
+                `DONE — candles served; refresh the dashboard (fills ahead of wall time appear as it catches up).`,
             );
             return;
         }
         await new Promise((r) => setTimeout(r, 2000));
     }
-    log(
-        "trades executed, but /ohclv is still empty after 60s — check `docker compose logs deepbook-indexer`.",
-    );
+    log("trades executed; candles appear once wall time passes their fork-clock stamps.");
 };
 
 await main().catch((cause: unknown) =>
