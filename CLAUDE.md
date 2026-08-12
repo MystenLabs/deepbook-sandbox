@@ -48,6 +48,10 @@ resumes mainnet checkpoint numbering from the `FORK_CHECKPOINT` pin — wipe
 Postgres (`down -v`) whenever the fork chain is reset (watermarks ignore
 `--first-checkpoint`).
 
+Every sui-fork defect the sandbox has found (and how each is worked around)
+is cataloged in `sandbox/SUI-FORK-ISSUES.md` — the upstream hand-off list;
+add new fork findings there.
+
 The devstack package itself is consumed **pnpm-patched**
 (`sandbox/devstack-plugins/patches/`, declared in that directory's
 `pnpm-workspace.yaml` `patchedDependencies`): known-mode `deepbook()` reads
@@ -77,6 +81,10 @@ tail -f .devstack-supervisor.log
 # Remnant logs / explicit image rebuild
 docker compose logs -f deepbook-indexer
 docker compose build
+
+# Fork clock -> wall time (the fork clock never ticks on its own; run this
+# when faucet/trade activity looks stale in the explorer — SEDEFI-453)
+pnpm clock:sync
 ```
 
 Both commands live in `scripts/stack.ts`. Prefer attached devstack logs? `pnpm
