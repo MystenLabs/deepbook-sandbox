@@ -183,6 +183,30 @@ devstack's built-in dashboard auto-surfaces the `coinType:<DEEP>` and
 migration) is in
 [`faucet-dashboard-integration.md`](./faucet-dashboard-integration.md).
 
+## Patched devstack dependency (Pyth feeds on the DeepBook page)
+
+`@mysten-incubation/devstack@0.7.0` is consumed **patched** (SEDEFI-444):
+upstream's known-mode `deepbook()` hardcodes `pyth.feeds: []`, so the
+dashboard's DeepBook page renders no oracle data. The patch
+([`patches/@mysten-incubation__devstack@0.7.0.patch`](./patches/@mysten-incubation__devstack@0.7.0.patch)) makes
+known-mode `start` read the DEEP/SUI/USDC `PriceInfoObject`s (ids from
+`@mysten/deepbook-v3`'s coin tables) and fill `pyth.feeds` with real
+price/expo — values are as of the fork's checkpoint pin until an updater
+pushes fresh prices (SEDEFI-317). Reads are lenient: an unreadable feed is
+skipped with a warning, never a boot failure. The patch fills the
+runtime/dashboard value only — the generated bindings tree
+(`src/generated/deepbook.ts`) still carries `feeds: []` (codegen is
+synchronous). On testnet only DEEP/SUI resolve (`testnetCoins` has no USDC
+entry in `@mysten/deepbook-v3@1.5.0`).
+
+Mechanics: the patch is declared in [`pnpm-workspace.yaml`](./pnpm-workspace.yaml)
+`patchedDependencies` (pnpm 11 no longer reads `package.json#pnpm`), which also
+makes this directory its own workspace root — so installs here must **not**
+use `--ignore-workspace` (it would silently skip the patch; the root
+`stack:up`/`stack:wipe` scripts and the devstack-up smoke were updated
+accordingly). Drop the patch when devstack ships the feature natively — the
+upstream ask is recorded on SEDEFI-444.
+
 ## ⚠️ Known blocker — sui-fork
 
 A **stock** sui-fork crashes on any access to donor coins (transfer, mint, or
@@ -212,7 +236,7 @@ found" at boot is the symptom when it didn't).
 ## Tests
 
 ```bash
-pnpm install --ignore-workspace   # nested under sandbox/'s workspace
+pnpm install                      # NO --ignore-workspace — it would skip the devstack patch (see above)
 pnpm test                         # unit tests (stubbed fork sdk.core); excludes *.e2e
 
 # E2E (boots a real fork via devstack's vitest harness) — requires Node >= 24 +

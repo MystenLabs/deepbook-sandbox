@@ -48,6 +48,15 @@ resumes mainnet checkpoint numbering from the `FORK_CHECKPOINT` pin — wipe
 Postgres (`down -v`) whenever the fork chain is reset (watermarks ignore
 `--first-checkpoint`).
 
+The devstack package itself is consumed **pnpm-patched**
+(`sandbox/devstack-plugins/patches/`, declared in that directory's
+`pnpm-workspace.yaml` `patchedDependencies`): known-mode `deepbook()` reads
+DEEP/SUI/USDC Pyth `PriceInfoObject`s at boot so the dashboard's DeepBook page
+shows oracle data (SEDEFI-444; upstream ask recorded on the ticket). Because
+pnpm 11 only reads `patchedDependencies` from `pnpm-workspace.yaml`, installs
+in `devstack-plugins/` must NOT use `--ignore-workspace` — it silently skips
+the patch.
+
 ### Running the Stack
 
 ```bash

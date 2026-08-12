@@ -44,7 +44,7 @@ and part of the value of this run is recording exactly where they break.
 
 ```bash
 cd sandbox/devstack-plugins
-pnpm install --ignore-workspace
+pnpm install   # NO --ignore-workspace — it would skip the devstack patch (see README)
 pnpm typecheck && pnpm test          # 30 unit tests
 pnpm verify:usdc-minter              # Circle minter ids still current (mainnet read)
 

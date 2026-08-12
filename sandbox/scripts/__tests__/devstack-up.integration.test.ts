@@ -41,15 +41,11 @@ describe("devstack-up smoke", () => {
         // on fresh clone (stack-smoke.mjs imports effect + devstack by bare specifier).
         // --ignore-scripts suppresses pnpm 11's build-script warnings; --frozen-lockfile
         // prevents accidental lockfile rewrites during test runs.
-        execFileSync(
-            "pnpm",
-            ["install", "--ignore-workspace", "--ignore-scripts", "--frozen-lockfile"],
-            {
-                cwd: PLUGINS_DIR,
-                stdio: "inherit",
-                timeout: 120_000, // fresh-clone install headroom; fast no-op when warm
-            },
-        );
+        execFileSync("pnpm", ["install", "--ignore-scripts", "--frozen-lockfile"], {
+            cwd: PLUGINS_DIR,
+            stdio: "inherit",
+            timeout: 120_000, // fresh-clone install headroom; fast no-op when warm
+        });
         execFileSync("node", ["scripts/stack-smoke.mjs"], {
             cwd: PLUGINS_DIR,
             stdio: "inherit",

@@ -1,0 +1,125 @@
+diff --git a/dist/plugins/deepbook/index.mjs b/dist/plugins/deepbook/index.mjs
+index 18b5ebbfa4b862a1b44f3518705b5558d80131a4..7a52a0748c0f3101396d55f0de96ac778d56ce4a 100644
+--- a/dist/plugins/deepbook/index.mjs
++++ b/dist/plugins/deepbook/index.mjs
+@@ -19,7 +19,8 @@ import { createDeepbookPools, seedDeepbookPools } from "./deploy.mjs";
+ import "./types.mjs";
+ import { initLocalPythFeeds } from "./pyth/index.mjs";
+ import { Effect } from "effect";
+-import { mainnetPackageIds, mainnetPythConfigs, testnetPackageIds, testnetPythConfigs } from "@mysten/deepbook-v3";
++import { bcs } from "@mysten/sui/bcs";
++import { mainnetCoins, mainnetPackageIds, mainnetPythConfigs, testnetCoins, testnetPackageIds, testnetPythConfigs } from "@mysten/deepbook-v3";
+ //#region src/plugins/deepbook/index.ts
+ const makeDeepbookResource = (name) => resource(`deepbook/${name}`);
+ const DEFAULT_NAME = "deepbook";
+@@ -49,6 +50,89 @@ const KNOWN_DEEPBOOK_DEPLOYMENTS = {
+ 		}
+ 	}
+ };
++// --- SANDBOX PATCH (deepbook-sandbox, SEDEFI-444): known-mode Pyth feeds ----
++// Upstream 0.7.0 hardcodes `feeds: []` in KNOWN_DEEPBOOK_DEPLOYMENTS, so the
++// dashboard's DeepBook page renders no oracle data for known deployments.
++// Until devstack implements this natively ("option B": read feeds at boot),
++// resolve the per-network feed list from @mysten/deepbook-v3's coin tables and
++// read each PriceInfoObject on-chain for real price/expo. Reads are lenient —
++// an unreadable feed is skipped with a warning, never a boot failure. On a
++// mainnet fork the read also lazy-materializes the shared PriceInfoObject,
++// which is exactly what later Pyth consumers need.
++const KNOWN_PYTH_FEED_SYMBOLS = ["DEEP", "SUI", "USDC"];
++const pythI64 = bcs.struct("PythI64", {
++	negative: bcs.bool(),
++	magnitude: bcs.u64()
++});
++const pythPrice = bcs.struct("PythPrice", {
++	price: pythI64,
++	conf: bcs.u64(),
++	expo: pythI64,
++	timestamp: bcs.u64()
++});
++const pythPriceInfoObject = bcs.struct("PythPriceInfoObject", {
++	id: bcs.Address,
++	price_info: bcs.struct("PythPriceInfo", {
++		attestation_time: bcs.u64(),
++		arrival_time: bcs.u64(),
++		price_feed: bcs.struct("PythPriceFeed", {
++			price_identifier: bcs.struct("PythPriceIdentifier", { bytes: bcs.vector(bcs.u8()) }),
++			price: pythPrice,
++			ema_price: pythPrice
++		})
++	})
++});
++const i64Signed = (v) => (v.negative ? -1n : 1n) * BigInt(v.magnitude);
++const knownPythFeedCoins = (network) => {
++	const table = network === "mainnet" ? mainnetCoins : network === "testnet" ? testnetCoins : null;
++	if (!table) return [];
++	return KNOWN_PYTH_FEED_SYMBOLS.flatMap((symbol) => {
++		const coin = table[symbol];
++		return coin?.feed && coin?.priceInfoObjectId ? [{
++			symbol,
++			feedId: coin.feed,
++			priceInfoObjectId: coin.priceInfoObjectId
++		}] : [];
++	});
++};
++const readKnownPythFeeds = (sdk, network) => Effect.gen(function* () {
++	const coins = knownPythFeedCoins(network);
++	if (coins.length === 0) return [];
++	const feeds = [];
++	for (const coin of coins) {
++		// Per-object reads: the fork serves LedgerService/GetObject but not
++		// BatchGetObjects, and the sui member's core facade only exposes the
++		// singular call anyway.
++		const obj = yield* Effect.tryPromise({
++			try: () => sdk.core.getObject({
++				objectId: coin.priceInfoObjectId,
++				include: { content: true }
++			}).then((res) => res.object ?? null),
++			catch: (cause) => cause
++		}).pipe(Effect.catch((cause) => Effect.logWarning(`deepbook known mode: Pyth PriceInfoObject ${coin.priceInfoObjectId} (${coin.symbol}) read failed (${String(cause)}); skipping feed`).pipe(Effect.as(null))));
++		if (obj === null || obj.content === void 0 || obj.content === null) {
++			yield* Effect.logWarning(`deepbook known mode: Pyth PriceInfoObject ${coin.priceInfoObjectId} (${coin.symbol}) unreadable; skipping feed`);
++			continue;
++		}
++		let parsed;
++		try {
++			parsed = pythPriceInfoObject.parse(obj.content);
++		} catch (cause) {
++			yield* Effect.logWarning(`deepbook known mode: Pyth PriceInfoObject ${coin.priceInfoObjectId} (${coin.symbol}) failed to parse (${String(cause)}); skipping feed`);
++			continue;
++		}
++		const price = parsed.price_info.price_feed.price;
++		feeds.push({
++			symbol: coin.symbol,
++			feedId: coin.feedId,
++			priceInfoObjectId: coin.priceInfoObjectId,
++			price: i64Signed(price.price),
++			expo: Number(i64Signed(price.expo))
++		});
++	}
++	return feeds;
++});
++// --- end SANDBOX PATCH ------------------------------------------------------
+ const poolCoinRefs = (pools) => pools.flatMap((pool) => [pool.base.coin, pool.quote.coin]);
+ const pythRefs = (pyth) => pyth === void 0 ? [] : [pyth.pusher, pyth.package];
+ const localDependsOn = (opts) => [
+@@ -341,6 +425,11 @@ const buildKnownPlugin = (opts) => {
+ 			const ctx = yield* PluginContext;
+ 			const identity = yield* IdentityContext;
+ 			const [sui] = deps;
++			// SANDBOX PATCH (SEDEFI-444): fill known-mode pyth.feeds from chain
++			// reads instead of upstream's hardcoded `feeds: []`.
++			yield* setCurrentPluginPhase("reading Pyth price feeds");
++			const pythFeeds = known?.pyth ? yield* readKnownPythFeeds(sui.sdk, opts.network ?? known.network) : [];
++			yield* setCurrentPluginPhase(null);
+ 			const resolved = {
+ 				mode: "known",
+ 				network: opts.network ?? known?.network ?? identity.network,
+@@ -349,7 +438,7 @@ const buildKnownPlugin = (opts) => {
+ 				adminCapId: null,
+ 				deepTreasuryId: known?.deepTreasuryId ?? null,
+ 				pools: [],
+-				pyth: known?.pyth ?? null,
++				pyth: known?.pyth ? { ...known.pyth, feeds: pythFeeds } : null,
+ 				margin: null,
+ 				serverUrl: null,
+ 				indexerUrl: null,
