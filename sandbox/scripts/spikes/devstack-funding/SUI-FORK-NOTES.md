@@ -147,8 +147,15 @@ works.)
 
 ## Workaround (validated)
 
-`.fork-patched/` rebuilds the fork image with fix #3 (`get_coin_info → Ok(None)`;
-a one-line `sed` in the image's `Dockerfile`). With the abort removed:
+`.fork-patched/` rebuilds the fork image with fix #3 — originally just
+`get_coin_info → Ok(None)`, since extended to ALL the observed-fatal stubs
+(each a `sed` in the image's `Dockerfile`): `get_balance → Ok(None)` and
+`balance_iter → empty` (the dashboard fires GetBalance/ListBalances on open;
+hit 2026-08-10), then `dynamic_field_iter → empty` and
+`package_versions_iter → empty` (the dashboard's DeepBook pools table reads
+each pool object + its first dynamic-field page, panic at `store.rs:1357`;
+hit 2026-08-12 the moment pools were pinned into the resolved member). With
+the aborts removed:
 
 - the DEEP transfer settles and `account('alice')` ends up holding **100 DEEP**
   (confirmed by devstack's settlement check and an independent `listCoins`); and
