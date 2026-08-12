@@ -176,6 +176,21 @@ async function up(): Promise<void> {
     log("starting compose remnant (postgres, indexer, server)");
     run("docker", ["compose", "up", "-d", "--wait"]);
     log(`stack is up — fund via GraphQL on :${DASHBOARD_PORT} (Host: ${DASHBOARD_HOST})`);
+    // The server's `pools` table is manual config the indexer never writes —
+    // seed it from the manifest so per-pool endpoints resolve (idempotent).
+    // The stack above is already fully up, so a seed failure must not read as
+    // a stack failure: point at the standalone retry instead.
+    log("seeding pools config table from deployments/mainnet-fork.json");
+    const seed = spawnSync("pnpm", ["exec", "tsx", "scripts/seed-pools.ts"], {
+        cwd: SANDBOX_DIR,
+        stdio: "inherit",
+    });
+    if (seed.status !== 0) {
+        fail(
+            "pool seeding failed — the stack itself is UP; fix the cause and re-run " +
+                "`pnpm exec tsx scripts/seed-pools.ts` (per-pool server endpoints 404 until seeded)",
+        );
+    }
 }
 
 async function down(): Promise<void> {

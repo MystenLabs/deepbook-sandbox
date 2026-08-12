@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@mysten-incubation/devstack@0.7.0': 17f60c525cc95daf5c0bc79ae0929e741f96f49aa9f682137b0325a853777755
+  '@mysten-incubation/devstack@0.7.0': b5dc41f4073f2034d18bc5421d6065b1bc78d9023634688f93f17e57bdaa33d1
 
 importers:
 
@@ -13,7 +13,7 @@ importers:
     devDependencies:
       '@mysten-incubation/devstack':
         specifier: 0.7.0
-        version: 0.7.0(patch_hash=17f60c525cc95daf5c0bc79ae0929e741f96f49aa9f682137b0325a853777755)(debug@4.4.3)(ioredis@5.11.1)(typescript@5.9.3)(vitest@4.1.9(@types/node@22.19.21)(vite@7.3.5(@types/node@22.19.21)(yaml@2.9.0)))
+        version: 0.7.0(patch_hash=b5dc41f4073f2034d18bc5421d6065b1bc78d9023634688f93f17e57bdaa33d1)(debug@4.4.3)(ioredis@5.11.1)(typescript@5.9.3)(vitest@4.1.9(@types/node@22.19.21)(vite@7.3.5(@types/node@22.19.21)(yaml@2.9.0)))
       '@mysten/sui':
         specifier: ^2.18.0
         version: 2.18.0(typescript@5.9.3)
@@ -1593,7 +1593,7 @@ snapshots:
   '@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4':
     optional: true
 
-  '@mysten-incubation/devstack@0.7.0(patch_hash=17f60c525cc95daf5c0bc79ae0929e741f96f49aa9f682137b0325a853777755)(debug@4.4.3)(ioredis@5.11.1)(typescript@5.9.3)(vitest@4.1.9(@types/node@22.19.21)(vite@7.3.5(@types/node@22.19.21)(yaml@2.9.0)))':
+  '@mysten-incubation/devstack@0.7.0(patch_hash=b5dc41f4073f2034d18bc5421d6065b1bc78d9023634688f93f17e57bdaa33d1)(debug@4.4.3)(ioredis@5.11.1)(typescript@5.9.3)(vitest@4.1.9(@types/node@22.19.21)(vite@7.3.5(@types/node@22.19.21)(yaml@2.9.0)))':
     dependencies:
       '@effect/platform-node': 4.0.0-beta.65(effect@4.0.0-beta.65)(ioredis@5.11.1)
       '@mysten/codegen': 0.11.1

@@ -1,5 +1,57 @@
+diff --git a/dist/plugins/dashboard/index.d.mts b/dist/plugins/dashboard/index.d.mts
+index 73f0b044bb841ba4ebaf066c2ede0414c116acbb..9ed855c6c8299cf5ab7559eb0ec6ee98a005d369 100644
+--- a/dist/plugins/dashboard/index.d.mts
++++ b/dist/plugins/dashboard/index.d.mts
+@@ -15,6 +15,9 @@ interface DashboardOptions {
+    *  a bare `*.localhost` form — that is not stack-scoped, so a sibling stack
+    *  could drive the destructive control-plane mutations cross-origin. */
+   readonly allowedOrigins?: ReadonlyArray<string>;
++  /** SANDBOX PATCH (SEDEFI-444): absolute path of a built dashboard SPA to
++   *  serve instead of the package-bundled `dashboard-ui/`. */
++  readonly assetsDir?: string;
+ }
+ interface DashboardValue {
+   /** Loopback URL of the dashboard server. */
+diff --git a/dist/plugins/dashboard/index.mjs b/dist/plugins/dashboard/index.mjs
+index 456652c247a700e7e2872f782ac41d940587e00f..97a368f482fd1901d411cdf3cc95336717ac0cd5 100644
+--- a/dist/plugins/dashboard/index.mjs
++++ b/dist/plugins/dashboard/index.mjs
+@@ -63,6 +63,9 @@ function dashboard(opts = {}) {
+ 					bindAddress,
+ 					port: allocated.port,
+ 					listener: makeDashboardListener({
++						// SANDBOX PATCH (SEDEFI-444): serve a caller-supplied SPA
++						// build instead of the bundled dashboard-ui when set.
++						...(opts.assetsDir === void 0 ? {} : { assetsDir: opts.assetsDir }),
+ 						originPolicy,
+ 						context: {
+ 							state: control.state,
+diff --git a/dist/plugins/deepbook/index.d.mts b/dist/plugins/deepbook/index.d.mts
+index 69fb5baf0f2ba6f7e6c03e9e3f8119b6e84b100a..e71388b3a9053a021bc88fab1d5fc1e1f270c64b 100644
+--- a/dist/plugins/deepbook/index.d.mts
++++ b/dist/plugins/deepbook/index.d.mts
+@@ -82,6 +82,19 @@ type DeepbookKnownNetwork = 'mainnet' | 'testnet';
+ interface DeepbookKnownCommonOptions extends DeepbookCommonOptions {
+   /** Optional network override (defaults to the configured network). */
+   readonly network?: string;
++  /** SANDBOX PATCH (SEDEFI-444): known deployments carry no pool or service
++   *  discovery — callers may pin pools (e.g. from a fork manifest) and the
++   *  indexer/server query URLs; upstream hardcodes all three empty. */
++  readonly pools?: readonly {
++    readonly name: string;
++    readonly poolId: string;
++    readonly base: string;
++    readonly quote: string;
++    readonly baseCoinType: string;
++    readonly quoteCoinType: string;
++  }[];
++  readonly serverUrl?: string | null;
++  readonly indexerUrl?: string | null;
+ }
+ interface DeepbookKnownNetworkOptions extends DeepbookKnownCommonOptions {
+   readonly network: DeepbookKnownNetwork;
 diff --git a/dist/plugins/deepbook/index.mjs b/dist/plugins/deepbook/index.mjs
-index 18b5ebbfa4b862a1b44f3518705b5558d80131a4..7a52a0748c0f3101396d55f0de96ac778d56ce4a 100644
+index 18b5ebbfa4b862a1b44f3518705b5558d80131a4..caf4458f6f276477f06a7b031ff392c29a26f978 100644
 --- a/dist/plugins/deepbook/index.mjs
 +++ b/dist/plugins/deepbook/index.mjs
 @@ -19,7 +19,8 @@ import { createDeepbookPools, seedDeepbookPools } from "./deploy.mjs";
@@ -102,7 +154,7 @@ index 18b5ebbfa4b862a1b44f3518705b5558d80131a4..7a52a0748c0f3101396d55f0de96ac77
  const poolCoinRefs = (pools) => pools.flatMap((pool) => [pool.base.coin, pool.quote.coin]);
  const pythRefs = (pyth) => pyth === void 0 ? [] : [pyth.pusher, pyth.package];
  const localDependsOn = (opts) => [
-@@ -341,6 +425,11 @@ const buildKnownPlugin = (opts) => {
+@@ -341,6 +425,23 @@ const buildKnownPlugin = (opts) => {
  			const ctx = yield* PluginContext;
  			const identity = yield* IdentityContext;
  			const [sui] = deps;
@@ -111,15 +163,54 @@ index 18b5ebbfa4b862a1b44f3518705b5558d80131a4..7a52a0748c0f3101396d55f0de96ac77
 +			yield* setCurrentPluginPhase("reading Pyth price feeds");
 +			const pythFeeds = known?.pyth ? yield* readKnownPythFeeds(sui.sdk, opts.network ?? known.network) : [];
 +			yield* setCurrentPluginPhase(null);
++			// SANDBOX PATCH (SEDEFI-444): known deployments carry no pool or
++			// service discovery — pass caller-pinned pools/URLs through instead
++			// of upstream's hardcoded empties (our config pins them from the
++			// DBSF-016 fork manifest).
++			const knownPools = (opts.pools ?? []).map((pool) => ({
++				name: pool.name,
++				poolId: pool.poolId,
++				base: pool.base,
++				quote: pool.quote,
++				baseCoinType: pool.baseCoinType,
++				quoteCoinType: pool.quoteCoinType
++			}));
  			const resolved = {
  				mode: "known",
  				network: opts.network ?? known?.network ?? identity.network,
-@@ -349,7 +438,7 @@ const buildKnownPlugin = (opts) => {
+@@ -348,11 +449,11 @@ const buildKnownPlugin = (opts) => {
+ 				registryId,
  				adminCapId: null,
  				deepTreasuryId: known?.deepTreasuryId ?? null,
- 				pools: [],
+-				pools: [],
 -				pyth: known?.pyth ?? null,
++				pools: knownPools,
 +				pyth: known?.pyth ? { ...known.pyth, feeds: pythFeeds } : null,
  				margin: null,
- 				serverUrl: null,
- 				indexerUrl: null,
+-				serverUrl: null,
+-				indexerUrl: null,
++				serverUrl: opts.serverUrl ?? null,
++				indexerUrl: opts.indexerUrl ?? null,
+ 				hasSeedLiquidity: false,
+ 				deepFundingStrategy: opts.network === "testnet" ? makeDeepbookDeepFundingStrategy({ suiSdk: sui.sdk }) : null
+ 			};
+@@ -363,7 +464,7 @@ const buildKnownPlugin = (opts) => {
+ 				registryId: resolved.registryId,
+ 				adminCapId: null,
+ 				deepTreasuryId: resolved.deepTreasuryId,
+-				pools: [],
++				pools: knownPools,
+ 				pyth: resolved.pyth ? {
+ 					packageId: resolved.pyth.packageId,
+ 					stateId: resolved.pyth.stateId,
+@@ -377,8 +478,8 @@ const buildKnownPlugin = (opts) => {
+ 					}))
+ 				} : null,
+ 				margin: null,
+-				serverUrl: null,
+-				indexerUrl: null
++				serverUrl: resolved.serverUrl,
++				indexerUrl: resolved.indexerUrl
+ 			};
+ 			ctx.snapshotExtra(snap);
+ 			ctx.codegen(makeDeepbookCodegenable(bindings));

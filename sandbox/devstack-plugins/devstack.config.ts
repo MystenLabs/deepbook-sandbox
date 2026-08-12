@@ -91,6 +91,15 @@ const usdcMinter = account("usdcMinter", { kind: "impersonate", address: USDC_MI
 const usdcFunding = usdcFundingFromCapOwner({ sui: suiRef, minter: usdcMinter });
 const usdcCoin = coin.known(USDC_COIN_TYPE);
 
+// Vendored dashboard SPA build (SEDEFI-444): the packaged dashboard-ui ships
+// placeholder Price/Depth panels; ours (built from ts-sdks-incubation @0.7.0 +
+// dashboard-ui-app.patch — see README) fetches the DeepBook server. Falls back
+// to the bundled UI when the vendored build is absent.
+const DASHBOARD_UI_DIR = resolve(HERE, "dashboard-ui");
+const dashboardOpts = existsSync(join(DASHBOARD_UI_DIR, "index.html"))
+    ? { assetsDir: DASHBOARD_UI_DIR }
+    : {};
+
 const deepbookMember = deepbookFromManifest();
 const { margin: marginPackage, liquidation: liquidationPackage } =
     deepbookMarginPackagesFromManifest();
@@ -108,7 +117,7 @@ export const members = [
     marginPackage,
     liquidationPackage,
     deepbookAdmin,
-    dashboard(),
+    dashboard(dashboardOpts),
     wallet({ accounts: "all" }),
 ];
 

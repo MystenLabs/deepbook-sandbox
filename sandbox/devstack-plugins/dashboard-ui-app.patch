@@ -1,0 +1,451 @@
+diff --git a/apps/devstack-dashboard/src/panels/plugins/DeepBook.tsx b/apps/devstack-dashboard/src/panels/plugins/DeepBook.tsx
+index 5c5db2f..5d0375e 100644
+--- a/apps/devstack-dashboard/src/panels/plugins/DeepBook.tsx
++++ b/apps/devstack-dashboard/src/panels/plugins/DeepBook.tsx
+@@ -15,15 +15,29 @@
+ //     `useObject(chain, poolId)` — DeepBook's `Pool` Move struct carries
+ //     `tick_size / lot_size / min_size` in its JSON fields.
+ //   - Mid price, order-book depth, per-pool trend, 24h volume, and trade counts
+-//     require the DeepBook *indexer* (an off-chain service). When no indexer URL
+-//     is published we do NOT fabricate them: price/depth/trend render an honest
+-//     "indexer unavailable" empty state and volume/trades render "—".
++//     require the DeepBook *server* (the indexer's REST query surface). When the
++//     stack publishes `serverUrl`, the Price/Depth panels and the table's
++//     price/24h cells fetch it browser-direct (`/ticker`, `/ohclv/:pool`,
++//     `/orderbook/:pool`); every missing piece still renders an honest state —
++//     no trades yet, live reads unsupported (gRPC-only fork), server down —
++//     instead of fabricated data. Without a `serverUrl` they render the same
++//     honest "unavailable" empties as before.
+ //   - `hasSeedLiquidity` reflects whether a pool placed seed orders at boot — it
+ //     is NOT a market-maker process state, so the card reads "Seed liquidity:
+ //     yes/no", not "Running/Stopped". There is no control-plane mutation to
+ //     change it, so the controls are read-only/disabled with an inline note.
+ 
+-import { type ReactNode } from 'react';
++import { useState, type ReactNode } from 'react';
++import { useQuery } from '@tanstack/react-query';
++import {
++	Area,
++	AreaChart as RArea,
++	CartesianGrid,
++	ResponsiveContainer,
++	Tooltip as RTooltip,
++	XAxis,
++	YAxis,
++} from 'recharts';
+ import { restartPlugin } from '../../lib/api.ts';
+ import type { DeepbookInfo } from '../../lib/api.ts';
+ import { useDeepbookInfo, useObject } from '../../lib/useChain.ts';
+@@ -33,6 +47,7 @@ import { useToast } from '../../lib/toast.tsx';
+ import {
+ 	Badge,
+ 	CopyChip,
++	DepthChart,
+ 	EmptyState,
+ 	Icon,
+ 	Kpi,
+@@ -41,10 +56,286 @@ import {
+ 	Switch,
+ 	Tooltip,
+ } from '../../ui/index.ts';
++import { CHART_TOOLTIP } from '../../ui/chartTooltip.tsx';
+ import { PluginScaffold, type PluginViewProps } from '../PluginPage.tsx';
+ 
+ const EM_DASH = '—';
+ 
++// ---- DeepBook server (indexer query surface) --------------------------------
++
++type TickerEntry = {
++	readonly last_price: number;
++	readonly base_volume: number;
++	readonly quote_volume: number;
++	readonly isFrozen: number;
++};
++/** `/ohclv/:pool` candles: `[timestamp_ms, open, high, low, close, volume]`. */
++type OhclvResponse = { readonly candles?: ReadonlyArray<ReadonlyArray<number>> };
++/** `/orderbook/:pool` levels: `["price", "size"]` string tuples. */
++type OrderbookResponse = {
++	readonly bids?: ReadonlyArray<ReadonlyArray<string>>;
++	readonly asks?: ReadonlyArray<ReadonlyArray<string>>;
++};
++
++/** Browser-direct fetch against the published DeepBook server (it sends
++ *  `access-control-allow-origin: *`). Disabled until both parts are known. */
++const useDeepbookServer = <T,>(serverUrl: string | null, path: string | null, refetchMs: number) =>
++	useQuery<T>({
++		queryKey: ['deepbook-server', serverUrl, path],
++		queryFn: async () => {
++			const res = await fetch(`${serverUrl}${path}`);
++			if (!res.ok) throw new Error(`HTTP ${res.status} from ${path}`);
++			return (await res.json()) as T;
++		},
++		enabled: serverUrl !== null && path !== null,
++		// Back off while erroring (e.g. /orderbook on a gRPC-only fork) but
++		// keep probing so the panel self-heals when the endpoint comes back.
++		refetchInterval: (query) => (query.state.status === 'error' ? 60_000 : refetchMs),
++		retry: 1,
++	});
++
++/** USD value of a Pyth feed (`price × 10^expo`), or null when absent. */
++const feedUsd = (feeds: DeepbookInfo['pythFeeds'], symbol: string): number | null => {
++	const feed = feeds.find((f) => f.symbol === symbol);
++	if (!feed) return null;
++	const price = Number(feed.price);
++	return Number.isFinite(price) ? price * Math.pow(10, feed.expo) : null;
++};
++
++/** Oracle-implied mid for a base/quote pair from the deployment's Pyth feeds. */
++const oracleMid = (
++	feeds: DeepbookInfo['pythFeeds'],
++	baseSymbol: string,
++	quoteSymbol: string,
++): number | null => {
++	const base = feedUsd(feeds, baseSymbol);
++	const quote = feedUsd(feeds, quoteSymbol);
++	return base !== null && quote !== null && quote !== 0 ? base / quote : null;
++};
++
++const fmtPrice = (value: number): string =>
++	value >= 1000 ? groupDigits(value.toFixed(0)) : value.toPrecision(4);
++
++/** Pool selector shared by the price/depth panels. */
++const PoolTabs = ({
++	poolNames,
++	active,
++	onSelect,
++}: {
++	readonly poolNames: ReadonlyArray<string>;
++	readonly active: string | null;
++	readonly onSelect: (name: string) => void;
++}) => (
++	<div className="row" style={{ gap: 6 }}>
++		{poolNames.map((name) => (
++			<button
++				key={name}
++				className={`btn btn-sm${name === active ? '' : ' btn-ghost'}`}
++				onClick={() => onSelect(name)}
++			>
++				{name}
++			</button>
++		))}
++	</div>
++);
++
++/** Mid-price panel: `/ohclv` candles when trades exist. With an empty book it
++ *  keeps the honest empty state, annotated with the Pyth-oracle-implied mid —
++ *  clearly labeled as an oracle quote, never presented as a traded price. */
++const PricePanel = ({
++	serverUrl,
++	poolNames,
++	active,
++	onSelect,
++	tickerEntry,
++	pools,
++	pythFeeds,
++}: {
++	readonly serverUrl: string | null;
++	readonly poolNames: ReadonlyArray<string>;
++	readonly active: string | null;
++	readonly onSelect: (name: string) => void;
++	readonly tickerEntry: TickerEntry | null;
++	readonly pools: DeepbookInfo['pools'];
++	readonly pythFeeds: DeepbookInfo['pythFeeds'];
++}) => {
++	const ohclv = useDeepbookServer<OhclvResponse>(
++		serverUrl,
++		active === null ? null : `/ohclv/${active}?interval=5m&limit=288`,
++		15_000,
++	);
++	const pool = pools.find((p) => p.name === active) ?? null;
++	const impliedMid =
++		pool === null
++			? null
++			: oracleMid(pythFeeds, coinSymbol(pool.baseCoinType), coinSymbol(pool.quoteCoinType));
++	const candles = (ohclv.data?.candles ?? []).filter((c) => c.length >= 6);
++	const series = candles.map((c) => ({ t: c[0], close: c[4] }));
++	const last = tickerEntry !== null && tickerEntry.last_price > 0 ? tickerEntry.last_price : null;
++	let body: ReactNode;
++	if (serverUrl === null) {
++		body = (
++			<EmptyState
++				icon="activity"
++				title="Price feed unavailable"
++				hint="Mid-price history comes from the DeepBook indexer, and this stack publishes no server URL for it."
++			/>
++		);
++	} else if (ohclv.isError) {
++		body = (
++			<EmptyState
++				icon="activity"
++				title="Indexer server unreachable"
++				hint={`${String(ohclv.error)} — is the DeepBook server container running, and is this pool seeded in its pools config table?`}
++			/>
++		);
++	} else if (ohclv.isLoading) {
++		body = <EmptyState icon="activity" title="Loading price history…" />;
++	} else if (series.length === 0) {
++		body = (
++			<>
++				<EmptyState
++					icon="activity"
++					title="No trades indexed yet"
++					hint="Candles appear once trades land on this stack — there is no market-maker flow on the fork yet."
++				/>
++				{impliedMid !== null && (
++					<div style={{ fontSize: 11.5, color: 'var(--tx-dim)', paddingTop: 8 }}>
++						Pyth-implied mid for {active}:{' '}
++						<span className="mono tnum" style={{ color: 'var(--tx-lo)' }}>
++							{fmtPrice(impliedMid)}
++						</span>{' '}
++						(oracle quote, not a traded price).
++					</div>
++				)}
++			</>
++		);
++	} else {
++		body = (
++			<>
++				<div style={{ width: '100%', height: 180 }}>
++					<ResponsiveContainer width="100%" height="100%">
++						<RArea data={series} margin={{ top: 6, right: 6, bottom: 2, left: -10 }}>
++							<defs>
++								<linearGradient id="poolMid" x1="0" y1="0" x2="0" y2="1">
++									<stop offset="0%" stopColor="var(--viz-1)" stopOpacity={0.3} />
++									<stop offset="100%" stopColor="var(--viz-1)" stopOpacity={0.02} />
++								</linearGradient>
++							</defs>
++							<CartesianGrid stroke="var(--line-faint)" vertical={false} />
++							<XAxis
++								dataKey="t"
++								tickFormatter={(t: number) =>
++									new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
++								}
++								tick={{ fontSize: 10, fill: 'var(--tx-dim)' }}
++								tickLine={false}
++								axisLine={false}
++								minTickGap={48}
++							/>
++							<YAxis
++								domain={['auto', 'auto']}
++								tick={{ fontSize: 10, fill: 'var(--tx-dim)' }}
++								tickLine={false}
++								axisLine={false}
++								width={64}
++							/>
++							<RTooltip
++								{...CHART_TOOLTIP}
++								labelFormatter={(t) => new Date(Number(t)).toLocaleString()}
++							/>
++							<Area
++								dataKey="close"
++								type="monotone"
++								stroke="var(--viz-1)"
++								strokeWidth={1.5}
++								fill="url(#poolMid)"
++								isAnimationActive={false}
++							/>
++						</RArea>
++					</ResponsiveContainer>
++				</div>
++				{last !== null && (
++					<div style={{ fontSize: 11.5, color: 'var(--tx-dim)', paddingTop: 6 }}>
++						Last traded price: <span className="mono tnum">{fmtPrice(last)}</span>
++					</div>
++				)}
++			</>
++		);
++	}
++	return (
++		<Panel pad>
++			<SectionHead
++				title="Price"
++				right={
++					poolNames.length > 1 ? (
++						<PoolTabs poolNames={poolNames} active={active} onSelect={onSelect} />
++					) : undefined
++				}
++			/>
++			{body}
++		</Panel>
++	);
++};
++
++/** Order-book depth from the server's live `/orderbook` read. On a gRPC-only
++ *  mainnet fork this read is EXPECTED to fail (the server queries the chain
++ *  over JSON-RPC) — say exactly that instead of rendering an empty chart. */
++const DepthPanel = ({
++	serverUrl,
++	active,
++}: {
++	readonly serverUrl: string | null;
++	readonly active: string | null;
++}) => {
++	const book = useDeepbookServer<OrderbookResponse>(
++		serverUrl,
++		active === null ? null : `/orderbook/${active}?depth=20`,
++		15_000,
++	);
++	const toLevels = (
++		rows: ReadonlyArray<ReadonlyArray<string>> | undefined,
++	): Array<{ price: number; size: number }> =>
++		(rows ?? [])
++			.map((row) => ({ price: Number(row[0]), size: Number(row[1]) }))
++			.filter((l) => Number.isFinite(l.price) && Number.isFinite(l.size) && l.size > 0);
++	let body: ReactNode;
++	if (serverUrl === null) {
++		body = (
++			<EmptyState
++				icon="layers"
++				title="Depth unavailable"
++				hint="Order-book depth is served by the DeepBook server; this stack publishes no URL for it."
++			/>
++		);
++	} else if (book.isError) {
++		body = (
++			<EmptyState
++				icon="layers"
++				title="Live depth read unavailable"
++				hint="The server reads the order book over JSON-RPC, which this gRPC-only fork does not serve — depth appears once live reads are supported."
++			/>
++		);
++	} else if (book.isLoading) {
++		body = <EmptyState icon="layers" title="Loading order book…" />;
++	} else {
++		const bids = toLevels(book.data?.bids);
++		const asks = toLevels(book.data?.asks);
++		body =
++			bids.length === 0 && asks.length === 0 ? (
++				<EmptyState icon="layers" title="Empty book" hint="No resting orders on this pool." />
++			) : (
++				<DepthChart bids={bids} asks={asks} height={180} />
++			);
++	}
++	return (
++		<Panel pad>
++			<SectionHead title="Order book depth" />
++			{body}
++		</Panel>
++	);
++};
++
+ /** A key/value row matching the design's `PField` (label left, value right). */
+ const Field = ({ label, children }: { label: string; children: ReactNode }) => (
+ 	<div
+@@ -73,6 +364,7 @@ const pairLabel = (pool: DeepbookInfo['pools'][number]): string => {
+ interface PoolRow {
+ 	readonly poolId: string;
+ 	readonly pair: string;
++	readonly name: string | null;
+ }
+ 
+ /** Pull a u64-ish numeric field out of a pool object's parsed Move fields. */
+@@ -93,9 +385,11 @@ const numericField = (
+ const PoolTableRow = ({
+ 	pool,
+ 	chain,
++	ticker,
+ }: {
+ 	readonly pool: PoolRow;
+ 	readonly chain: PluginViewProps['chain'];
++	readonly ticker: TickerEntry | null;
+ }) => {
+ 	const obj = useObject(chain, pool.poolId);
+ 	const fields = obj.data?.fields ?? null;
+@@ -108,12 +402,13 @@ const PoolTableRow = ({
+ 			<td>
+ 				<span style={{ fontWeight: 550 }}>{pool.pair}</span>
+ 			</td>
+-			{/* Price/24h/trend/depth/trades need the DeepBook indexer — honest dashes. */}
+-			<td className="mono tnum" style={{ color: 'var(--tx-dim)' }}>
+-				{EM_DASH}
++			{/* Price/24h from the server ticker when trades exist; honest dashes
++			    otherwise. Depth/trades still need per-pool history — dashes. */}
++			<td className="mono tnum" style={{ color: 'var(--tx-lo)' }}>
++				{ticker !== null && ticker.last_price > 0 ? fmtPrice(ticker.last_price) : EM_DASH}
+ 			</td>
+-			<td className="mono tnum" style={{ color: 'var(--tx-dim)' }}>
+-				{EM_DASH}
++			<td className="mono tnum" style={{ color: 'var(--tx-lo)' }}>
++				{ticker !== null && ticker.quote_volume > 0 ? fmtPrice(ticker.quote_volume) : EM_DASH}
+ 			</td>
+ 			<td className="mono tnum" style={dim}>
+ 				{obj.isLoading ? '…' : (tick ?? EM_DASH)}
+@@ -152,6 +447,11 @@ export const DeepBookView = ({ row, endpoint, chain }: PluginViewProps) => {
+ 	const info0 =
+ 		(row ? deployments.find((d) => d.pluginKey === row.key) : undefined) ?? deployments[0] ?? null;
+ 
++	// Server-backed panel state — hooks stay above the early returns.
++	const serverUrl = info0?.serverUrl ?? null;
++	const [selectedPool, setSelectedPool] = useState<string | null>(null);
++	const ticker = useDeepbookServer<Record<string, TickerEntry>>(serverUrl, '/ticker', 15_000);
++
+ 	const header = (children: ReactNode) => (
+ 		<PluginScaffold
+ 			label="DeepBook"
+@@ -213,10 +513,13 @@ export const DeepBookView = ({ row, endpoint, chain }: PluginViewProps) => {
+ 	const pools: ReadonlyArray<PoolRow> = info0.pools.map((p) => ({
+ 		poolId: p.poolId,
+ 		pair: pairLabel(p),
++		name: p.name ?? null,
+ 	}));
+ 	const hasIndexer = Boolean(info0.indexerUrl);
+ 	const hasSeedLiquidity = info0.hasSeedLiquidity;
+ 	const pythFeeds = info0.pythFeeds;
++	const poolNames = info0.pools.map((p) => p.name).filter((n): n is string => Boolean(n));
++	const activePool = selectedPool ?? poolNames[0] ?? null;
+ 
+ 	return header(
+ 		<>
+@@ -251,26 +554,21 @@ export const DeepBookView = ({ row, endpoint, chain }: PluginViewProps) => {
+ 				/>
+ 			</div>
+ 
+-			{/* Price + order-book depth need the indexer; render honest empties. */}
++			{/* Price + order-book depth — fetched from the published DeepBook
++			    server; every missing piece renders an honest state. */}
+ 			<div
+ 				style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 18, alignItems: 'start' }}
+ 			>
+-				<Panel pad>
+-					<SectionHead title="Price" />
+-					<EmptyState
+-						icon="activity"
+-						title="Price feed unavailable"
+-						hint="Mid-price history comes from the DeepBook indexer, which isn't reachable from the browser for this stack."
+-					/>
+-				</Panel>
+-				<Panel pad>
+-					<SectionHead title="Order book depth" />
+-					<EmptyState
+-						icon="layers"
+-						title="Depth unavailable"
+-						hint="Order-book depth is served by the DeepBook indexer; not available here."
+-					/>
+-				</Panel>
++				<PricePanel
++					serverUrl={serverUrl}
++					poolNames={poolNames}
++					active={activePool}
++					onSelect={setSelectedPool}
++					tickerEntry={activePool === null ? null : (ticker.data?.[activePool] ?? null)}
++					pools={info0.pools}
++					pythFeeds={pythFeeds}
++				/>
++				<DepthPanel serverUrl={serverUrl} active={activePool} />
+ 			</div>
+ 
+ 			{/* Pools — pair + on-chain tick/lot/min + pool id. */}
+@@ -308,7 +606,12 @@ export const DeepBookView = ({ row, endpoint, chain }: PluginViewProps) => {
+ 						</thead>
+ 						<tbody>
+ 							{pools.map((p) => (
+-								<PoolTableRow key={p.poolId} pool={p} chain={chain} />
++								<PoolTableRow
++									key={p.poolId}
++									pool={p}
++									chain={chain}
++									ticker={p.name === null ? null : (ticker.data?.[p.name] ?? null)}
++								/>
+ 							))}
+ 						</tbody>
+ 					</table>

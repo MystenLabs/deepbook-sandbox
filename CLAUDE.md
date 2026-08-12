@@ -51,11 +51,16 @@ Postgres (`down -v`) whenever the fork chain is reset (watermarks ignore
 The devstack package itself is consumed **pnpm-patched**
 (`sandbox/devstack-plugins/patches/`, declared in that directory's
 `pnpm-workspace.yaml` `patchedDependencies`): known-mode `deepbook()` reads
-DEEP/SUI/USDC Pyth `PriceInfoObject`s at boot so the dashboard's DeepBook page
-shows oracle data (SEDEFI-444; upstream ask recorded on the ticket). Because
-pnpm 11 only reads `patchedDependencies` from `pnpm-workspace.yaml`, installs
-in `devstack-plugins/` must NOT use `--ignore-workspace` — it silently skips
-the patch.
+DEEP/SUI/USDC Pyth `PriceInfoObject`s at boot and accepts pinned
+pools/server-URL options, and `dashboard()` accepts `assetsDir` — together
+these feed the dashboard's DeepBook page real oracle/pool data via the
+**vendored SPA build** at `sandbox/devstack-plugins/dashboard-ui/` (rebuilt
+Price/Depth panels; source diff `dashboard-ui-app.patch`, recipe in that
+README). All upstream asks are recorded on SEDEFI-444. Because pnpm 11 only
+reads `patchedDependencies` from `pnpm-workspace.yaml`, installs in
+`devstack-plugins/` must NOT use `--ignore-workspace` — it silently skips the
+patch. `deploy-all` also seeds the server's manual `pools` config table from
+`sandbox/deployments/mainnet-fork.json` (`scripts/seed-pools.ts`, idempotent).
 
 ### Running the Stack
 

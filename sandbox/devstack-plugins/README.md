@@ -207,6 +207,36 @@ use `--ignore-workspace` (it would silently skip the patch; the root
 accordingly). Drop the patch when devstack ships the feature natively — the
 upstream ask is recorded on SEDEFI-444.
 
+## Vendored dashboard UI (Price/Depth panels)
+
+The packaged `dashboard-ui/` inside devstack 0.7.0 ships the DeepBook page's
+Price and Order-book-depth panels as hardcoded placeholders. This repo vendors
+a rebuilt SPA at [`dashboard-ui/`](./dashboard-ui/) (committed vite output,
+served via the patched `dashboard({ assetsDir })` option — see `patches/`)
+whose DeepBook page fetches the DeepBook server browser-direct:
+
+- **Pools table** — price/24h cells from `/ticker` (dashes until trades exist).
+- **Price panel** — `/ohclv/:pool` candles per pool (selector tabs); with no
+  trades it renders the honest empty state annotated with the Pyth-implied mid
+  (labeled as an oracle quote, not a traded price).
+- **Depth panel** — `/orderbook/:pool`; on the gRPC-only fork the server's
+  JSON-RPC live read fails and the panel says exactly that.
+
+Rebuild recipe (source diff: [`dashboard-ui-app.patch`](./dashboard-ui-app.patch)):
+
+```bash
+git clone https://github.com/MystenLabs/ts-sdks-incubation
+cd ts-sdks-incubation
+git fetch origin "refs/tags/@mysten-incubation/devstack@0.7.0" && git checkout FETCH_HEAD
+git apply /path/to/dashboard-ui-app.patch
+pnpm install --ignore-scripts
+pnpm --filter @mysten-incubation/devstack build:dashboard-ui
+cp -R packages/devstack/dashboard-ui /path/to/sandbox/devstack-plugins/dashboard-ui
+```
+
+Upstreaming the panels to `apps/devstack-dashboard` (so the vendored build can
+be dropped) is recorded on SEDEFI-444 alongside the plugin-side asks.
+
 ## ⚠️ Known blocker — sui-fork
 
 A **stock** sui-fork crashes on any access to donor coins (transfer, mint, or
