@@ -9,11 +9,12 @@
         "down": "tsx scripts/stack.ts down",
         "oracle-service": "tsx scripts/oracle-service/index.ts",
         "market-maker": "tsx scripts/market-maker/index.ts",
-        "stack:up": "pnpm -C devstack-plugins install --ignore-workspace && pnpm -C devstack-plugins exec devstack up",
-        "stack:wipe": "pnpm -C devstack-plugins install --ignore-workspace && pnpm -C devstack-plugins exec devstack wipe --stack ${SANDBOX_STACK:-deepbook-sandbox}",
+        "stack:up": "pnpm -C devstack-plugins install && pnpm -C devstack-plugins exec devstack up",
+        "stack:wipe": "pnpm -C devstack-plugins install && pnpm -C devstack-plugins exec devstack wipe --stack ${SANDBOX_STACK:-deepbook-sandbox}",
         "test": "vitest run",
         "test:unit": "vitest run --config vitest.unit.config.ts",
-        "test:integration": "vitest run --config vitest.integration.config.ts"
+        "test:integration": "vitest run --config vitest.integration.config.ts",
+        "clock:sync": "tsx scripts/sync-fork-clock.ts"
     },
     "dependencies": {
         "@mysten/sui": "^2.16.0",

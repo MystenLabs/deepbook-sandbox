@@ -5,3 +5,4 @@
 # hole. Keep in sync with the repo-root .prettierignore.
 devstack-plugins/src/generated/
 devstack-plugins/__tests__/src/generated/
+devstack-plugins/dashboard-ui/

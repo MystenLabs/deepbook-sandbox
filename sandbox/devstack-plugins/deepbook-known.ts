@@ -80,10 +80,17 @@ export function mainnetForkDeepbookIds(manifestPath?: string): MainnetForkDeepbo
     return ids;
 }
 
+/** The DeepBook server REST API (compose remnant) — the query surface for
+ *  indexed data. The dashboard only reads these URLs for display/reachability;
+ *  both point at the server because the indexer itself has no query API. */
+const DEEPBOOK_SERVER_URL = process.env.DEEPBOOK_SERVER_URL ?? "http://127.0.0.1:9008";
+
 /** devstack's first-party deepbook() member, mode 'known', pinned to the
  *  manifest's verified ids. `network: 'mainnet'` keeps devstack's known-table
  *  extras (deepTreasuryId, Pyth state ids); the explicit package/registry ids
- *  override its SDK-derived defaults. */
+ *  override its SDK-derived defaults. Pools + server/indexer URLs ride in via
+ *  the patched known-mode options (see patches/ — upstream hardcodes them
+ *  empty), so the dashboard's DeepBook page lists the pinned mainnet pools. */
 export function deepbookFromManifest(opts?: { name?: string; manifestPath?: string }) {
     const ids = mainnetForkDeepbookIds(opts?.manifestPath);
     return deepbook({
@@ -91,6 +98,19 @@ export function deepbookFromManifest(opts?: { name?: string; manifestPath?: stri
         network: "mainnet",
         packageId: ids.packages.deepbook.latestId,
         registryId: ids.registry.objectId,
+        pools: Object.entries(ids.pools).map(([name, pin]) => ({
+            name,
+            poolId: pin.objectId,
+            // Coin keys (`…::deep::DEEP` → `DEEP`) — local mode fills these
+            // from SDK coin refs; mirror it so the generated tree's pool type
+            // stays truthful.
+            base: pin.baseType.split("::").pop() ?? pin.baseType,
+            quote: pin.quoteType.split("::").pop() ?? pin.quoteType,
+            baseCoinType: pin.baseType,
+            quoteCoinType: pin.quoteType,
+        })),
+        serverUrl: DEEPBOOK_SERVER_URL,
+        indexerUrl: DEEPBOOK_SERVER_URL,
         ...(opts?.name !== undefined ? { name: opts.name } : {}),
     });
 }

@@ -1,0 +1,2 @@
+patchedDependencies:
+  "@mysten-incubation/devstack@0.7.0": patches/@mysten-incubation__devstack@0.7.0.patch

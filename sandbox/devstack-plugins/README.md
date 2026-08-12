@@ -183,6 +183,60 @@ devstack's built-in dashboard auto-surfaces the `coinType:<DEEP>` and
 migration) is in
 [`faucet-dashboard-integration.md`](./faucet-dashboard-integration.md).
 
+## Patched devstack dependency (Pyth feeds on the DeepBook page)
+
+`@mysten-incubation/devstack@0.7.0` is consumed **patched** (SEDEFI-444):
+upstream's known-mode `deepbook()` hardcodes `pyth.feeds: []`, so the
+dashboard's DeepBook page renders no oracle data. The patch
+([`patches/@mysten-incubation__devstack@0.7.0.patch`](./patches/@mysten-incubation__devstack@0.7.0.patch)) makes
+known-mode `start` read the DEEP/SUI/USDC `PriceInfoObject`s (ids from
+`@mysten/deepbook-v3`'s coin tables) and fill `pyth.feeds` with real
+price/expo — values are as of the fork's checkpoint pin until an updater
+pushes fresh prices (SEDEFI-317). Reads are lenient: an unreadable feed is
+skipped with a warning, never a boot failure. The patch fills the
+runtime/dashboard value only — the generated bindings tree
+(`src/generated/deepbook.ts`) still carries `feeds: []` (codegen is
+synchronous). On testnet only DEEP/SUI resolve (`testnetCoins` has no USDC
+entry in `@mysten/deepbook-v3@1.5.0`).
+
+Mechanics: the patch is declared in [`pnpm-workspace.yaml`](./pnpm-workspace.yaml)
+`patchedDependencies` (pnpm 11 no longer reads `package.json#pnpm`), which also
+makes this directory its own workspace root — so installs here must **not**
+use `--ignore-workspace` (it would silently skip the patch; the root
+`stack:up`/`stack:wipe` scripts and the devstack-up smoke were updated
+accordingly). Drop the patch when devstack ships the feature natively — the
+upstream ask is recorded on SEDEFI-444.
+
+## Vendored dashboard UI (Price/Depth panels)
+
+The packaged `dashboard-ui/` inside devstack 0.7.0 ships the DeepBook page's
+Price and Order-book-depth panels as hardcoded placeholders. This repo vendors
+a rebuilt SPA at [`dashboard-ui/`](./dashboard-ui/) (committed vite output,
+served via the patched `dashboard({ assetsDir })` option — see `patches/`)
+whose DeepBook page fetches the DeepBook server browser-direct:
+
+- **Pools table** — price/24h cells from `/ticker` (dashes until trades exist).
+- **Price panel** — `/ohclv/:pool` candles per pool (selector tabs); with no
+  trades it renders the honest empty state annotated with the Pyth-implied mid
+  (labeled as an oracle quote, not a traded price).
+- **Depth panel** — `/orderbook/:pool`; on the gRPC-only fork the server's
+  JSON-RPC live read fails and the panel says exactly that.
+
+Rebuild recipe (source diff: [`dashboard-ui-app.patch`](./dashboard-ui-app.patch)):
+
+```bash
+git clone https://github.com/MystenLabs/ts-sdks-incubation
+cd ts-sdks-incubation
+git fetch origin "refs/tags/@mysten-incubation/devstack@0.7.0" && git checkout FETCH_HEAD
+git apply /path/to/dashboard-ui-app.patch
+pnpm install --ignore-scripts
+pnpm --filter @mysten-incubation/devstack build:dashboard-ui
+cp -R packages/devstack/dashboard-ui /path/to/sandbox/devstack-plugins/dashboard-ui
+```
+
+Upstreaming the panels to `apps/devstack-dashboard` (so the vendored build can
+be dropped) is recorded on SEDEFI-444 alongside the plugin-side asks.
+
 ## ⚠️ Known blocker — sui-fork
 
 A **stock** sui-fork crashes on any access to donor coins (transfer, mint, or
@@ -212,7 +266,7 @@ found" at boot is the symptom when it didn't).
 ## Tests
 
 ```bash
-pnpm install --ignore-workspace   # nested under sandbox/'s workspace
+pnpm install                      # NO --ignore-workspace — it would skip the devstack patch (see above)
 pnpm test                         # unit tests (stubbed fork sdk.core); excludes *.e2e
 
 # E2E (boots a real fork via devstack's vitest harness) — requires Node >= 24 +

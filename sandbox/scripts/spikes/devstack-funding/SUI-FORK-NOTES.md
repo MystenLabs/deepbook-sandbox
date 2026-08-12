@@ -1,5 +1,8 @@
 # sui-fork bug report — `GetCoinInfo` aborts the fork for migrated coins (DEEP/USDC): the shared `Currency` object is never materialized, and the index fallback is `todo!()`
 
+> Issue catalog for the team / upstream hand-off: `sandbox/SUI-FORK-ISSUES.md`
+> (this file is the deep-dive behind several of its entries).
+
 ## Summary
 
 Executing **any non-SUI coin transfer (DEEP, USDC) through the fork's gRPC
@@ -145,10 +148,30 @@ works.)
 - Any consumer that reads coin info / balances for such a coin against the fork
   crashes it.
 
+## availableRange phones home (hit 2026-08-12)
+
+`get_lowest_available_checkpoint{,_objects}` (`store.rs:284-296`) make LIVE
+GraphQL queries against the public mainnet endpoint on EVERY checkpoint-range
+check, uncached — bursts (the dashboard explorer, the indexer's polling) trip
+its rate limit and surface as intermittent
+`Failed to query availableRange for type 'Checkpoint'` (explorer: "the node
+rejected the checkpoint read"; indexer: retry WARNs; boot: one flaky chain-id
+fetch). The patched image memoizes the first successful answer per process
+(`patch-available-range.py` in the image context) — sound because the value is
+a retention-window boundary that only matters relative to the fixed
+`FORK_CHECKPOINT` pin.
+
 ## Workaround (validated)
 
-`.fork-patched/` rebuilds the fork image with fix #3 (`get_coin_info → Ok(None)`;
-a one-line `sed` in the image's `Dockerfile`). With the abort removed:
+`.fork-patched/` rebuilds the fork image with fix #3 — originally just
+`get_coin_info → Ok(None)`, since extended to ALL the observed-fatal stubs
+(each a `sed` in the image's `Dockerfile`): `get_balance → Ok(None)` and
+`balance_iter → empty` (the dashboard fires GetBalance/ListBalances on open;
+hit 2026-08-10), then `dynamic_field_iter → empty` and
+`package_versions_iter → empty` (the dashboard's DeepBook pools table reads
+each pool object + its first dynamic-field page, panic at `store.rs:1357`;
+hit 2026-08-12 the moment pools were pinned into the resolved member). With
+the aborts removed:
 
 - the DEEP transfer settles and `account('alice')` ends up holding **100 DEEP**
   (confirmed by devstack's settlement check and an independent `listCoins`); and
