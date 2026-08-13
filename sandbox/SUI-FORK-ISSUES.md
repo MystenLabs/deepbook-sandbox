@@ -14,16 +14,17 @@ Findings are against rev `16f1402387c7ce0f9310e57610428efec930dbf4`
 image context (`scripts/spikes/devstack-funding/.fork-patched/images/sui-fork/`,
 gitignored — the Dockerfile applies the patches at build time).
 
-| #   | Issue                                                | Blast radius                              | Local mitigation                           | Upstream status                             |
-| --- | ---------------------------------------------------- | ----------------------------------------- | ------------------------------------------ | ------------------------------------------- |
-| 1   | `todo!()` index stubs SIGABRT the whole fork process | any RPC touching them kills the chain     | image patch: stubs → benign empties        | SEDEFI-447; sui#27520 (unmergeable, see #3) |
-| 2   | execution-path child reads don't lazy-fetch          | most Move calls touching mainnet state    | pre-warm objects by id via gRPC            | SEDEFI-448                                  |
-| 3   | fork-genesis regression on every rev after ~Jul 8    | can't bump the rev; blocks the #27520 fix | stay pinned to `16f1402387`                | SEDEFI-449                                  |
-| 4   | protocol-130 framework skew panic-aborts execution   | any tx against post-2026-07-31 state      | `FORK_CHECKPOINT=304941000` pin            | SEDEFI-450                                  |
-| 5   | `availableRange` phones home uncached                | flaky checkpoint reads, boots, indexer    | image patch: memoize first answer          | SEDEFI-452                                  |
-| 6   | checkpoint timestamps frozen at the on-chain Clock   | fills invisible to time-windowed readers  | `pnpm clock:sync` / advance around trading | SEDEFI-453                                  |
-| 7   | `simulate_transaction` unsupported                   | all SDK read paths (devInspect)           | none — SDK examples stay blocked           | SEDEFI-358 / sui#27520                      |
-| 8   | (devstack) `advanceClock` mutation no-ops on fork    | silent — returns `ok: true`               | shell out to the `sui-fork` CLI            | SEDEFI-454                                  |
+| #   | Issue                                                | Blast radius                              | Local mitigation                            | Upstream status                             |
+| --- | ---------------------------------------------------- | ----------------------------------------- | ------------------------------------------- | ------------------------------------------- |
+| 1   | `todo!()` index stubs SIGABRT the whole fork process | any RPC touching them kills the chain     | image patch: stubs → benign empties         | SEDEFI-447; sui#27520 (unmergeable, see #3) |
+| 2   | execution-path child reads don't lazy-fetch          | most Move calls touching mainnet state    | pre-warm objects by id via gRPC             | SEDEFI-448                                  |
+| 3   | fork-genesis regression on every rev after ~Jul 8    | can't bump the rev; blocks the #27520 fix | stay pinned to `16f1402387`                 | SEDEFI-449                                  |
+| 4   | protocol-130 framework skew panic-aborts execution   | any tx against post-2026-07-31 state      | `FORK_CHECKPOINT=304941000` pin             | SEDEFI-450                                  |
+| 5   | `availableRange` phones home uncached                | flaky checkpoint reads, boots, indexer    | image patch: memoize first answer           | SEDEFI-452                                  |
+| 6   | checkpoint timestamps frozen at the on-chain Clock   | fills invisible to time-windowed readers  | `pnpm clock:sync` / advance around trading  | SEDEFI-453                                  |
+| 7   | `simulate_transaction` unsupported                   | all SDK read paths (devInspect)           | none — SDK examples stay blocked            | SEDEFI-358 / sui#27520                      |
+| 8   | (devstack) `advanceClock` mutation no-ops on fork    | silent — returns `ok: true`               | shell out to the `sui-fork` CLI             | SEDEFI-454                                  |
+| 9   | fresh-chain first commit panic-aborts (framework)    | first fork-local commit on a fresh chain  | registry-init pre-warms 0x1/0x2/0x3/0x5/0x6 | new (SEDEFI-456 find) — ticket TBD          |
 
 ## 1. `todo!()` index stubs panic-abort the process
 
@@ -131,3 +132,23 @@ Not a sui-fork issue but part of the same story: the dashboard's
 `advanceClock` mutation returns `ok: true` against a fork-mode stack without
 moving the clock (devstack 0.7.0). The sandbox shells out to the `sui-fork`
 CLI instead. Recorded with the other devstack asks on SEDEFI-444.
+
+## 9. Fresh-chain first commit panic-aborts on the framework package
+
+On a chain with NO fork-local checkpoints yet (`current checkpoint ==
+forked_at`), the first commit's `ConsensusCommitPrologueV3` panic-aborts the
+process (exit 134): `LINKER_ERROR: Cannot find package 0x…02 in data cache`
+(`execution_engine.rs:1026 "ConsensusCommitPrologueV3 cannot fail"`). Nothing
+has lazily materialized the framework packages into the store yet, and the
+prologue's system tx doesn't trigger the lazy upstream fetch that a user tx's
+input loading would. Observed live when trade-sim's boot-time clock catch-up
+(`advanceClock`) was the chain's first action (SEDEFI-456); resumed chains
+never hit it, which is why weeks of restarts on a long-lived data dir masked
+it. `pnpm clock:sync` as the first action on a fresh chain would trigger the
+same abort.
+
+**Local:** the `registry-init` boot member pre-warms `0x1/0x2/0x3/0x5/0x6` by
+id before the stack's first execution (the established issue-#2 pre-warm
+recipe, applied to system state).
+**Upstream ask:** seed the framework packages (and other system state) into
+the store at fork genesis instead of relying on lazy materialization.

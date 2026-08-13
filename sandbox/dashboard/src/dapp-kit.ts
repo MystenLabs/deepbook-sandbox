@@ -26,10 +26,16 @@ const adapterReady = adapter.initialize().then(async () => {
 // Block dAppKit creation until adapter is ready
 await adapterReady;
 
+// Chain RPC rides the dev server's /api/sui proxy (same origin — no CORS
+// exposure, and the proxy target follows the fork's brokered port via
+// SUI_RPC_PROXY_TARGET). VITE_SUI_RPC_URL overrides for direct targets.
+const RPC_URL =
+    (import.meta.env.VITE_SUI_RPC_URL as string | undefined) || `${window.location.origin}/api/sui`;
+
 export const dAppKit = createDAppKit({
     networks: ["localnet"],
     createClient(network) {
-        return new SuiGrpcClient({ network, baseUrl: "http://localhost:9000" });
+        return new SuiGrpcClient({ network, baseUrl: RPC_URL });
     },
     slushWalletConfig: null,
     walletInitializers: [

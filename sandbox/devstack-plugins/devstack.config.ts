@@ -29,8 +29,11 @@ import {
 import { indexerMember } from "./indexer-member.ts";
 import { poolsSeedMember } from "./pools-seed.ts";
 import { postgresMember } from "./postgres-member.ts";
+import { registryInitMember } from "./registry-init.ts";
+import { sandboxApiMember } from "./sandbox-api.ts";
 import { serverMember } from "./server-member.ts";
 import { tradeSimMember } from "./trade-sim.ts";
+import { tradingDashboardMember } from "./trading-dashboard.ts";
 import { usdcFundingFromCapOwner, USDC_COIN_TYPE } from "./usdc-funding.ts";
 
 export const STACK = process.env.SANDBOX_STACK ?? "deepbook-sandbox";
@@ -135,9 +138,26 @@ const server = serverMember({
     marginPackageId: manifestIds.packages.deepbookMargin.originalId,
 });
 const poolsSeed = poolsSeedMember({ postgres, indexer });
+// The old trading dashboard, revived (SEDEFI-456): registry-init makes
+// user-driven BM registration possible on the fork (and pre-warms the
+// framework so a fresh chain's first commit can't panic — SUI-FORK-ISSUES
+// #9), sandbox-api restores the retired /manifest + /faucet contract on
+// port 9009, and trading-dashboard runs the Vite dev server with
+// fork-resolved wiring on port 5173.
+const registryInit = registryInitMember({ sui: suiRef });
 // Continuous self-fill loop so the dashboard's Price panel / ticker stay
 // live (SIM_DISABLED=1 opts out; SIM_POOLS / SIM_INTERVAL_MS tune it).
-const tradeSim = tradeSimMember({ sui: suiRef, postgres, poolsSeed, indexer });
+const tradeSim = tradeSimMember({ sui: suiRef, postgres, poolsSeed, indexer, registryInit });
+
+const sandboxApi = sandboxApiMember({ sui: suiRef, deepFunding, usdcFunding });
+const tradingDashboard = tradingDashboardMember({
+    sui: suiRef,
+    deepFunding,
+    usdcFunding,
+    sandboxApi,
+    server,
+    registryInit,
+});
 
 export const members = [
     suiRef,
@@ -158,6 +178,9 @@ export const members = [
     server,
     poolsSeed,
     tradeSim,
+    registryInit,
+    sandboxApi,
+    tradingDashboard,
 ];
 
 export default defineDevstack({ members, stackName: STACK });

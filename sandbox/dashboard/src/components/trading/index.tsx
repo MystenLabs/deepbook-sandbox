@@ -23,7 +23,7 @@ export function TradingPage() {
     const bmBalances = useBmBalances(client, balanceManagerId);
     const midPrice = useMidPrice(client, POOL_KEY);
     const poolParams = usePoolParams(client, POOL_KEY);
-    const trading = useTrading(client, POOL_KEY, address);
+    const trading = useTrading(client, POOL_KEY, address, balanceManagerId);
     const openOrders = useOpenOrders(client, POOL_KEY, balanceManagerId);
     const createBm = useCreateBalanceManager(client, manifest, address);
 

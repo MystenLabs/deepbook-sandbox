@@ -21,8 +21,11 @@ export default defineConfig(({ mode }) => {
         },
         server: {
             proxy: {
+                // Targets are overridable by the devstack trading-dashboard
+                // member, which resolves them from live stack state (the fork
+                // RPC port is BROKERED — never assume 9000 there).
                 "/api/deepbook": {
-                    target: "http://localhost:9008",
+                    target: process.env.DEEPBOOK_SERVER_PROXY_TARGET ?? "http://localhost:9008",
                     changeOrigin: true,
                     rewrite: (p) => p.replace(/^\/api\/deepbook/, ""),
                 },
@@ -37,13 +40,19 @@ export default defineConfig(({ mode }) => {
                     rewrite: (p) => p.replace(/^\/api\/mm/, ""),
                 },
                 "/api/sui": {
-                    target: "http://localhost:9000",
+                    // host.docker.internal guard: that alias only resolves
+                    // inside containers; this proxy runs on the host.
+                    target: (process.env.SUI_RPC_PROXY_TARGET ?? "http://localhost:9000").replace(
+                        "host.docker.internal",
+                        "127.0.0.1",
+                    ),
                     changeOrigin: true,
                     rewrite: (p) => p.replace(/^\/api\/sui/, ""),
                 },
-                // Unified API (faucet + trading) — catch-all after specific proxies
+                // Unified API (manifest + faucet) — catch-all after specific
+                // proxies; served by the sandbox-api devstack member.
                 "/api": {
-                    target: "http://localhost:9009",
+                    target: process.env.SANDBOX_API_PROXY_TARGET ?? "http://localhost:9009",
                     changeOrigin: true,
                     rewrite: (p) => p.replace(/^\/api/, ""),
                 },

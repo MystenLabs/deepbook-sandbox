@@ -3,6 +3,31 @@
 `nginx.conf` replicates the Vite dev-server proxy for the Dockerized build — keep
 the two in sync when adding proxied routes.
 
+## Fork mode (SEDEFI-456)
+
+The dashboard runs against the devstack mainnet fork as the `trading-dashboard`
+member (`devstack-plugins/trading-dashboard.ts` spawns `vite` with resolved
+proxy targets + a pre-funded PRIVATE_KEY; `sandbox-api` serves /manifest and
+/faucet on 9009). Two fork facts shape the code — both verified live:
+
+- **Everything that touches `simulate_transaction` is dead** (SUI-FORK-ISSUES
+  #7): every `@mysten/deepbook-v3` read helper, AND the build-time resolution
+  of any unresolved `tx.object(id)` input (`resolveTransactionData` simulates).
+  Fork writes must use concrete `objectRef`/`sharedObjectRef` args plus
+  explicit gas budget/price/payment (`tx.object.clock()` is safe — inlined).
+- **No owner→coins/balance index**: `listBalances`/`listCoins` return `[]`
+  even for fork-local coins; `listOwnedObjects` + BCS content parsing is the
+  only balance read, and only fork-local (faucet-funded) objects enumerate.
+
+`src/lib/fork.ts` holds all substitutes: derived-dynamic-field reads (BM
+discovery via the registry map — note the `BalanceManagerKey` DEFINING package
+id constant; BM balances via the Bag), server-backed prices/open orders
+(`/ticker`, `/orders/{pool}/{bm}?…&start_time=0` — start_time=0 escapes the
+7-day lookback vs the frozen fork clock), and raw PTB builders for
+deposit/withdraw/orders. Hooks branch on `isForkManifest(manifest)`
+(`use-deepbook-client.ts` — the manifest union covers localnet.json and
+mainnet-fork.json shapes). The localnet SDK paths are unchanged.
+
 ## Trading Page
 
 The dashboard's Trading page is the user-facing interface for the deepbook protocol. Architecture notes for agents working in this area:
