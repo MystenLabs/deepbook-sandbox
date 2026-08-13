@@ -22,13 +22,9 @@ The market maker runs as a Docker container, started automatically by `pnpm depl
 
 ```bash
 cd sandbox
-pnpm deploy-all   # Deploys contracts and starts the market maker container
-```
-
-To view logs:
-
-```bash
-docker compose logs -f market-maker
+pnpm deploy-all   # Boots the fork stack (the MM container is RETIRED —
+                  # run the MM on the host: pnpm market-maker; blocked on
+                  # fork gas funding, see CLAUDE.md)
 ```
 
 ## Configuration

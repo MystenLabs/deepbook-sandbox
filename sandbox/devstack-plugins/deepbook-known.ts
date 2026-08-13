@@ -80,9 +80,10 @@ export function mainnetForkDeepbookIds(manifestPath?: string): MainnetForkDeepbo
     return ids;
 }
 
-/** The DeepBook server REST API (compose remnant) — the query surface for
- *  indexed data. The dashboard only reads these URLs for display/reachability;
- *  both point at the server because the indexer itself has no query API. */
+/** The DeepBook server REST API (the deepbook-server devstack member, which
+ *  publishes host port 9008 fixed) — the query surface for indexed data. The
+ *  dashboard only reads these URLs for display/reachability; both point at
+ *  the server because the indexer itself has no query API. */
 const DEEPBOOK_SERVER_URL = process.env.DEEPBOOK_SERVER_URL ?? "http://127.0.0.1:9008";
 
 /** devstack's first-party deepbook() member, mode 'known', pinned to the

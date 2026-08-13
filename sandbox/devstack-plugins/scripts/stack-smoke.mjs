@@ -1,9 +1,11 @@
 // sandbox/devstack-plugins/scripts/stack-smoke.mjs
 // Boot the PRODUCTION stack (../devstack.config.ts) once, assert every member
 // row settles (ready for services, done for task-role plugins) and the boot
-// stayed inside SMOKE_TIMEOUT_MS (default 3 min — the DBSF-021 AC on a WARM
-// image; first-ever run may compile the fork image and blow the budget: build
-// it first or set DEVSTACK_SUI_FORK_IMAGE). Always tears down. Exit 0 = green.
+// stayed inside SMOKE_TIMEOUT_MS (default 3 min — the DBSF-021 AC on WARM
+// images; a first-ever run may compile the fork image AND the fork indexer
+// image (SEDEFI-445 — a full Rust release build) and blow the budget: run
+// `pnpm deploy-all` once first, or set DEVSTACK_SUI_FORK_IMAGE /
+// INDEXER_IMAGE). Always tears down. Exit 0 = green.
 //
 //   nvm use 24
 //   pnpm smoke

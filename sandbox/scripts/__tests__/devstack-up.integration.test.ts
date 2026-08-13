@@ -1,7 +1,11 @@
 // sandbox/scripts/__tests__/devstack-up.integration.test.ts
 // Smoke (DBSF-021 AC): the production devstack stack reaches ready in < 3 min
-// on a warm fork image. Spawns devstack-plugins/scripts/stack-smoke.mjs, which
-// boots via runStack, asserts every member row settles, and tears down.
+// on WARM images — since SEDEFI-445 that means the fork image AND the
+// container-backed members' images (the indexer is a local Rust release
+// build: cold it takes tens of minutes and will blow this budget — run
+// `pnpm deploy-all` once first; the server/postgres images are pulls).
+// Spawns devstack-plugins/scripts/stack-smoke.mjs, which boots via runStack,
+// asserts every member row settles, and tears down.
 // Requires Docker + Node >= 24 (devstack floor); skips loudly otherwise.
 
 import { execFileSync, execSync } from "node:child_process";

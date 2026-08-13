@@ -22,31 +22,49 @@ This project provides a toolset for reducing builder friction with one-liner dep
 
 ## File Structure
 
-Run `ls`/`find` to explore the tree. Top-level: `sandbox/` (docker-compose stack, `dashboard/`, `api/`, `scripts/`), `examples/sandbox/` (SDK integration examples), and `external/deepbook/` (DeepBookV3 git submodule). Subsystem-specific guidance lives in nested `CLAUDE.md` files (`sandbox/dashboard/`, `sandbox/scripts/oracle-service/`, `sandbox/scripts/market-maker/`).
+Run `ls`/`find` to explore the tree. Top-level: `sandbox/` (devstack stack, `dashboard/`, `api/`, `scripts/`), `examples/sandbox/` (SDK integration examples), and `external/deepbook/` (DeepBookV3 git submodule). Subsystem-specific guidance lives in nested `CLAUDE.md` files (`sandbox/dashboard/`, `sandbox/scripts/oracle-service/`, `sandbox/scripts/market-maker/`).
 
-## The Stack (devstack mainnet fork + compose remnant)
+## The Stack (devstack mainnet fork — single orchestrator)
 
-The sandbox runs on a **mainnet fork** orchestrated by devstack
+The sandbox runs on a **mainnet fork** orchestrated entirely by devstack
 (`sandbox/devstack-plugins/devstack.config.ts`): the `sui-fork` chain container,
-DEEP/USDC funding plugins, and the devstack dashboard (GraphQL `fund` mutation,
+DEEP/USDC funding plugins, the devstack dashboard (GraphQL `fund` mutation,
 routed by Host header `api.deepbook-sandbox.devstack-plugins.localhost` on port
-9810). `./sandbox/docker-compose.yml` carries only the **remnant** devstack
-doesn't provide (DBSF-022):
+9810), and — since SEDEFI-445 (DBSF-032) — **container-backed members** for the
+former docker-compose remnant (the compose file is deleted):
 
-| Service              | Description                                              | Ports                |
-| -------------------- | -------------------------------------------------------- | -------------------- |
-| **PostgreSQL**       | Database for the indexer                                 | 5432                 |
-| **DeepBook Indexer** | Ingests DeepBook events from the fork over gRPC          | 9184 (metrics)       |
-| **DeepBook Server**  | REST API for indexed data (live-RPC endpoints degraded¹) | 9008, 9186 (metrics) |
+| Member (plugin module)              | Description                                              | Host ports            |
+| ----------------------------------- | -------------------------------------------------------- | --------------------- |
+| **postgres** (`postgres-member.ts`) | Database for the indexer (data in the writable layer)    | 5432                  |
+| **indexer** (`indexer-member.ts`)   | Ingests DeepBook events from the fork over gRPC          | 9184 (metrics)        |
+| **server** (`server-member.ts`)     | REST API for indexed data (live-RPC endpoints degraded¹) | 9008, 9186 (metrics²) |
+| **pools-seed** (`pools-seed.ts`)    | Task: seeds the server's manual `pools` config table     | —                     |
 
-¹ Degraded on the fork: the server's live reads are JSON-RPC and the fork is gRPC-only — see the compose file header.
+¹ Degraded on the fork: the server's live reads (/status, /orderbook,
+/deep_supply, /fees, /margin_supply) are JSON-RPC and the fork is gRPC-only;
+Postgres-backed endpoints work — see `server-member.ts`'s header.
+² Not 9185 — the devstack router pre-claims it.
 
-The indexer image is built from `sandbox/docker/deepbook-indexer-fork/`
-(submodule source + `rpc-ingestion.patch`); background in
-`sandbox/scripts/spikes/fork-indexer-checkpoints/SPIKE-NOTES.md`. The fork chain
-resumes mainnet checkpoint numbering from the `FORK_CHECKPOINT` pin — wipe
-Postgres (`down -v`) whenever the fork chain is reset (watermarks ignore
-`--first-checkpoint`).
+Wiring resolves from devstack state, not env: the members get the fork RPC URL
+from the sui member's `hostGateway.rpcUrl` (the ACTUAL brokered port, not a
+hardcoded 51002), the Postgres DSN from the postgres member, and
+`FIRST_CHECKPOINT` from the same `resolveForkCheckpoint()` pin the fork boots
+from. `dependsOn` edges give readiness ordering (indexer/server gate on fork +
+postgres; pools-seed on indexer migrations). One compose-parity loss to know:
+devstack containers have **no restart policy** (compose had `unless-stopped`) —
+a crashed member stays down until `pnpm down && pnpm deploy-all`.
+
+The indexer image is a local build from `sandbox/docker/deepbook-indexer-fork/`
+(submodule source + `rpc-ingestion.patch`; background in
+`sandbox/scripts/spikes/fork-indexer-checkpoints/SPIKE-NOTES.md`). devstack's
+`ensureImage` can't pass `--build-context`, so the Dockerfile uses a single
+REPO-ROOT context with a `Dockerfile.dockerignore` allowlist; a COLD build is a
+full Rust release build (tens of minutes, cached after). The fork chain resumes
+mainnet checkpoint numbering from the `FORK_CHECKPOINT` pin — Postgres must be
+wiped whenever the fork chain is reset (watermarks ignore `--first-checkpoint`),
+which `devstack wipe` (run by `pnpm down`) now does structurally: the postgres
+member keeps its data in the container's writable layer (PGDATA relocated off
+the image's VOLUME path), so removing the container IS the wipe.
 
 Every sui-fork defect the sandbox has found (and how each is worked around)
 is cataloged in `sandbox/SUI-FORK-ISSUES.md` — the upstream hand-off list;
@@ -63,24 +81,30 @@ Price/Depth panels; source diff `dashboard-ui-app.patch`, recipe in that
 README). All upstream asks are recorded on SEDEFI-444. Because pnpm 11 only
 reads `patchedDependencies` from `pnpm-workspace.yaml`, installs in
 `devstack-plugins/` must NOT use `--ignore-workspace` — it silently skips the
-patch. `deploy-all` also seeds the server's manual `pools` config table from
-`sandbox/deployments/mainnet-fork.json` (`scripts/seed-pools.ts`, idempotent).
+patch. The `pools` config table is seeded at boot by the `pools-seed` task
+member from `sandbox/deployments/mainnet-fork.json` (idempotent); to re-seed a
+live stack run `pnpm exec tsx scripts/seed-pools.ts` (same SQL, shared via
+`devstack-plugins/pools-seed-sql.ts`).
 
 ### Running the Stack
 
 ```bash
 cd sandbox
 
-pnpm deploy-all   # everything: boots devstack detached (waits for fund-ready),
-                  # then the compose remnant. Idempotent — re-run freely.
-pnpm down         # everything: compose down -v + stop supervisor + devstack wipe
+pnpm deploy-all   # everything: boots devstack detached, waits for fund-ready,
+                  # then for every member (incl. containers) to settle.
+                  # Idempotent while healthy — re-run freely; a FAILED member
+                  # needs `pnpm down && pnpm deploy-all` (no re-drive path).
+                  # First run builds the indexer image (a full Rust release
+                  # build, an hour+); STACK_SETTLE_TIMEOUT_MS overrides the budget.
+pnpm down         # everything: stop supervisor + devstack wipe (removes the
+                  # member containers — incl. Postgres, the watermark wipe)
 
 # Supervisor logs (devstack up runs detached; PID in .devstack-supervisor.pid)
 tail -f .devstack-supervisor.log
 
-# Remnant logs / explicit image rebuild
-docker compose logs -f deepbook-indexer
-docker compose build
+# Member container logs (names are devstack-derived; find them by label)
+docker logs -f "$(docker ps --filter label=devstack.plugin=deepbook-indexer --format '{{.Names}}')"
 
 # Fork clock -> wall time (the fork clock never ticks on its own; run this
 # when faucet/trade activity looks stale in the explorer — SEDEFI-453)
@@ -123,7 +147,8 @@ bunx prettier-move -c *.move --write        # Format Move files
 ```bash
 cd sandbox
 
-# Devstack boot smoke (needs Docker + warm patched fork image; local-only)
+# Devstack boot smoke (needs Docker + warm images — patched fork AND the
+# locally-built indexer image, so run `pnpm deploy-all` once first; local-only)
 pnpm test:integration devstack-up
 ```
 

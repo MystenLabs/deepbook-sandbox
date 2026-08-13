@@ -1,0 +1,9 @@
+# Safety net for repo-root-context builds (the fork-indexer image —
+# sandbox/docker/deepbook-indexer-fork/Dockerfile). Under BuildKit the
+# per-Dockerfile Dockerfile.dockerignore allowlist wins; this file only guards
+# the legacy builder (DOCKER_BUILDKIT=0), where shipping the repo root
+# verbatim would upload node_modules, .git, and the submodule target/ tree.
+.git
+**/node_modules
+external/deepbook/target
+**/.devstack

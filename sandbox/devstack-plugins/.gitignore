@@ -2,3 +2,4 @@ node_modules/
 .devstack/
 .DS_Store
 *.log
+.trade-sim-state.json

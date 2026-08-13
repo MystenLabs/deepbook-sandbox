@@ -4,8 +4,8 @@
 
 Environment variables read by the market maker (`config.ts` / `index.ts`):
 
-- `MM_POOLS` - JSON array of per-pool configs (pool id, order size, fallback mid price); written by `deploy-all.ts`
-- `MM_SPREAD_BPS` - Spread in basis points (code default: 500 = 5%; docker-compose sets 10)
+- `MM_POOLS` - JSON array of per-pool configs (pool id, order size, fallback mid price); was written by the retired localnet deploy pipeline — set it manually for host runs
+- `MM_SPREAD_BPS` - Spread in basis points (code default: 500 = 5%; the retired compose service set 10)
 - `MM_LEVELS_PER_SIDE` - Orders per side (default: 30)
 - `MM_LEVEL_SPACING_BPS` - Spacing between grid levels in basis points (default: 100)
 - `MM_REBALANCE_INTERVAL_MS` - Rebalance interval (default: 10000)

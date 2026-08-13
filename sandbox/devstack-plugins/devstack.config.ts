@@ -24,7 +24,13 @@ import {
     deepbookAdminAccountFromManifest,
     deepbookFromManifest,
     deepbookMarginPackagesFromManifest,
+    mainnetForkDeepbookIds,
 } from "./deepbook-known.ts";
+import { indexerMember } from "./indexer-member.ts";
+import { poolsSeedMember } from "./pools-seed.ts";
+import { postgresMember } from "./postgres-member.ts";
+import { serverMember } from "./server-member.ts";
+import { tradeSimMember } from "./trade-sim.ts";
 import { usdcFundingFromCapOwner, USDC_COIN_TYPE } from "./usdc-funding.ts";
 
 export const STACK = process.env.SANDBOX_STACK ?? "deepbook-sandbox";
@@ -105,6 +111,34 @@ const { margin: marginPackage, liquidation: liquidationPackage } =
     deepbookMarginPackagesFromManifest();
 const deepbookAdmin = deepbookAdminAccountFromManifest();
 
+// Container-backed fork-stack members (SEDEFI-445 / DBSF-032) — the former
+// docker-compose remnant (postgres, indexer, server) plus boot-time pools
+// seeding, folded into the one orchestrator. Wiring (fork RPC URL, Postgres
+// DSN, checkpoint pin) resolves from devstack state via dependsOn edges; the
+// package ids ride in from the DBSF-016 manifest (ORIGINAL ids — event type
+// tags carry them, unlike the known member's latestId).
+const manifestIds = mainnetForkDeepbookIds();
+// chainKey: re-pinning the fork (rev or checkpoint) recreates postgres, so
+// stale indexer watermarks can't survive a chain identity change.
+const postgres = postgresMember({ chainKey: `${FORK_REV}:${checkpoint ?? "latest"}` });
+const indexer = indexerMember({
+    sui: suiRef,
+    postgres,
+    ...(checkpoint !== undefined ? { firstCheckpoint: checkpoint } : {}),
+    deepbookPackageId: manifestIds.packages.deepbook.originalId,
+});
+const server = serverMember({
+    sui: suiRef,
+    postgres,
+    deepbookPackageId: manifestIds.packages.deepbook.originalId,
+    deepTokenPackageId: DEEP_COIN_TYPE.split("::")[0]!,
+    marginPackageId: manifestIds.packages.deepbookMargin.originalId,
+});
+const poolsSeed = poolsSeedMember({ postgres, indexer });
+// Continuous self-fill loop so the dashboard's Price panel / ticker stay
+// live (SIM_DISABLED=1 opts out; SIM_POOLS / SIM_INTERVAL_MS tune it).
+const tradeSim = tradeSimMember({ sui: suiRef, postgres, poolsSeed, indexer });
+
 export const members = [
     suiRef,
     whale,
@@ -119,6 +153,11 @@ export const members = [
     deepbookAdmin,
     dashboard(dashboardOpts),
     wallet({ accounts: "all" }),
+    postgres,
+    indexer,
+    server,
+    poolsSeed,
+    tradeSim,
 ];
 
 export default defineDevstack({ members, stackName: STACK });

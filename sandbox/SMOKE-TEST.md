@@ -1,5 +1,10 @@
 # First Smoke (Beta) Test — fork sandbox
 
+> **Historical record.** The compose services this document exercises were
+> folded into devstack as container-backed members and `docker-compose.yml`
+> was deleted (SEDEFI-445 / DBSF-032) — Phase 4's compose commands no longer
+> run. Kept as the record of the original shakedown findings.
+
 Manual, end-to-end shakedown of the `dbsf-005` fork-sandbox work: the devstack
 stack (fork + funding plugins + dashboard), the Pyth update loop, and a
 first **exploratory** pass at pointing the legacy docker-compose services at a
