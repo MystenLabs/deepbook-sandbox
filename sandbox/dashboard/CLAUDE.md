@@ -23,6 +23,23 @@ proxy targets + a pre-funded PRIVATE_KEY; `sandbox-api` serves /manifest and
 - **No owner→coins/balance index**: `listBalances`/`listCoins` return `[]`
   even for fork-local coins; `listOwnedObjects` + BCS content parsing is the
   only balance read, and only fork-local (faucet-funded) objects enumerate.
+- **Only the bundled dev wallet can transact.** External wallets register
+  themselves through the wallet standard (the Slush _extension_ — note
+  `slushWalletConfig: null` only blocks the Slush _web_ wallet) and connect
+  fine, then fail at signing: they reject the `sui:localnet` chain (`Value
+"localnet" does not exist in "Network" enum`) and, if approved anyway,
+  execute against their own 127.0.0.1:9000 localnet default ("Failed to
+  fetch") — the fork is on a brokered port reachable only via this page's
+  same-origin `/api/sui` proxy. The connect modal is therefore filtered to
+  `DEV_WALLET_NAME` (`ConnectButton modalOptions.filterFn`) and `WalletGuard`
+  banners any other wallet restored from a prior session by autoConnect.
+- **Gas budget is a ceiling, not a constant** (`setForkGas`): Sui rejects any
+  tx whose gas balance is below the budget, and fork SUI is faucet-sized — the
+  sandbox-api faucet grants exactly 0.1 SUI, which equalled the old fixed
+  `FORK_GAS_BUDGET`, so every wallet fell below it after its FIRST tx and all
+  later writes died with a raw percent-encoded node error. The budget is now
+  capped to the sender's actual SUI, with a `FORK_GAS_MIN_BUDGET` (0.02 SUI)
+  floor that raises an actionable "top up from the Faucet page" message.
 
 `src/lib/fork.ts` holds all substitutes: derived-dynamic-field reads (BM
 discovery via the registry map — note the `BalanceManagerKey` DEFINING package

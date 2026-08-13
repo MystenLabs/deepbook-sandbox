@@ -34,9 +34,19 @@ export const BALANCE_MANAGER_KEY_DEFINING_PKG =
     "0x00c1a56ec8c4c623a848b2ed2f03d23a25d17570b670c22106f336eb933785cc";
 
 /** Matches devstack's fork-impersonation constants; a plain user tx just
- *  needs any budget that avoids the SDK's dry-run estimation path. */
+ *  needs any budget that avoids the SDK's dry-run estimation path. Used as a
+ *  CEILING — the effective budget is capped to what the sender actually holds
+ *  (setForkGas). */
 export const FORK_GAS_BUDGET = 100_000_000n; // 0.1 SUI
 export const FORK_GAS_PRICE = 1_000n;
+
+/**
+ * Floor for the capped budget. Observed cost of the heaviest trading-page tx
+ * (create + register + share a BalanceManager) is ~11.4M MIST charged, so
+ * 0.02 SUI leaves ample headroom; below it we fail early with an actionable
+ * message instead of letting the node reject the tx.
+ */
+export const FORK_GAS_MIN_BUDGET = 20_000_000n; // 0.02 SUI
 
 /* ------------------------------------------------------------------ */
 /*  Minimal client surface (the dapp-kit SuiGrpcClient's `core`)       */
@@ -291,6 +301,13 @@ export async function sharedObjectArg(
  * execution, so passing several consolidates faucet dust for free. The gas
  * coins must not also be tx inputs — fork deposits split SUI from tx.gas,
  * so that holds.
+ *
+ * The budget is capped to the payment total: a gas budget above what the
+ * sender holds is rejected outright ("Balance of gas object N is lower than
+ * the needed amount"), and the fork's SUI grants are faucet-sized — the
+ * sandbox-api faucet hands out exactly 0.1 SUI, which equals the ceiling, so
+ * an uncapped budget put every wallet below it after its FIRST tx and broke
+ * every subsequent write (Create Balance Manager included).
  */
 export async function setForkGas(core: ForkCore, tx: Transaction, sender: string): Promise<void> {
     const coins = (await listOwnedCoins(core, sender))
@@ -302,10 +319,21 @@ export async function setForkGas(core: ForkCore, tx: Transaction, sender: string
             "No enumerable SUI coins to pay gas with — fund the wallet from the Faucet page first.",
         );
     }
-    tx.setGasBudget(FORK_GAS_BUDGET);
+    const available = coins.reduce((sum, c) => sum + c.balance, 0n);
+    if (available < FORK_GAS_MIN_BUDGET) {
+        throw new Error(
+            `Not enough SUI for gas: wallet holds ${formatSui(available)} SUI, need at least ` +
+                `${formatSui(FORK_GAS_MIN_BUDGET)} SUI. Top up from the Faucet page.`,
+        );
+    }
+    tx.setGasBudget(available < FORK_GAS_BUDGET ? available : FORK_GAS_BUDGET);
     tx.setGasPrice(FORK_GAS_PRICE);
     tx.setGasPayment(coins.map(({ objectId, version, digest }) => ({ objectId, version, digest })));
 }
+
+/** MIST → a short human SUI string for error messages. */
+const formatSui = (mist: bigint): string =>
+    (Number(mist) / 1_000_000_000).toLocaleString("en-US", { maximumFractionDigits: 4 });
 
 /**
  * `balance_manager::deposit<T>` without the SDK's coinWithBalance intent
