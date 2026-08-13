@@ -14,8 +14,6 @@ export const SDK_DOCS = {
     pools: `${DOCS_BASE}/pools`,
 } as const;
 
-/* eslint-disable no-irregular-whitespace */
-
 export function depositSnippet(coinKey: string, amount: number): string {
     return [
         'import { Transaction } from "@mysten/sui/transactions";',

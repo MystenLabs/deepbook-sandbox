@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { Component, type ReactNode } from "react";
+import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import { ConnectButton } from "@mysten/dapp-kit-react/ui";
 import { WalletPopover } from "@/components/wallet-popover";
 import { cn } from "@/lib/utils";
@@ -70,17 +71,51 @@ function Layout({ children }: { children: React.ReactNode }) {
     );
 }
 
+/** Without a boundary, one page's render error unmounts the whole React root
+ *  (nav included) — degrade to an in-page card instead. */
+class RouteErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+    state = { error: null as Error | null };
+
+    static getDerivedStateFromError(error: Error) {
+        return { error };
+    }
+
+    render() {
+        if (this.state.error) {
+            return (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-6">
+                    <p className="text-sm font-semibold text-destructive">This page crashed.</p>
+                    <pre className="mt-2 text-xs whitespace-pre-wrap text-muted-foreground">
+                        {String(this.state.error)}
+                    </pre>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+function AppRoutes() {
+    // Keyed by path so navigating away from a crashed page resets the boundary.
+    const location = useLocation();
+    return (
+        <RouteErrorBoundary key={location.pathname}>
+            <Routes>
+                <Route path="/" element={<HealthPage />} />
+                <Route path="/market-maker" element={<MarketMakerPage />} />
+                <Route path="/trading" element={<TradingPage />} />
+                <Route path="/faucet" element={<FaucetPage />} />
+                <Route path="/deployment" element={<DeploymentPage />} />
+            </Routes>
+        </RouteErrorBoundary>
+    );
+}
+
 export default function App() {
     return (
         <BrowserRouter>
             <Layout>
-                <Routes>
-                    <Route path="/" element={<HealthPage />} />
-                    <Route path="/market-maker" element={<MarketMakerPage />} />
-                    <Route path="/trading" element={<TradingPage />} />
-                    <Route path="/faucet" element={<FaucetPage />} />
-                    <Route path="/deployment" element={<DeploymentPage />} />
-                </Routes>
+                <AppRoutes />
             </Layout>
         </BrowserRouter>
     );

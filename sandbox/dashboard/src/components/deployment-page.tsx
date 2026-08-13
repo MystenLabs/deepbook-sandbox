@@ -60,13 +60,58 @@ const PACKAGE_LABELS: Record<string, string> = {
 /*  DeploymentPage                                                     */
 /* ------------------------------------------------------------------ */
 
+/** The fork manifest (deployments/mainnet-fork.json) nests everything under
+ *  `deepbook` — normalize it into this page's display shape. */
+function normalizeManifest(raw: unknown): DeploymentManifest {
+    const m = raw as {
+        network?: { type?: string };
+        verifiedAt?: string;
+        deepbook?: {
+            packages: Record<string, { latestId: string }>;
+            pools: Record<string, { objectId: string; baseType: string; quoteType: string }>;
+            adminWallet: string;
+        };
+    };
+    if (m.network?.type === "fork" && m.deepbook) {
+        return {
+            network: {
+                type: "fork",
+                rpcUrl: "/api/sui (brokered fork RPC)",
+                faucetUrl: "/api/faucet",
+            },
+            packages: Object.fromEntries(
+                Object.entries(m.deepbook.packages).map(([key, pkg]) => [
+                    key,
+                    { packageId: pkg.latestId, transactionDigest: "", objects: [] },
+                ]),
+            ),
+            pools: Object.fromEntries(
+                Object.entries(m.deepbook.pools).map(([key, pool]) => [
+                    key,
+                    {
+                        poolId: pool.objectId,
+                        baseCoinType: pool.baseType,
+                        quoteCoinType: pool.quoteType,
+                    },
+                ]),
+            ),
+            marginPools: {},
+            deploymentTime: m.verifiedAt ?? new Date(0).toISOString(),
+            deployerAddress: m.deepbook.adminWallet,
+        };
+    }
+    return raw as DeploymentManifest;
+}
+
 export function DeploymentPage() {
     const manifest = useQuery<DeploymentManifest>({
-        queryKey: ["deployment-manifest"],
+        // NOT ["deployment-manifest"] — that key caches the RAW manifest for
+        // useDeepBookClient; this page caches a normalized display shape.
+        queryKey: ["deployment-manifest-display"],
         queryFn: async () => {
             const r = await fetch("/api/manifest");
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.json();
+            return normalizeManifest(await r.json());
         },
         refetchInterval: REFETCH_INTERVAL,
         retry: false,

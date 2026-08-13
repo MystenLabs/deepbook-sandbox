@@ -33,17 +33,25 @@ routed by Host header `api.deepbook-sandbox.devstack-plugins.localhost` on port
 9810), and — since SEDEFI-445 (DBSF-032) — **container-backed members** for the
 former docker-compose remnant (the compose file is deleted):
 
-| Member (plugin module)              | Description                                              | Host ports            |
-| ----------------------------------- | -------------------------------------------------------- | --------------------- |
-| **postgres** (`postgres-member.ts`) | Database for the indexer (data in the writable layer)    | 5432                  |
-| **indexer** (`indexer-member.ts`)   | Ingests DeepBook events from the fork over gRPC          | 9184 (metrics)        |
-| **server** (`server-member.ts`)     | REST API for indexed data (live-RPC endpoints degraded¹) | 9008, 9186 (metrics²) |
-| **pools-seed** (`pools-seed.ts`)    | Task: seeds the server's manual `pools` config table     | —                     |
+| Member (plugin module)                         | Description                                              | Host ports            |
+| ---------------------------------------------- | -------------------------------------------------------- | --------------------- |
+| **postgres** (`postgres-member.ts`)            | Database for the indexer (data in the writable layer)    | 5432                  |
+| **indexer** (`indexer-member.ts`)              | Ingests DeepBook events from the fork over gRPC          | 9184 (metrics)        |
+| **server** (`server-member.ts`)                | REST API for indexed data (live-RPC endpoints degraded¹) | 9008, 9186 (metrics²) |
+| **pools-seed** (`pools-seed.ts`)               | Task: seeds the server's manual `pools` config table     | —                     |
+| **registry-init** (`registry-init.ts`)         | Task: admin-impersonated `init_balance_manager_map`³     | —                     |
+| **sandbox-api** (`sandbox-api.ts`)             | Old `sandbox/api` contract: GET /manifest, POST /faucet⁴ | 9009                  |
+| **trading-dashboard** (`trading-dashboard.ts`) | The old trading dashboard's Vite dev server (SEDEFI-456) | 5173                  |
 
 ¹ Degraded on the fork: the server's live reads (/status, /orderbook,
 /deep_supply, /fees, /margin_supply) are JSON-RPC and the fork is gRPC-only;
 Postgres-backed endpoints work — see `server-member.ts`'s header.
 ² Not 9185 — the devstack router pre-claims it.
+³ Mainnet never initialized the registry's owner→BalanceManager map, so
+user-driven BM registration would abort without it; idempotent per chain.
+⁴ In-process HTTP (not a container): the funding strategies only exist inside
+the supervisor, and the devstack dashboard's `fund` mutation cannot route SUI
+on a fork — DEEP/USDC only.
 
 Wiring resolves from devstack state, not env: the members get the fork RPC URL
 from the sui member's `hostGateway.rpcUrl` (the ACTUAL brokered port, not a
@@ -179,13 +187,22 @@ AC — blocked on fork gas funding, sui#27520). Config env vars (`MM_*`) in
 
 ## Trading Page (Dashboard)
 
-The trading dashboard's localnet container and the `sandbox/api/` faucet/trading
-service were retired with the compose stack (DBSF-022); the dashboard code stays
-pending its devstack `hostService` reshape with fork-mode wiring (DBSF-022 AC).
-Architecture notes for the user-facing Trading page — user-driven BM creation,
-on-chain BM discovery, registry-map init, wallet-swap keying — live in
-`sandbox/dashboard/CLAUDE.md` (loads when you work under `sandbox/dashboard/`).
-Read that before touching any trading flow.
+The old trading dashboard is BACK as the `trading-dashboard` devstack member
+(SEDEFI-456): `pnpm deploy-all` serves it at http://localhost:5173 with a
+pre-funded auto-connected dev wallet (key persisted in
+`devstack-plugins/.trading-dashboard-key.json`, gitignored). Fork-mode wiring:
+the member passes the brokered RPC/server/api proxy targets as env to Vite;
+the browser's chain traffic rides the same-origin `/api/sui` proxy. On the
+fork every deepbook SDK read helper AND unresolved `tx.object(id)` build-time
+resolution ride `simulate_transaction` (unsupported — SUI-FORK-ISSUES #7), so
+`sandbox/dashboard/src/lib/fork.ts` provides derived-dynamic-field reads,
+server-backed prices/orders, and raw concrete-ref PTB builders with explicit
+gas; hooks branch on `isForkManifest`. The retired `sandbox/api/` service's
+contract lives on in the `sandbox-api` member (port 9009). Architecture notes
+for the Trading page — user-driven BM creation, on-chain BM discovery,
+registry-map init, wallet-swap keying — live in `sandbox/dashboard/CLAUDE.md`
+(loads when you work under `sandbox/dashboard/`). Read that before touching
+any trading flow.
 
 ## SDK Integration Examples
 

@@ -24,7 +24,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 interface FaucetResponse {
     service: string;
     network: string;
-    deployer: string;
+    /** Localnet-era field; the fork-mode sandbox-api member omits it. */
+    deployer?: string;
 }
 
 interface OracleResponse {
@@ -388,7 +389,9 @@ export function HealthPage() {
                             <MetricValue
                                 isLoading={faucet.isLoading}
                                 value={
-                                    faucet.data ? truncateAddress(faucet.data.deployer) : undefined
+                                    faucet.data?.deployer
+                                        ? truncateAddress(faucet.data.deployer)
+                                        : undefined
                                 }
                             />
                         </MetricRow>

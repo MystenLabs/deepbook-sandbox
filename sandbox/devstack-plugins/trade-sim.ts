@@ -75,6 +75,7 @@ import { mainnetForkDeepbookIds } from "./deepbook-known.ts";
 import type { indexerMember } from "./indexer-member.ts";
 import type { poolsSeedMember } from "./pools-seed.ts";
 import type { postgresMember } from "./postgres-member.ts";
+import type { registryInitMember } from "./registry-init.ts";
 
 const MEMBER = "trade-sim";
 const fail = memberError(MEMBER);
@@ -226,6 +227,10 @@ export type TradeSimOptions = {
     /** ordering only: fills need the pools config + a live ingestion path. */
     poolsSeed: ReturnType<typeof poolsSeedMember>;
     indexer: ReturnType<typeof indexerMember>;
+    /** ordering only: the sim's boot-time clock catch-up must NOT be a fresh
+     *  chain's first commit (SUI-FORK-ISSUES #9) — registry-init lands the
+     *  framework pre-warm and the first real txs before it. */
+    registryInit: ReturnType<typeof registryInitMember>;
     /** pool names from the manifest (default DEEP_SUI — the whitelisted,
      *  zero-fee pool; env SIM_POOLS). */
     pools?: string[];
@@ -259,6 +264,7 @@ export function tradeSimMember(opts: TradeSimOptions) {
             postgres: opts.postgres,
             poolsSeed: opts.poolsSeed,
             indexer: opts.indexer,
+            registryInit: opts.registryInit,
         },
         start: (deps) =>
             Effect.gen(function* () {
