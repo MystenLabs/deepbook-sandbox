@@ -3,6 +3,11 @@
 `nginx.conf` replicates the Vite dev-server proxy for the Dockerized build — keep
 the two in sync when adding proxied routes.
 
+Routes render inside a pathname-keyed error boundary (`App.tsx`): a page's
+render error shows an in-page card instead of unmounting the whole root. A
+fully black page with only the dev-wallet widget (its own separate React root)
+means a render crash escaped the boundary — check the browser console.
+
 ## Fork mode (SEDEFI-456)
 
 The dashboard runs against the devstack mainnet fork as the `trading-dashboard`
