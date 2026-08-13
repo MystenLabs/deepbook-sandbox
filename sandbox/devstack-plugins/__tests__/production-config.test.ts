@@ -28,11 +28,12 @@ describe("production devstack.config.ts", () => {
                 "deepbook-indexer",
                 "deepbook-server",
                 "pools-seed",
+                "trade-sim",
             ]),
         );
         // sui, whale, deepFunding, deepCoin, usdcMinter, usdcFunding, usdcCoin,
         // deepbook, margin, liquidation, admin, dashboard, wallet,
-        // postgres, indexer, server, pools-seed
-        expect(members).toHaveLength(17);
+        // postgres, indexer, server, pools-seed, trade-sim
+        expect(members).toHaveLength(18);
     });
 });

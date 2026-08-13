@@ -162,6 +162,11 @@ export function serverMember(opts: ServerMemberOptions) {
                     // overriding the binary's mainnet default).
                     DEEP_TREASURY_ID: process.env.DEEP_TREASURY_ID?.trim() ?? "",
                     MARGIN_PACKAGE_ID: marginPackageId,
+                    // The margin-metrics poller is useless on the fork (its RPC is
+                    // JSON-RPC) — entry.sh doesn't pass the flag, so the env wins:
+                    // one tick a day instead of every 30s of log noise.
+                    MARGIN_POLL_INTERVAL_SECS:
+                        process.env.MARGIN_POLL_INTERVAL_SECS?.trim() || "86400",
                     RUST_LOG: process.env.RUST_LOG?.trim() || "info",
                 };
                 // hostIp: single IPv4 binding — docker's implicit IPv6 twin fails

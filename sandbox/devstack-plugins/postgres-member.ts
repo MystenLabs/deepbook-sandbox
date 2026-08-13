@@ -176,6 +176,11 @@ export function postgresMember(opts: PostgresMemberOptions = {}) {
                         }),
                         env,
                         ports,
+                        // The server opens up to 3×100 pooled connections and the
+                        // fork indexer another 250 — the image's stock
+                        // max_connections=100 invites "too many connections" after
+                        // reconnect storms (observed when this container bounced).
+                        command: ["postgres", "-c", "max_connections=500"],
                         stopGraceSeconds: 20,
                         networkAttach: [{ name: network, aliases: [NETWORK_ALIAS] }],
                     },

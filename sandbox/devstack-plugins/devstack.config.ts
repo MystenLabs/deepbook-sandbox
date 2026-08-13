@@ -30,6 +30,7 @@ import { indexerMember } from "./indexer-member.ts";
 import { poolsSeedMember } from "./pools-seed.ts";
 import { postgresMember } from "./postgres-member.ts";
 import { serverMember } from "./server-member.ts";
+import { tradeSimMember } from "./trade-sim.ts";
 import { usdcFundingFromCapOwner, USDC_COIN_TYPE } from "./usdc-funding.ts";
 
 export const STACK = process.env.SANDBOX_STACK ?? "deepbook-sandbox";
@@ -134,6 +135,9 @@ const server = serverMember({
     marginPackageId: manifestIds.packages.deepbookMargin.originalId,
 });
 const poolsSeed = poolsSeedMember({ postgres, indexer });
+// Continuous self-fill loop so the dashboard's Price panel / ticker stay
+// live (SIM_DISABLED=1 opts out; SIM_POOLS / SIM_INTERVAL_MS tune it).
+const tradeSim = tradeSimMember({ sui: suiRef, postgres, poolsSeed, indexer });
 
 export const members = [
     suiRef,
@@ -153,6 +157,7 @@ export const members = [
     indexer,
     server,
     poolsSeed,
+    tradeSim,
 ];
 
 export default defineDevstack({ members, stackName: STACK });
