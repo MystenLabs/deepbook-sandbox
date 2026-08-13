@@ -14,17 +14,18 @@ Findings are against rev `16f1402387c7ce0f9310e57610428efec930dbf4`
 image context (`scripts/spikes/devstack-funding/.fork-patched/images/sui-fork/`,
 gitignored — the Dockerfile applies the patches at build time).
 
-| #   | Issue                                                | Blast radius                              | Local mitigation                            | Upstream status                             |
-| --- | ---------------------------------------------------- | ----------------------------------------- | ------------------------------------------- | ------------------------------------------- |
-| 1   | `todo!()` index stubs SIGABRT the whole fork process | any RPC touching them kills the chain     | image patch: stubs → benign empties         | SEDEFI-447; sui#27520 (unmergeable, see #3) |
-| 2   | execution-path child reads don't lazy-fetch          | most Move calls touching mainnet state    | pre-warm objects by id via gRPC             | SEDEFI-448                                  |
-| 3   | fork-genesis regression on every rev after ~Jul 8    | can't bump the rev; blocks the #27520 fix | stay pinned to `16f1402387`                 | SEDEFI-449                                  |
-| 4   | protocol-130 framework skew panic-aborts execution   | any tx against post-2026-07-31 state      | `FORK_CHECKPOINT=304941000` pin             | SEDEFI-450                                  |
-| 5   | `availableRange` phones home uncached                | flaky checkpoint reads, boots, indexer    | image patch: memoize first answer           | SEDEFI-452                                  |
-| 6   | checkpoint timestamps frozen at the on-chain Clock   | fills invisible to time-windowed readers  | `pnpm clock:sync` / advance around trading  | SEDEFI-453                                  |
-| 7   | `simulate_transaction` unsupported                   | all SDK read paths (devInspect)           | none — SDK examples stay blocked            | SEDEFI-358 / sui#27520                      |
-| 8   | (devstack) `advanceClock` mutation no-ops on fork    | silent — returns `ok: true`               | shell out to the `sui-fork` CLI             | SEDEFI-454                                  |
-| 9   | fresh-chain first commit panic-aborts (framework)    | first fork-local commit on a fresh chain  | registry-init pre-warms 0x1/0x2/0x3/0x5/0x6 | new (SEDEFI-456 find) — ticket TBD          |
+| #   | Issue                                                   | Blast radius                              | Local mitigation                              | Upstream status                             |
+| --- | ------------------------------------------------------- | ----------------------------------------- | --------------------------------------------- | ------------------------------------------- |
+| 1   | `todo!()` index stubs SIGABRT the whole fork process    | any RPC touching them kills the chain     | image patch: stubs → benign empties           | SEDEFI-447; sui#27520 (unmergeable, see #3) |
+| 2   | execution-path child reads don't lazy-fetch             | most Move calls touching mainnet state    | pre-warm objects by id via gRPC               | SEDEFI-448                                  |
+| 3   | fork-genesis regression on every rev after ~Jul 8       | can't bump the rev; blocks the #27520 fix | stay pinned to `16f1402387`                   | SEDEFI-449                                  |
+| 4   | protocol-130 framework skew panic-aborts execution      | any tx against post-2026-07-31 state      | `FORK_CHECKPOINT=304941000` pin               | SEDEFI-450                                  |
+| 5   | `availableRange` phones home uncached                   | flaky checkpoint reads, boots, indexer    | image patch: memoize first answer             | SEDEFI-452                                  |
+| 6   | checkpoint timestamps frozen at the on-chain Clock      | fills invisible to time-windowed readers  | `pnpm clock:sync` / advance around trading    | SEDEFI-453                                  |
+| 7   | `simulate_transaction` unsupported                      | all SDK read paths (devInspect)           | none — SDK examples stay blocked              | SEDEFI-358 / sui#27520                      |
+| 8   | (devstack) `advanceClock` mutation no-ops on fork       | silent — returns `ok: true`               | shell out to the `sui-fork` CLI               | SEDEFI-454                                  |
+| 9   | fresh-chain first commit panic-aborts (framework)       | first fork-local commit on a fresh chain  | registry-init pre-warms 0x1/0x2/0x3/0x5/0x6   | new (SEDEFI-456 find) — ticket TBD          |
+| 10  | `GetObject` 404s on fork-CREATED dynamic-field children | fork-local balances read as zero/absent   | none — read the parent's `size`/trust effects | new (SEDEFI-459/460 find) — ticket TBD      |
 
 ## 1. `todo!()` index stubs panic-abort the process
 
@@ -58,6 +59,11 @@ half-materialized); the original find (shared-object variant) is
 **Local:** pre-warm every needed object by id with a gRPC read first
 (`deriveDynamicFieldID` + `GetObject`); where the object set is unknowable
 (deep book structures), skip the operation (see `scripts/seed-trades.ts`).
+For a DeepBook pool the set IS enumerable, so the dashboard now walks it:
+`prewarmPoolBook` (`dashboard/src/lib/fork.ts`) reads the pool's `Versioned`
+inner, then both `BigVector` order books root-slice-first down to every leaf,
+before any order is built. Without it a market order that crosses
+mainnet-inherited liquidity aborts the moment matching reaches an unread leaf.
 **Upstream ask:** route execution-time child/shared-object reads through the
 same lazy-fetch path gRPC reads use.
 
@@ -152,3 +158,26 @@ id before the stack's first execution (the established issue-#2 pre-warm
 recipe, applied to system state).
 **Upstream ask:** seed the framework packages (and other system state) into
 the store at fork genesis instead of relying on lazy materialization.
+
+## 10. `GetObject` 404s on dynamic-field children created by fork-local txs
+
+The inverse of issue #2: a dynamic-field child object _written by a fork-local
+transaction_ is not served by gRPC `GetObject`, even though the transaction
+effects list it as `Created`/`ObjectWrite`. Confirmed on a DeepBook market buy
+(SEDEFI-459/460): the fill created the taker's `BalanceKey<DEEP>` entry in the
+BalanceManager's `Bag` — the effects' created id matches
+`deriveDynamicFieldID(bag, "<original>::balance_manager::BalanceKey<DEEP>",
+[0])` byte for byte — yet reading that id returns "Object … not found". The
+Bag's own `size` field went 2 → 3, so the entry is really there. Older entries
+on the same Bag (a SUI deposit from an earlier session) read back fine, so it
+is the recently-created ones that are invisible; `pnpm clock:sync` does not
+flush it, and `listDynamicFields` on the parent returns `[]` (index-backed,
+like `listBalances`/`listCoins`).
+
+**Blast radius:** any fork-local balance the UI reads by derived field id. On
+the Trading page a filled buy leaves "Balance Manager Funds" showing 0 for the
+coin just bought, even though the funds are credited on-chain.
+**Local:** none that restores the read — read the parent container's `size`,
+or trust the transaction effects, to confirm the write landed.
+**Upstream ask:** serve locally-written child objects from the same store the
+execution write-set commits to.

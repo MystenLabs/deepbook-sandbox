@@ -87,6 +87,7 @@ export function TradingPage() {
                     <MarketOrderCard
                         poolKey={POOL_KEY}
                         minSize={poolParams.data?.minSize}
+                        lotSize={poolParams.data?.lotSize}
                         onPlace={trading.placeMarketOrder}
                     />
                     <LimitOrderCard
@@ -94,6 +95,7 @@ export function TradingPage() {
                         midPrice={midPrice.data}
                         tickSize={poolParams.data?.tickSize}
                         minSize={poolParams.data?.minSize}
+                        lotSize={poolParams.data?.lotSize}
                         onPlace={trading.placeLimitOrder}
                     />
                     <OpenOrders
