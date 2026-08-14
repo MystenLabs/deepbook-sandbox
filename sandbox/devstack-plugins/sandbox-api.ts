@@ -44,9 +44,10 @@ const GRANTS: Record<string, bigint> = {
     DEEP: 1_000_000_000n, // 1000 DEEP (6 dp)
     USDC: 1_000_000_000n, // 1000 USDC (6 dp)
 };
-/** SUI grant when falling back to the whale's small pinned coin
- *  (fork-sui-grant.ts — the fork faucet strategy is structurally null). */
-const SUI_WHALE_GRANT_MIST = 100_000_000n; // 0.1 SUI
+/** SUI grant via the impersonated donor (fork-sui-grant.ts — the fork faucet
+ *  strategy is structurally null, so this is the path that actually runs).
+ *  Sized against that donor's ~5.5k SUI coin, so ~54 grants per fork. */
+const SUI_WHALE_GRANT_MIST = 100_000_000_000n; // 100 SUI
 
 const readBody = (req: IncomingMessage): Promise<string> =>
     new Promise((resolveBody, reject) => {
