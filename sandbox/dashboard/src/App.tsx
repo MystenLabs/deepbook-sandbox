@@ -2,6 +2,8 @@ import { Component, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import { ConnectButton } from "@mysten/dapp-kit-react/ui";
 import { WalletPopover } from "@/components/wallet-popover";
+import { WalletGuard } from "@/components/wallet-guard";
+import { DEV_WALLET_NAME } from "@/dapp-kit";
 import { cn } from "@/lib/utils";
 import { FaucetPage } from "@/components/faucet-page";
 import { HealthPage } from "@/components/health-page";
@@ -62,11 +64,18 @@ function Layout({ children }: { children: React.ReactNode }) {
                     {/* Right */}
                     <div className="ml-auto flex items-center gap-2">
                         <WalletPopover />
-                        <ConnectButton />
+                        {/* Only the bundled dev wallet can transact against the
+                            fork — see DEV_WALLET_NAME in src/dapp-kit.ts. */}
+                        <ConnectButton
+                            modalOptions={{ filterFn: (w) => w.name === DEV_WALLET_NAME }}
+                        />
                     </div>
                 </div>
             </header>
-            <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
+            <main className="mx-auto max-w-7xl px-6 py-8">
+                <WalletGuard />
+                {children}
+            </main>
         </div>
     );
 }

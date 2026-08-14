@@ -43,6 +43,8 @@ import {
     type FaucetUnreachable,
 } from "@mysten-incubation/devstack";
 
+import { cappedForkGasBudget } from "./fork-sui-grant.ts";
+
 /** Mainnet native USDC coin type — the fork inherits mainnet state. */
 export const USDC_COIN_TYPE =
     "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC";
@@ -181,11 +183,13 @@ async function buildSponsoredBytes(
     sender: string,
     gasOwner: string,
     gas: ObjRef,
+    /** capped to the gas coin's balance — see cappedForkGasBudget */
+    budget: bigint,
 ): Promise<Uint8Array> {
     tx.setSender(sender);
     tx.setGasOwner(gasOwner);
     tx.setGasPayment([gas]);
-    tx.setGasBudget(FORK_GAS_BUDGET);
+    tx.setGasBudget(budget);
     tx.setGasPrice(FORK_GAS_PRICE);
     if (tx.getData().expiration == null) tx.setExpiration({ None: true });
     await tx.prepareForSerialization({});
@@ -296,7 +300,8 @@ export function usdcFundingStrategy(args: UsdcFundingStrategyArgs): AccountFundi
                     tx.pure.u64(allowance),
                 ],
             });
-            const bytes = await buildSponsoredBytes(tx, minter, gasSponsor, gas);
+            const budget = await cappedForkGasBudget(core, gasCoinId, FORK_GAS_BUDGET);
+            const bytes = await buildSponsoredBytes(tx, minter, gasSponsor, gas, budget);
             let raw: unknown;
             try {
                 raw = await core.executeTransaction({
@@ -309,7 +314,7 @@ export function usdcFundingStrategy(args: UsdcFundingStrategyArgs): AccountFundi
                     minter,
                     minter,
                     0n,
-                    "fork executeTransaction failed (configure; transport).",
+                    `fork executeTransaction failed (configure): ${String(c).slice(0, 300)}`,
                     c,
                 );
             }
@@ -359,7 +364,8 @@ export function usdcFundingStrategy(args: UsdcFundingStrategyArgs): AccountFundi
                 tx.pure.address(address),
             ],
         });
-        const bytes = await buildSponsoredBytes(tx, minter, gasSponsor, gas);
+        const budget = await cappedForkGasBudget(core, gasCoinId, FORK_GAS_BUDGET);
+        const bytes = await buildSponsoredBytes(tx, minter, gasSponsor, gas, budget);
         let raw: unknown;
         try {
             raw = await core.executeTransaction({
@@ -372,7 +378,7 @@ export function usdcFundingStrategy(args: UsdcFundingStrategyArgs): AccountFundi
                 minter,
                 address,
                 amount,
-                "fork executeTransaction failed (mint; transport).",
+                `fork executeTransaction failed (mint): ${String(c).slice(0, 300)}`,
                 c,
             );
         }

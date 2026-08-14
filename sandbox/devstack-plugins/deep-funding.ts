@@ -46,6 +46,8 @@ import {
     type FaucetUnreachable,
 } from "@mysten-incubation/devstack";
 
+import { cappedForkGasBudget } from "./fork-sui-grant.ts";
+
 /** Mainnet DEEP coin type — the fork inherits mainnet state, so this is the real
  *  mainnet package, not the localnet-deployed DEEP. */
 export const DEEP_COIN_TYPE =
@@ -217,9 +219,11 @@ async function buildImpersonationBytes(
     tx: Transaction,
     sender: string,
     gas: CoinRef,
+    /** capped to the gas coin's balance — see cappedForkGasBudget */
+    budget: bigint,
 ): Promise<Uint8Array> {
     tx.setSender(sender);
-    tx.setGasBudget(FORK_GAS_BUDGET);
+    tx.setGasBudget(budget);
     tx.setGasPrice(FORK_GAS_PRICE);
     tx.setGasOwner(sender);
     tx.setGasPayment([gas]);
@@ -343,8 +347,14 @@ export function deepFundingStrategy(args: DeepFundingStrategyArgs): AccountFundi
                     const [chunk] = tx.splitCoins(tx.objectRef(deepCoin), [tx.pure.u64(amount)]);
                     tx.transferObjects([chunk], address);
 
+                    // The donor's SUI coin is small and shared with every other
+                    // grant, so the budget is a ceiling, not a constant.
+                    const budget = yield* Effect.tryPromise({
+                        try: () => cappedForkGasBudget(core, gasCoinId, FORK_GAS_BUDGET),
+                        catch: (c) => bodyError(donor, address, amount, String(c)),
+                    });
                     const bytes = yield* Effect.tryPromise({
-                        try: () => buildImpersonationBytes(tx, donor, gas),
+                        try: () => buildImpersonationBytes(tx, donor, gas, budget),
                         catch: (c) =>
                             bodyError(
                                 donor,
@@ -369,7 +379,10 @@ export function deepFundingStrategy(args: DeepFundingStrategyArgs): AccountFundi
                                 donor,
                                 address,
                                 amount,
-                                "fork executeTransaction failed (transport).",
+                                // NOT always transport: the fork also THROWS when
+                                // the gas coin can't cover the declared budget, so
+                                // surface the cause instead of hiding it.
+                                `fork executeTransaction failed: ${String(c).slice(0, 300)}`,
                                 c,
                             ),
                     });

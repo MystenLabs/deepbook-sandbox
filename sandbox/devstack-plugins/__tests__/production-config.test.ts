@@ -29,11 +29,15 @@ describe("production devstack.config.ts", () => {
                 "deepbook-server",
                 "pools-seed",
                 "trade-sim",
+                "registry-init",
+                "sandbox-api",
+                "trading-dashboard",
             ]),
         );
         // sui, whale, deepFunding, deepCoin, usdcMinter, usdcFunding, usdcCoin,
         // deepbook, margin, liquidation, admin, dashboard, wallet,
-        // postgres, indexer, server, pools-seed, trade-sim
-        expect(members).toHaveLength(18);
+        // postgres, indexer, server, pools-seed, trade-sim,
+        // registry-init, sandbox-api, trading-dashboard (last three: SEDEFI-445/456)
+        expect(members).toHaveLength(21);
     });
 });

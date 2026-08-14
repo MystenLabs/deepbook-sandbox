@@ -130,10 +130,37 @@ Notes:
   script detects a newer upgrade via `listPackageVersions`. (Don't trust
   `@mysten/deepbook-v3`'s `mainnetPackageIds` as the source of truth — 1.5.0
   lags mainnet for margin, pinning v5.)
-- The admin wallet holds no enumerable SUI on a fresh fork — fund its gas from
-  the SUI donor first (same pattern as the spikes; see `create-pool-as-admin.mjs`,
-  but note that spike still defaults to the stale v6 package id — override via
+- The admin wallet holds no _enumerable_ SUI on a fresh fork (the fork builds no
+  owner→coins index, so `listCoins` is empty) — but it does hold mainnet SUI,
+  reachable by known object id. That is what the SUI donor below draws on; for
+  the admin's own gas, a grant lands a fork-local coin, which IS enumerable
+  (same pattern as the spikes; see `create-pool-as-admin.mjs`, but note that
+  spike still defaults to the stale v6 package id — override via
   `DEEPBOOK_PACKAGE_ID` or use the manifest's `latestId`).
+
+## SUI donor
+
+SUI cannot be minted on a fork, so grants transfer from an impersonated holder's
+real coin. This is a **different donor from DEEP**, for capacity reasons:
+
+|                 |                                                                                                          |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| **Address**     | `0xd0ec0b201de6b4e7f425918bbd7151c37fc1b06c59b3961a2a00db74f6ea865e` (the DeepBook admin wallet, above)  |
+| **Coin object** | `0xd99d6529c67e2330a856e98c141ff57bc8069e36646523ad2f3981cdec8b6f67` — **5493.977504296 SUI**            |
+| **Holds**       | ~9,504 SUI across 8 coins (mainnet); the coin above is present at the fork pin with an identical balance |
+| **Env vars**    | `SUI_DONOR_ADDRESS`, `SUI_DONOR_COIN_ID`                                                                 |
+| **Verified**    | 2026-08-14, mainnet vs fork (SEDEFI-459/460)                                                             |
+
+The DEEP whale (`0x9548…70d`) was the original SUI source and is **not** viable
+for grants: it holds a single SUI coin worth ~0.7 SUI at the pin. That capped
+faucet grants at 0.1 SUI and, once boot funding drained it below the funding
+plugins' gas budget, broke DEEP/USDC grants too (they pay gas from it). It stays
+the DEEP donor and its own gas payer; only the SUI hand-outs moved.
+
+At 100 SUI per faucet request the donor coin covers ~54 grants per fork, and a
+wipe restores it. If it ever runs dry, point `SUI_DONOR_COIN_ID` at another of
+the admin's coins (`node scripts/refresh-donor-coins.mjs` lists them) — the
+next-largest holds ~3500 SUI.
 
 ## Funding caps (sandbox-wide policy)
 

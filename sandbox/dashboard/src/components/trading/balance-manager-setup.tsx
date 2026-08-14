@@ -17,6 +17,9 @@ import type { CoinKey } from "./types";
 interface BalanceManagerSetupProps {
     isSetup: boolean;
     balanceManagerId: string | null;
+    /** All managers the registry lists for this wallet (picker when > 1). */
+    balanceManagerIds?: string[];
+    onSelectBalanceManager?: (id: string) => void;
     balances?: Record<string, string>;
     walletBalances?: Record<string, string>;
     canCreate: boolean;
@@ -39,6 +42,8 @@ function explorerUrl(objectId: string): string {
 export function BalanceManagerSetup({
     isSetup,
     balanceManagerId,
+    balanceManagerIds = [],
+    onSelectBalanceManager,
     balances,
     walletBalances,
     canCreate,
@@ -154,11 +159,28 @@ export function BalanceManagerSetup({
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-                {/* BM ID with explorer link */}
+                {/* BM ID with explorer link — a picker once the wallet owns
+                    more than one, so a manager whose balances have gone bad
+                    (SUI-FORK-ISSUES #10) can be swapped out. */}
                 <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-xs text-zinc-500">
-                        {balanceManagerId ? truncate(balanceManagerId) : ""}
-                    </span>
+                    {balanceManagerIds.length > 1 ? (
+                        <select
+                            value={balanceManagerId ?? ""}
+                            onChange={(e) => onSelectBalanceManager?.(e.target.value)}
+                            aria-label="Active Balance Manager"
+                            className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-300"
+                        >
+                            {balanceManagerIds.map((id) => (
+                                <option key={id} value={id}>
+                                    {truncate(id)}
+                                </option>
+                            ))}
+                        </select>
+                    ) : (
+                        <span className="font-mono text-xs text-zinc-500">
+                            {balanceManagerId ? truncate(balanceManagerId) : ""}
+                        </span>
+                    )}
                     {balanceManagerId && (
                         <a
                             href={explorerUrl(balanceManagerId)}

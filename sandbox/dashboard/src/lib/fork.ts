@@ -34,9 +34,19 @@ export const BALANCE_MANAGER_KEY_DEFINING_PKG =
     "0x00c1a56ec8c4c623a848b2ed2f03d23a25d17570b670c22106f336eb933785cc";
 
 /** Matches devstack's fork-impersonation constants; a plain user tx just
- *  needs any budget that avoids the SDK's dry-run estimation path. */
+ *  needs any budget that avoids the SDK's dry-run estimation path. Used as a
+ *  CEILING — the effective budget is capped to what the sender actually holds
+ *  (setForkGas). */
 export const FORK_GAS_BUDGET = 100_000_000n; // 0.1 SUI
 export const FORK_GAS_PRICE = 1_000n;
+
+/**
+ * Floor for the capped budget. Observed cost of the heaviest trading-page tx
+ * (create + register + share a BalanceManager) is ~11.4M MIST charged, so
+ * 0.02 SUI leaves ample headroom; below it we fail early with an actionable
+ * message instead of letting the node reject the tx.
+ */
+export const FORK_GAS_MIN_BUDGET = 20_000_000n; // 0.02 SUI
 
 /* ------------------------------------------------------------------ */
 /*  Minimal client surface (the dapp-kit SuiGrpcClient's `core`)       */
@@ -270,8 +280,7 @@ export async function sharedObjectArg(
     const res = await core.getObject({ objectId, include: {} });
     const owner = (
         res.object as
-            | { owner?: { Shared?: { initialSharedVersion?: string | number } } }
-            | undefined
+            { owner?: { Shared?: { initialSharedVersion?: string | number } } } | undefined
     )?.owner;
     const initial = owner?.Shared?.initialSharedVersion;
     if (initial === undefined) {
@@ -291,6 +300,13 @@ export async function sharedObjectArg(
  * execution, so passing several consolidates faucet dust for free. The gas
  * coins must not also be tx inputs — fork deposits split SUI from tx.gas,
  * so that holds.
+ *
+ * The budget is capped to the payment total: a gas budget above what the
+ * sender holds is rejected outright ("Balance of gas object N is lower than
+ * the needed amount"), and the fork's SUI grants are faucet-sized — the
+ * sandbox-api faucet hands out exactly 0.1 SUI, which equals the ceiling, so
+ * an uncapped budget put every wallet below it after its FIRST tx and broke
+ * every subsequent write (Create Balance Manager included).
  */
 export async function setForkGas(core: ForkCore, tx: Transaction, sender: string): Promise<void> {
     const coins = (await listOwnedCoins(core, sender))
@@ -302,10 +318,21 @@ export async function setForkGas(core: ForkCore, tx: Transaction, sender: string
             "No enumerable SUI coins to pay gas with — fund the wallet from the Faucet page first.",
         );
     }
-    tx.setGasBudget(FORK_GAS_BUDGET);
+    const available = coins.reduce((sum, c) => sum + c.balance, 0n);
+    if (available < FORK_GAS_MIN_BUDGET) {
+        throw new Error(
+            `Not enough SUI for gas: wallet holds ${formatSui(available)} SUI, need at least ` +
+                `${formatSui(FORK_GAS_MIN_BUDGET)} SUI. Top up from the Faucet page.`,
+        );
+    }
+    tx.setGasBudget(available < FORK_GAS_BUDGET ? available : FORK_GAS_BUDGET);
     tx.setGasPrice(FORK_GAS_PRICE);
     tx.setGasPayment(coins.map(({ objectId, version, digest }) => ({ objectId, version, digest })));
 }
+
+/** MIST → a short human SUI string for error messages. */
+const formatSui = (mist: bigint): string =>
+    (Number(mist) / 1_000_000_000).toLocaleString("en-US", { maximumFractionDigits: 4 });
 
 /**
  * `balance_manager::deposit<T>` without the SDK's coinWithBalance intent
@@ -385,9 +412,123 @@ type OrderCommon = {
     balanceManagerId: string;
 };
 
+/* ------------------------------------------------------------------ */
+/*  Book pre-warm — the fork does not lazy-fetch children on execution  */
+/* ------------------------------------------------------------------ */
+
+/** BigVector<E>: UID(32) + depth u8 + length/max_slice_size/max_fan_out/
+ *  root_id/last_id (5 × u64). */
+const BIG_VECTOR_BYTES = 73;
+/** BigVector's "no root" sentinel. */
+const NO_SLICE = (1n << 64n) - 1n;
+/** Bound the walk — a pathological book must not stall order placement. */
+const MAX_SLICES_PER_LEVEL = 64;
+
+const u64le = (b: Uint8Array, off: number): bigint =>
+    new DataView(b.buffer, b.byteOffset + off, 8).getBigUint64(0, true);
+
+/** Minimal ULEB128 decode (BCS vector lengths). */
+function readUleb(b: Uint8Array, off: number): { value: number; size: number } {
+    let value = 0;
+    let shift = 0;
+    let size = 0;
+    for (;;) {
+        const byte = b[off + size++] ?? 0;
+        value |= (byte & 0x7f) << shift;
+        if ((byte & 0x80) === 0) break;
+        shift += 7;
+    }
+    return { value, size };
+}
+
+/** Read every slice of one BigVector so the fork holds it locally. */
+async function prewarmBigVector(core: ForkCore, inner: Uint8Array, off: number): Promise<void> {
+    const uid = `0x${bytesToHex(inner.slice(off, off + 32))}`;
+    const depth = inner[off + 32] ?? 0;
+    const length = u64le(inner, off + 33);
+    const rootId = u64le(inner, off + 57);
+    if (length === 0n || rootId === NO_SLICE) return;
+
+    let level = [rootId];
+    for (let d = 0; d <= depth && level.length > 0; d++) {
+        const next: bigint[] = [];
+        for (const sliceId of level.slice(0, MAX_SLICES_PER_LEVEL)) {
+            const fieldId = deriveDynamicFieldID(
+                uid,
+                "u64",
+                bcs.u64().serialize(sliceId).toBytes(),
+            );
+            const res = await core
+                .getObject({ objectId: fieldId, include: { content: true } })
+                .catch(() => null);
+            const sc = res?.object?.content;
+            // Reading is what materializes it; only interior nodes need parsing.
+            if (!sc || d === depth) continue;
+            // Field hdr(40) + Slice.prev(8) + Slice.next(8) + keys vector<u128>
+            // + vals vector<u64> (child slice ids on an interior node).
+            let so = 56;
+            const keys = readUleb(sc, so);
+            so += keys.size + keys.value * 16;
+            const vals = readUleb(sc, so);
+            so += vals.size;
+            for (let i = 0; i < vals.value; i++) next.push(u64le(sc, so + i * 8));
+        }
+        level = next;
+    }
+}
+
+/** Pools whose book has been materialized in this page's lifetime. */
+const prewarmedPools = new Set<string>();
+
+/**
+ * Materialize a pool's order book on the fork before trading against it.
+ *
+ * The fork lazy-fetches objects on RPC reads but NOT on child reads during
+ * execution, so the moment matching walks a BigVector leaf slice that has
+ * never been read locally the whole tx aborts with `MoveAbort … abort code: 1
+ * in 0x2::dynamic_field::borrow_child_object` (EFieldDoesNotExist) — which is
+ * what every market order against mainnet-inherited liquidity used to hit.
+ * A plain getObject on each slice is enough to pull it in. Memoized: the
+ * fork keeps what it has fetched for the life of the chain.
+ */
+export async function prewarmPoolBook(core: ForkCore, poolId: string): Promise<void> {
+    if (prewarmedPools.has(poolId)) return;
+    prewarmedPools.add(poolId);
+    try {
+        const pool = await core.getObject({ objectId: poolId, include: { content: true } });
+        const c = pool.object?.content;
+        if (!c || c.length < 72) return;
+        // Pool { id: UID(32), inner: Versioned { id: UID(32), version: u64 } }
+        const innerFieldId = deriveDynamicFieldID(
+            `0x${bytesToHex(c.slice(32, 64))}`,
+            "u64",
+            bcs.u64().serialize(u64le(c, 64)).toBytes(),
+        );
+        const inner = await core.getObject({
+            objectId: innerFieldId,
+            include: { content: true },
+        });
+        const ic = inner.object?.content;
+        if (!ic) return;
+        // Field hdr(40) + allowed_versions vector<u64> + pool_id(32)
+        // + book{ tick_size, lot_size, min_size (3 × u64), bids, asks }
+        let off = 40;
+        const allowed = readUleb(ic, off);
+        off += allowed.size + allowed.value * 8 + 32 + 24;
+        await prewarmBigVector(core, ic, off); // bids
+        await prewarmBigVector(core, ic, off + BIG_VECTOR_BYTES); // asks
+    } catch {
+        // Best effort: a miss just leaves the old abort in place, and the
+        // layout could shift under a package upgrade.
+        prewarmedPools.delete(poolId);
+    }
+}
+
 /** Shared prologue for the order calls: concrete pool + BM args and an
- *  owner trade proof. */
+ *  owner trade proof. Pre-warms the book first — every one of these calls
+ *  walks it during execution. */
 async function orderPrologue(core: ForkCore, tx: Transaction, args: OrderCommon) {
+    await prewarmPoolBook(core, args.pool.objectId);
     const poolArg = tx.sharedObjectRef({
         objectId: args.pool.objectId,
         initialSharedVersion: String(args.pool.initialSharedVersion),
@@ -432,6 +573,37 @@ export async function forkPlaceLimitOrder(
         ],
         typeArguments: types,
     });
+    settleInto(tx, args, poolArg, bmArg, proof, types);
+}
+
+/**
+ * Reclaim amounts parked on the pool account.
+ *
+ * `place_order_int` already settles the CURRENT order's fills into the
+ * BalanceManager (pool.move — `vault.settle_balance_manager` right after
+ * `state.process_create`), so this is not needed for the order being placed.
+ * What it does collect is the proceeds of YOUR resting maker orders that
+ * someone else filled later: those sit as settled amounts until your next
+ * interaction with the pool. Cheap, and a no-op when nothing is parked.
+ *
+ * If a bought coin still reads as 0 afterwards AND selling it aborts with
+ * `abort code: 3` in `withdraw_with_proof`, that BalanceManager's Bag entry
+ * for the coin has gone unreadable to the VM itself — SUI-FORK-ISSUES #10.
+ * Deposits into it are lost; the only escape is a different BalanceManager.
+ */
+function settleInto(
+    tx: Transaction,
+    args: OrderCommon,
+    poolArg: ReturnType<Transaction["sharedObjectRef"]>,
+    bmArg: ReturnType<Transaction["sharedObjectRef"]>,
+    proof: ReturnType<Transaction["moveCall"]>,
+    types: string[],
+): void {
+    tx.moveCall({
+        target: `${args.deepbookPackageId}::pool::withdraw_settled_amounts`,
+        arguments: [poolArg, bmArg, proof],
+        typeArguments: types,
+    });
 }
 
 export async function forkPlaceMarketOrder(
@@ -460,6 +632,7 @@ export async function forkPlaceMarketOrder(
         ],
         typeArguments: types,
     });
+    settleInto(tx, args, poolArg, bmArg, proof, types);
 }
 
 export async function forkCancelOrder(

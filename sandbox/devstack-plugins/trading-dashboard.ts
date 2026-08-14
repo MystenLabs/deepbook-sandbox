@@ -55,10 +55,14 @@ const FUND_TARGETS: ReadonlyArray<{ symbol: string; typeSuffix: string; amount: 
     { symbol: "USDC", typeSuffix: "::usdc::USDC>", amount: 10_000_000_000n }, // 10k USDC
 ];
 
-/** The fork faucet strategy is structurally null (fork-sui-grant.ts), so SUI
- *  usually comes from the whale's small pinned coin — target modestly: 0.1
- *  SUI covers a tx's max budget; each tx costs ~0.002 actual. */
-const SUI_WHALE_TARGET_MIST = 150_000_000n; // 0.15 SUI
+/** The fork faucet strategy is structurally null (fork-sui-grant.ts), so on a
+ *  fork SUI comes from the impersonated donor — this, not the FUND_TARGETS
+ *  entry above, is the number that actually runs here. It used to be a token
+ *  0.15 SUI because the old donor held ~0.7 SUI in total; the donor now holds
+ *  ~5.5k SUI, so the wallet can start with enough to trade (a 10-DEEP market
+ *  buy costs ~0.23 SUI) instead of needing a faucet trip first. Matches the
+ *  faucet's per-request grant; ~54 boots per fork, and a wipe restores it. */
+const SUI_WHALE_TARGET_MIST = 100_000_000_000n; // 100 SUI
 
 type DashboardCore = {
     getObject: (args: {
