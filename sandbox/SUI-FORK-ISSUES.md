@@ -64,6 +64,22 @@ For a DeepBook pool the set IS enumerable, so the dashboard now walks it:
 inner, then both `BigVector` order books root-slice-first down to every leaf,
 before any order is built. Without it a market order that crosses
 mainnet-inherited liquidity aborts the moment matching reaches an unread leaf.
+
+**Pyth/Wormhole are NOT exempt** (2026-08-14, SEDEFI-317). The DBSF-004 spike
+recorded that "the Pyth/Wormhole shared objects do not trip sui-fork's
+stale-shared-object bug, so no `--object` seeding is needed" — true in June
+against a fork of the live tip, false at the `FORK_CHECKPOINT` pin. A real
+Hermes update PTB fails twice over: input-object checking rejects it with
+`Dependent package not found on-chain: 0x8d97f1cd…` (the pyth ORIGINAL package,
+carried in the type tags), and once that is read, execution aborts in
+`wormhole::package_utils::assert_version` (code 1) — which reads the State's
+`Field<CurrentPackage, PackageInfo>` child, NOT a stale package id. Both
+package ids were verified current at the pin, so an `assert_version` abort here
+is never package skew. The five ids to read first are pinned under `pyth.prewarm`
+in `deployments/mainnet-fork.json`; with them warmed the same PTB lands and
+`get_price_no_older_than(clock, 60)` passes. Enumerate such children against
+MAINNET — the fork's `dynamic_field_iter` is a patched-out stub returning empty
+— and rely on ids being parent+key derived, hence identical on the fork.
 **Upstream ask:** route execution-time child/shared-object reads through the
 same lazy-fetch path gRPC reads use.
 

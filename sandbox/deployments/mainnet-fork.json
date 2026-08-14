@@ -73,5 +73,59 @@
                 "minSize": 10000000
             }
         }
+    },
+    "pyth": {
+        "$comment": "Pyth/Wormhole identities for the oracle loop (SEDEFI-317 / DBSF-013). The package ids here were verified CURRENT at the fork pin — wormhole has never been upgraded (UpgradeCap version 1, latest == original) and pyth is at version 2 — so an `assert_version` abort is NOT package skew. It is SUI-FORK-ISSUES #2: `wormhole::vaa::parse_and_verify` and `package_utils::assert_version` read CHILD objects, which the fork's execution path never lazy-fetches. Every id under `prewarm` must be read once by id (a plain gRPC getObject materializes it) before the first update PTB of a fresh chain, or the update aborts. Re-derive them by enumerating the State objects' dynamic fields against MAINNET (the fork's dynamic_field_iter is a patched-out todo!() stub and returns empty); ids are parent+key derived, so they are identical on the fork.",
+        "packages": {
+            "wormhole": {
+                "originalId": "0x5306f64e312b581766351c07af79c72fcb1cd25147157fdc2f8ad76de9a3fb6a",
+                "latestId": "0x5306f64e312b581766351c07af79c72fcb1cd25147157fdc2f8ad76de9a3fb6a",
+                "latestVersion": 1
+            },
+            "pyth": {
+                "originalId": "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e",
+                "latestId": "0x04e20ddf36af412a4096f9014f4a565af9e812db9a05cc40254846cf6ed0ad91",
+                "latestVersion": 2
+            }
+        },
+        "state": {
+            "wormholeStateId": "0xaeab97f96cf9877fee2883315d459552b2b921edc16d7ceac6eab944dd88919c",
+            "pythStateId": "0x1f9310238ee9298fb703c3419030b35b22bb1cc37113e3bb5007c99aec79e5b8",
+            "guardianSetIndex": 7,
+            "guardianSetsTableId": "0xbe2b4aa736d1294bdd43f7ea33540ccdbb910d934ff2d541c4d4464bf91b2cfb"
+        },
+        "prewarm": [
+            {
+                "objectId": "0x05c376f80be7818a3e55aecbf463125f2680189132246b45ecc24f34eb1ba25b",
+                "what": "wormhole State -> Field<package_utils::CurrentPackage, PackageInfo>",
+                "neededBy": "package_utils::assert_version inside vaa::parse_and_verify"
+            },
+            {
+                "objectId": "0x9091354651edb856a44c2ed1d080889b60e78ff84425f096418f9d8b312698c4",
+                "what": "wormhole State -> guardian_sets Table entry, key u32 7 (the ACTIVE set)",
+                "neededBy": "vaa::parse_and_verify signature check"
+            },
+            {
+                "objectId": "0x48685372bb5866ab8b21a70dec17669b7694a70c72a99320454a914ad3bee03b",
+                "what": "pyth State -> Field<package_utils::CurrentPackage, PackageInfo>",
+                "neededBy": "pyth's own assert_version on the update path"
+            },
+            {
+                "objectId": "0x474210f87e3f9be8014d457754b8f8e91b644d3472fa5754ce57cde24014cc90",
+                "what": "pyth State -> second package_utils field (empty-struct key)",
+                "neededBy": "warmed alongside the above; cheap and avoids a second round trip"
+            },
+            {
+                "objectId": "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e",
+                "what": "pyth ORIGINAL package (the type-tag address)",
+                "neededBy": "input-object checking: 'Dependent package not found on-chain' without it"
+            }
+        ],
+        "verified": {
+            "at": "2026-08-14",
+            "how": "scripts/spikes/pyth/advance-clock-and-update-pyth.mjs run — update tx Efb7Ud4oYK1UkTmnZCtutLkmR7KVBi4TDecsVUxRMbvw succeeded and the verify PTB 9woKJBNJt2WsQGHL4PxVZMZ4yJi8db8NobzDXzig8o1d passed pyth::get_price_no_older_than(clock, 60) with clockAdvancedByMs=0 (the clock-driver member holds the Clock at wall).",
+            "guardianSet": "The fork's guardian_set_index (7) MATCHES the index today's Hermes VAAs are signed with, so no rotation recovery (SEDEFI-319) is needed at this pin.",
+            "suiPriceInfoObject": "0x801dbc2f0053d34734814b2d6df491ce7807a725fe9a01ad74a07e9c51396c37 (feed 0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744) — the only feed exercised end to end; DEEP/USDC resolve from devstack's known table and are unverified on this path."
+        }
     }
 }
