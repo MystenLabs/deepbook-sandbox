@@ -56,6 +56,39 @@ export const coinBalanceFromContent = (content: Uint8Array | undefined): bigint 
     return new DataView(content.buffer, content.byteOffset + 32, 8).getBigUint64(0, true);
 };
 
+/** Floor below which a funding tx cannot pay for itself; the observed cost of
+ *  these grants is ~2-6M MIST, so this leaves ample headroom. */
+export const MIN_FORK_GAS_BUDGET = 20_000_000n; // 0.02 SUI
+
+/**
+ * Cap a fork gas budget to what the payment coin actually holds.
+ *
+ * Sui rejects any transaction whose gas coin holds less than the DECLARED
+ * budget, before execution ("Balance of gas object N is lower than the needed
+ * amount"). The whale's pinned SUI coin is small (~0.25 SUI at the pin) and
+ * boot funding spends most of it on the dev wallet's SUI grant, so a fixed
+ * 0.1 SUI budget breaks every later grant — including DEEP and USDC, which
+ * pay gas from the same coin. Worse, that rejection surfaces as a THROWN
+ * executeTransaction error, which the funding plugins label "(transport)",
+ * making a fully-diagnosable balance problem look like an unreachable fork.
+ */
+export async function cappedForkGasBudget(
+    core: Pick<FullCore, "getObject">,
+    gasCoinId: string,
+    ceiling: bigint,
+): Promise<bigint> {
+    const res = await core.getObject({ objectId: gasCoinId, include: { content: true } });
+    const balance = coinBalanceFromContent(res.object?.content);
+    if (balance < MIN_FORK_GAS_BUDGET) {
+        throw new Error(
+            `fork gas coin ${gasCoinId} holds ${balance} MIST, below the ${MIN_FORK_GAS_BUDGET} ` +
+                `minimum budget — refresh the donor coin (fork SUI is scarce; see ` +
+                `deployments/fork-impersonation.md)`,
+        );
+    }
+    return balance < ceiling ? balance : ceiling;
+}
+
 const executionFailed = (raw: unknown): string | null => {
     type Status = { success?: boolean; error?: unknown };
     type Tx = { status?: Status; effects?: { status?: Status } };

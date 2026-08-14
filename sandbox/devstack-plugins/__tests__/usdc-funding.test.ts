@@ -81,6 +81,8 @@ const revert = (msg: string) => ({
 function stubCore(
     opts: {
         gasPresent?: boolean;
+        /** sponsor coin balance — bounds the gas budget (cappedForkGasBudget) */
+        gasBalance?: bigint;
         mintCapPresent?: boolean; // does getObject(mintCap) resolve as a MintCap?
         execute?: (a: ExecArgs, callIndex: number) => Promise<unknown>;
     } = {},
@@ -94,7 +96,16 @@ function stubCore(
     const core: ForkCore = {
         getObject: async ({ objectId }) => {
             if (objectId === GAS_REF.objectId && (opts.gasPresent ?? true)) {
-                return { object: { ...GAS_REF, type: "0x2::coin::Coin<0x2::sui::SUI>" } };
+                // content = the sponsor coin's balance, which now bounds the gas budget
+                const content = new Uint8Array(40);
+                new DataView(content.buffer).setBigUint64(
+                    32,
+                    opts.gasBalance ?? 250_000_000n,
+                    true,
+                );
+                return {
+                    object: { ...GAS_REF, type: "0x2::coin::Coin<0x2::sui::SUI>", content },
+                };
             }
             if (objectId === MINT_CAP_REF.objectId && (opts.mintCapPresent ?? true)) {
                 return { object: { ...MINT_CAP_REF, type: MINT_CAP_TYPE } };

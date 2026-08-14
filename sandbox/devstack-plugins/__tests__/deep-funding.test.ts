@@ -63,11 +63,25 @@ const revertResult = {
 };
 const okExecute = async (_a: ExecArgs): Promise<unknown> => okResult;
 
+/** Coin<T> BCS content: 32-byte UID then the u64 balance (little-endian) —
+ *  what cappedForkGasBudget parses to size the gas budget. */
+function coinContent(balance: bigint): Uint8Array {
+    const bytes = new Uint8Array(40);
+    new DataView(bytes.buffer).setBigUint64(32, balance, true);
+    return bytes;
+}
+
+/** The donor's pinned SUI coin is small and shared with every other grant, so
+ *  its balance is what bounds the budget. (Live it starts around 0.7 SUI on a
+ *  fresh fork and drains as the session funds wallets.) */
+const DEFAULT_GAS_BALANCE = 250_000_000n; // 0.25 SUI — above the ceiling, so uncapped
+
 // Stub the fork core: getObject resolves the donor's DEEP + gas coins BY ID (the
 // strategy's coin-resolution path); executeTransaction runs the impersonation.
 function stubCore(opts: {
     deepCoinPresent?: boolean; // default true
     gasCoinPresent?: boolean; // default true
+    gasBalance?: bigint; // default DEFAULT_GAS_BALANCE
     execute?: (a: ExecArgs) => Promise<unknown>;
 }): ForkCore {
     return {
@@ -76,7 +90,13 @@ function stubCore(opts: {
                 return { object: { ...DEEP_REF, type: `0x2::coin::Coin<${DEEP_COIN_TYPE}>` } };
             }
             if (objectId === SUI_REF.objectId && (opts.gasCoinPresent ?? true)) {
-                return { object: { ...SUI_REF, type: "0x2::coin::Coin<0x2::sui::SUI>" } };
+                return {
+                    object: {
+                        ...SUI_REF,
+                        type: "0x2::coin::Coin<0x2::sui::SUI>",
+                        content: coinContent(opts.gasBalance ?? DEFAULT_GAS_BALANCE),
+                    },
+                };
             }
             return { object: undefined }; // not found ⇒ coinRefById throws
         },
@@ -188,6 +208,57 @@ describe("deepFundingStrategy", () => {
         const e = await failureOf(strategy.request({ address: ALICE, amount: deep(1_000) }));
         expect(e._tag).toBe("FaucetBodyError");
         expect(e.message).toMatch(/resolve SUI gas coin/);
+        expect(session.drawn).toBe(0n); // reservation rolled back
+    });
+
+    // The donor's SUI coin is drained by boot funding, so the gas budget has to
+    // follow the coin: Sui rejects any tx declaring more than the gas coin holds,
+    // and on the fork that rejection is THROWN, not returned as FailedTransaction.
+    it("gas budget is capped to the gas coin when it holds less than the ceiling", async () => {
+        const seen: string[] = [];
+        const core = stubCore({
+            gasBalance: 30_000_000n, // 0.03 SUI — under the 0.1 SUI ceiling
+            execute: async (a) => {
+                seen.push(
+                    String(
+                        TransactionDataBuilder.fromBytes(a.transaction).snapshot().gasData.budget,
+                    ),
+                );
+                return okResult;
+            },
+        });
+        const { strategy } = makeStrategy(core);
+
+        await Effect.runPromise(strategy.request({ address: ALICE, amount: deep(1_000) }));
+        expect(seen).toEqual(["30000000"]);
+    });
+
+    it("gas budget stays at the ceiling when the coin is richer", async () => {
+        const seen: string[] = [];
+        const core = stubCore({
+            gasBalance: 5_000_000_000n, // 5 SUI
+            execute: async (a) => {
+                seen.push(
+                    String(
+                        TransactionDataBuilder.fromBytes(a.transaction).snapshot().gasData.budget,
+                    ),
+                );
+                return okResult;
+            },
+        });
+        const { strategy } = makeStrategy(core);
+
+        await Effect.runPromise(strategy.request({ address: ALICE, amount: deep(1_000) }));
+        expect(seen).toEqual(["100000000"]);
+    });
+
+    it("gas coin below the minimum budget → FaucetBodyError naming the balance", async () => {
+        const core = stubCore({ gasBalance: 1_000_000n }); // 0.001 SUI
+        const { strategy, session } = makeStrategy(core);
+
+        const e = await failureOf(strategy.request({ address: ALICE, amount: deep(1_000) }));
+        expect(e._tag).toBe("FaucetBodyError");
+        expect(e.message).toMatch(/holds 1000000 MIST, below the 20000000 minimum budget/);
         expect(session.drawn).toBe(0n); // reservation rolled back
     });
 
