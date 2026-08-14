@@ -50,6 +50,22 @@ deposit/withdraw/orders. Hooks branch on `isForkManifest(manifest)`
 (`use-deepbook-client.ts` — the manifest union covers localnet.json and
 mainnet-fork.json shapes). The localnet SDK paths are unchanged.
 
+## Market Maker Page (fork mode)
+
+On the fork the MM and oracle SERVICES are retired, so the page swaps data
+sources (`market-maker/hooks.ts` branches on `useForkManifest`): the order
+book + depth chart read the pool's book straight off the chain
+(`readBookLevels` in fork.ts — same BigVector walk as the pre-warm, but
+parsing leaf Order values: remaining = quantity − filled, lazily-EXPIRED
+orders filtered out because matching skips them; the server's /orderbook is
+live-RPC, dead on fork). A Recent Trades panel tails the server's
+Postgres-backed `/trades/{pool}` on BOTH networks — every local fill shows,
+trade-sim's and user-placed alike. Stat cards: tick/lot/min computed from
+manifest pins (deliberately NOT via the SDK client, which only exists with a
+connected wallet), spread measured from the displayed book; oracle cards
+stay "—" on fork. The trading page's `usePoolDetails` remains
+devInspect-backed and is `enabled: false` on fork — do not call it there.
+
 ## Trading Page
 
 The dashboard's Trading page is the user-facing interface for the deepbook protocol. Architecture notes for agents working in this area:

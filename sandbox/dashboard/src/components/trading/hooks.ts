@@ -79,8 +79,9 @@ export function isSyncingOrders(): boolean {
 }
 
 /** Fork-mode branch info for the hooks (react-query dedupes the manifest
- *  fetch with useDeepBookClient's). null = localnet / not loaded yet. */
-function useForkManifest(): ForkManifest | null {
+ *  fetch with useDeepBookClient's). null = localnet / not loaded yet.
+ *  Exported for the market-maker page, which branches the same way. */
+export function useForkManifest(): ForkManifest | null {
     const manifest = useManifest();
     return manifest.data && isForkManifest(manifest.data) ? manifest.data : null;
 }
@@ -310,10 +311,13 @@ export interface PoolDetails {
     ask_quantities: number[];
 }
 
-export function usePoolDetails(client: SandboxClient | null, poolKey: PoolKey) {
+export function usePoolDetails(client: SandboxClient | null, poolKey: PoolKey, enabled = true) {
     return useQuery<PoolDetails>({
         queryKey: ["pool-details", poolKey],
         queryFn: async () => {
+            // Every one of these helpers devInspects — dead on the fork
+            // (SUI-FORK-ISSUES #7); fork callers pass enabled=false and
+            // assemble the same view from manifest pins + the book read.
             if (!client) throw new Error("Not ready");
             const [midPrice, bookParams, depth] = await Promise.all([
                 client.deepbook.midPrice(poolKey),
@@ -322,7 +326,7 @@ export function usePoolDetails(client: SandboxClient | null, poolKey: PoolKey) {
             ]);
             return { midPrice, ...bookParams, ...depth };
         },
-        enabled: !!client,
+        enabled: !!client && enabled,
         refetchInterval: 10_000,
     });
 }

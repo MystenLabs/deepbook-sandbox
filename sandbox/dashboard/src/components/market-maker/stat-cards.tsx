@@ -1,5 +1,4 @@
-import type { PoolOrders, OrdersResponse, OracleResponse } from "./types";
-import type { PoolDetails } from "./hooks";
+import type { PoolOrders, OrdersResponse, OracleResponse, PoolDetailsView } from "./types";
 import { StatCard } from "./helpers";
 import { formatPrice } from "./helpers";
 
@@ -11,7 +10,7 @@ interface StatCardsProps {
     pool: PoolOrders | undefined;
     config: OrdersResponse["config"] | undefined;
     oraclePrices: OracleResponse["prices"] | undefined;
-    poolDetails?: PoolDetails;
+    poolDetails?: PoolDetailsView;
     poolDetailsLoading?: boolean;
     pair: string;
     isLoading: boolean;
