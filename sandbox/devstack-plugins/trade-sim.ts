@@ -2,15 +2,16 @@
 // DeepBook Price panel and /ticker live by self-filling orders on the fork
 // every SIM_INTERVAL_MS (default 600ms).
 //
-// ⚠️ STATUS (WIP): produces the first fills/candles, then stalls when the
-// straddle overlaps the real pin-era spread — the resting bid crosses the
-// real ask and market-buys until the manager's quote is gone
-// (EBalanceManagerBalanceTooLow). Root cause is that the straddle is placed
-// around a GUESSED mid while the real spread's location is unknown. Designed
-// fix (v4, next commit): measure the real bid/ask once with two tiny probe
-// IOCs (fill prices read back from order_fills), then clamp the self-fill
-// pair STRICTLY inside the measured spread, recalibrating on failure
-// streaks. Restarting the stack recovers the sim in the meantime.
+// The pair sits STRICTLY INSIDE the measured real spread (SEDEFI-455).
+// Earlier versions guessed the center from pin-era USD mids; the guess sat
+// above the real best ask (2341 vs 2338 ticks on DEEP_SUI), so every
+// "resting" bid executed as a taker and market-bought base until the
+// manager's quote was gone — first fills, then EBalanceManagerBalanceTooLow
+// (3) on every later tick, forever: the sell leg that would convert base
+// back sits AFTER the aborting bid in the same PTB, so it can never run.
+// The touch is now read straight off the book (BigVector descent, ~6
+// getObjects) at boot, every MEASURE_EVERY ticks, and on failure streaks —
+// measured, never guessed, and no probe trades.
 //
 // Mechanism (the one-shot backfill sibling is scripts/seed-trades.ts; the
 // primitives are ported from it and from deep-funding.ts):
@@ -20,21 +21,28 @@
 //     reclaim in its own always-committing tx (cleanup sharing a tx with the
 //     orders means an aborting bid reverts the cleanup too, wedging the
 //     manager permanently — observed live in three earlier variants). TX B:
-//     a RESTING straddle pair (bid @ X−2 ticks, ask @ X+2) + ONE IOC that
-//     crosses INTO the straddle (direction by inventory: base above its
-//     funded target ⇒ sell). The straddle guarantees the IOC a counterparty
-//     — our own order — so fills never depend on the pin-era book's depth
-//     (crossing-only designs stall once they eat the static book's top
-//     levels; same-price self-fills lock up when the unknown real spread
-//     sits inside the range — both observed live). Real orders tighter than
-//     the straddle still win price priority: more realism, not a problem.
-//   - The walk's center self-calibrates from the server's own last fill
-//     price (/ticker), so X tracks wherever trading actually happens.
+//     an ADJACENT resting pair on the interior ticks of the measured spread
+//     (`interiorPair`) + ONE IOC that crosses INTO our own pair. All three
+//     legs share one atomic PTB, so the IOC always finds our fresh maker:
+//     the bid sits strictly above the real best bid and the ask strictly
+//     below the real best ask, which makes ours first by price priority AND
+//     keeps every leg from executing against the pin-era book. A 2-tick
+//     spread collapses the pair onto its single interior tick (the ask then
+//     self-fills the resting bid at placement); a ≤1-tick spread skips the
+//     tick entirely.
+//   - IOC direction: alternates for price variety while base inventory is
+//     within ±2 fills of its post-funding level; outside that band (an
+//     external taker ate one side) it trades back toward the level.
+//   - Failure streaks re-measure the touch and re-run shortfall funding on
+//     the next tick — a moved touch or a drained leg heals without a stack
+//     restart.
 //   - Default pool DEEP_SUI only: it is whitelisted (zero input-token fees),
 //     so cycling leaks nothing. SIM_POOLS extends it; non-whitelisted pools
 //     leak fees per fill and will eventually drain the manager.
-//   - Crossing a POISONED pin-era maker aborts the tick (SUI-FORK-ISSUES
-//     #2) — caught, counted, and the walk moves on.
+//   - Reading the touch doubles as the fork pre-warm for the exact slices
+//     the pair inserts into (SUI-FORK-ISSUES #2: execution child reads
+//     don't lazy-fetch) — it subsumes the old pool-inner-only pre-warm, and
+//     an interior pair never walks the book past the touch.
 //   - Clock: fills are only visible to the server's wall-relative windows if
 //     checkpoint timestamps track wall time (SUI-FORK-ISSUES #6). The
 //     clock-driver member (SEDEFI-317) holds the Clock at wall time for the
@@ -49,13 +57,13 @@
 // candle's close and the /ticker last price — that is the "live" feel.
 //
 // Gas: the whale's pinned SUI coin is small (~4 SUI). The loop tracks the gas
-// coin's version from tx effects (no per-tick re-read) and, when the balance
-// runs low, tops the whale up through devstack's fork faucet strategy
-// (impersonates devstack's seeded SUI whale) and merges the fresh coin into
-// the gas coin on the next tick. Without the faucet strategy it warns and
-// trades until dry.
+// coin's version from tx effects (no per-tick re-read), declares a budget
+// capped to the coin's last-known balance, and when it runs low tops the
+// whale up from the impersonated SUI donor (suiGrantViaWhale — devstack's
+// fork faucet strategy is structurally null on a fork), merging the fresh
+// coin into the gas coin as a second gas payment on the next tx.
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -84,6 +92,21 @@ import type { registryInitMember } from "./registry-init.ts";
 
 const MEMBER = "trade-sim";
 const fail = memberError(MEMBER);
+
+/** Opt-in heartbeat tap (SIM_HEARTBEAT_PATH=/some/file): one line per tick
+ *  stage, appendFileSync so it survives the supervisor swallowing Effect
+ *  logs. The sim's worst failure mode is a SILENTLY dead or hung tick fiber
+ *  (a defect kills the repeat loop without any status change; an un-timed
+ *  await parks it forever) — this is the instrument that finds where. */
+const HEARTBEAT_PATH = process.env.SIM_HEARTBEAT_PATH?.trim() || null;
+const beat = (msg: string): void => {
+    if (HEARTBEAT_PATH === null) return;
+    try {
+        appendFileSync(HEARTBEAT_PATH, `${new Date().toISOString()} ${msg}\n`);
+    } catch {
+        /* a broken tap must never break the sim */
+    }
+};
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** BalanceManager reuse across restarts — funds parked in an abandoned
@@ -120,8 +143,11 @@ const GAS_LOW_WATER_MIST = 1_000_000_000n; // 1 SUI
 const GAS_REFILL_MIST = 10_000_000_000n; // 10 SUI
 /** Ticks between gas-balance checks (a balance read is one getObject). */
 const GAS_CHECK_EVERY = 64;
-/** Pin-era oracle mids — good enough centers for a sandbox chart; the walk
- *  provides the movement. (Live Pyth reads are deliberately not a dependency:
+/** Ticks between steady-state touch re-measurements (~6 getObjects each) —
+ *  tracks a touch that dashboard users move between failure streaks. */
+const MEASURE_EVERY = 40;
+/** Pin-era oracle mids — only the EMPTY-BOOK fallback center now; a measured
+ *  touch overrides them. (Live Pyth reads are deliberately not a dependency:
  *  the sim must keep ticking when feeds are stale.) */
 const USD_FALLBACK: Record<string, number> = { DEEP: 0.0162, SUI: 0.692, USDC: 1.0 };
 const DECIMALS: Record<string, number> = { DEEP: 6, SUI: 9, USDC: 6 };
@@ -149,9 +175,9 @@ type SimCore = {
             json?: unknown;
         };
     }>;
-    listOwnedObjects: (args: {
-        owner: string;
-    }) => Promise<{ objects?: { objectId: string; type?: string }[] }>;
+    // NOTE: no listOwnedObjects here on purpose — that surface can hang
+    // FOREVER on the fork (SUI-FORK-ISSUES #11); nothing in the sim may
+    // depend on enumeration.
 };
 
 const coinSymbol = (coinType: string): string => coinType.split("::").pop() ?? coinType;
@@ -259,6 +285,174 @@ const coinBalanceFromContent = (content: Uint8Array | undefined): bigint => {
     return new DataView(content.buffer, content.byteOffset + 32, 8).getBigUint64(0, true);
 };
 
+/* ---- order-book touch reading (SEDEFI-455) ------------------------------- */
+
+const u64le = (b: Uint8Array, off: number): bigint =>
+    new DataView(b.buffer, b.byteOffset + off, 8).getBigUint64(0, true);
+const u128le = (b: Uint8Array, off: number): bigint => u64le(b, off) + (u64le(b, off + 8) << 64n);
+
+/** Minimal ULEB128 decode (BCS vector lengths). */
+const readUleb = (b: Uint8Array, off: number): { value: number; size: number } => {
+    let value = 0;
+    let shift = 0;
+    let size = 0;
+    for (;;) {
+        const byte = b[off + size] ?? 0;
+        size += 1;
+        value |= (byte & 0x7f) << shift;
+        if ((byte & 0x80) === 0) break;
+        shift += 7;
+    }
+    return { value, size };
+};
+
+/** BigVector<E> header: UID(32) + depth u8 + length / max_slice_size /
+ *  max_fan_out / root_id / last_id (5 × u64) = 73 bytes. */
+const BIG_VECTOR_BYTES = 73;
+/** BigVector's "no root" sentinel. */
+const NO_SLICE = (1n << 64n) - 1n;
+/** Price bits of a DeepBook order-id key (bit 127 flags an ask). */
+const ORDER_PRICE_MASK = (1n << 63n) - 1n;
+
+type BookSide = { uid: string; depth: number; length: bigint; rootId: bigint };
+
+const readBookSide = (b: Uint8Array, off: number): BookSide => ({
+    uid: `0x${Buffer.from(b.slice(off, off + 32)).toString("hex")}`,
+    depth: b[off + 32] ?? 0,
+    length: u64le(b, off + 33),
+    rootId: u64le(b, off + 57),
+});
+
+/**
+ * Best bid and ask of a pool, in TICKS, read straight off the book.
+ *
+ * Descends each side's BigVector to its extreme leaf (rightmost for bids,
+ * leftmost for asks) and decodes the order-id key's price bits — no
+ * dev_inspect (fork-dead), no probe trades, ~6 getObjects at the books'
+ * usual depth of 1. The reads double as the fork pre-warm for exactly the
+ * slices the sim's orders insert into (SUI-FORK-ISSUES #2: execution child
+ * reads don't lazy-fetch), subsuming the old pool-inner-only pre-warm.
+ */
+const readBookTouch = async (
+    core: SimCore,
+    poolId: string,
+    tick: bigint,
+): Promise<{ bestBidTicks: bigint | null; bestAskTicks: bigint | null }> => {
+    const poolObj = await core.getObject({ objectId: poolId, include: { content: true } });
+    const content = poolObj.object?.content;
+    if (!content || content.length < 72) throw new Error(`pool ${poolId}: no content`);
+    // Pool { id: UID(32), inner: Versioned { id: UID(32), version: u64 } }
+    const innerFieldId = deriveDynamicFieldID(
+        `0x${Buffer.from(content.slice(32, 64)).toString("hex")}`,
+        "u64",
+        bcs.u64().serialize(u64le(content, 64)).toBytes(),
+    );
+    const inner = await core.getObject({ objectId: innerFieldId, include: { content: true } });
+    const ic = inner.object?.content;
+    if (!ic) throw new Error(`pool ${poolId}: inner Versioned field has no content`);
+    // Field hdr(40) + allowed_versions vector<u64> + pool_id(32)
+    // + book{ tick_size, lot_size, min_size (3 × u64), bids, asks }
+    let off = 40;
+    const allowed = readUleb(ic, off);
+    off += allowed.size + allowed.value * 8 + 32;
+    const tickOnChain = u64le(ic, off);
+    if (tickOnChain !== tick) {
+        throw new Error(
+            `pool ${poolId}: on-chain tick ${tickOnChain} != manifest ${tick} — ` +
+                "book layout drift (package upgrade?)",
+        );
+    }
+    off += 24;
+    const bids = readBookSide(ic, off);
+    const asks = readBookSide(ic, off + BIG_VECTOR_BYTES);
+
+    // Descend to the extreme leaf; edge -1 = rightmost (max key = best bid),
+    // 0 = leftmost (min key = best ask).
+    const extremePrice = async (side: BookSide, edge: 0 | -1): Promise<bigint | null> => {
+        if (side.length === 0n || side.rootId === NO_SLICE) return null;
+        let sliceId = side.rootId;
+        for (let d = 0; ; d++) {
+            const fieldId = deriveDynamicFieldID(
+                side.uid,
+                "u64",
+                bcs.u64().serialize(sliceId).toBytes(),
+            );
+            const res = await core.getObject({ objectId: fieldId, include: { content: true } });
+            const sc = res.object?.content;
+            if (!sc) throw new Error(`book slice ${sliceId} of ${poolId} has no content`);
+            // Field hdr(40) + Slice.prev(8) + Slice.next(8) + keys vector<u128>
+            // + vals (child slice ids on an interior node, Orders on a leaf).
+            let so = 56;
+            const keys = readUleb(sc, so);
+            if (d === side.depth) {
+                if (keys.value === 0) return null;
+                const at = so + keys.size + (edge === 0 ? 0 : keys.value - 1) * 16;
+                return (u128le(sc, at) >> 64n) & ORDER_PRICE_MASK;
+            }
+            so += keys.size + keys.value * 16;
+            const vals = readUleb(sc, so);
+            if (vals.value === 0) return null;
+            so += vals.size;
+            sliceId = u64le(sc, so + (edge === 0 ? 0 : vals.value - 1) * 8);
+        }
+    };
+
+    const bestBid = await extremePrice(bids, -1);
+    const bestAsk = await extremePrice(asks, 0);
+    return {
+        bestBidTicks: bestBid === null ? null : bestBid / tick,
+        bestAskTicks: bestAsk === null ? null : bestAsk / tick,
+    };
+};
+
+/**
+ * Where the self-fill pair may sit, in ticks, given the measured touch.
+ *
+ * The pair must rest STRICTLY inside the spread: the bid above the real best
+ * bid (so the sell IOC meets ours first by price priority) and the ask below
+ * the real best ask (ditto for the buy IOC) — then no leg can ever execute
+ * against the pin-era book. `xTicks` (the walked center) picks WHERE in a
+ * wide interior the pair sits; tight interiors clamp it. Returns null when
+ * the spread has no interior at all (≤ 1 tick) — skip the tick. On a 2-tick
+ * spread the pair collapses onto the single interior tick: the ask placed
+ * second self-fills the resting bid at placement (SELF_MATCHING_ALLOWED),
+ * which is a legitimate fill, and the IOC then expires unfilled.
+ */
+export const interiorPair = (
+    bestBidTicks: bigint | null,
+    bestAskTicks: bigint | null,
+    xTicks: bigint,
+): { bid: bigint; ask: bigint } | null => {
+    const lo = bestBidTicks === null ? null : bestBidTicks + 1n;
+    const hi = bestAskTicks === null ? null : bestAskTicks - 1n;
+    const clamp = (v: bigint, min: bigint, max: bigint): bigint => {
+        if (v < min) return min;
+        if (v > max) return max;
+        return v;
+    };
+    if (lo !== null && hi !== null) {
+        if (hi < lo) return null;
+        if (hi === lo) return { bid: lo, ask: lo };
+        const bid = clamp(xTicks - 1n, lo, hi - 1n);
+        return { bid, ask: bid + 1n };
+    }
+    if (hi !== null) {
+        // No real bids: the ask side and price > 0 constrain us.
+        if (hi < 2n) return null;
+        const bid = clamp(xTicks - 1n, 1n, hi - 1n);
+        return { bid, ask: bid + 1n };
+    }
+    if (lo !== null) {
+        // No real asks: only the bid side constrains us.
+        const bid = xTicks - 1n > lo ? xTicks - 1n : lo;
+        return { bid, ask: bid + 1n };
+    }
+    // Empty book: nothing to cross — keep the walked shape.
+    const bid = xTicks - 2n > 1n ? xTicks - 2n : 1n;
+    const ask = xTicks + 2n > bid ? xTicks + 2n : bid + 1n;
+    return { bid, ask };
+};
+
 export type TradeSimOptions = {
     sui: ReturnType<typeof sui>;
     postgres: ReturnType<typeof postgresMember>;
@@ -326,6 +520,10 @@ export function tradeSimMember(opts: TradeSimOptions) {
                     fills: 0,
                     failures: 0,
                     consecutiveFailures: 0,
+                    /** ticks skipped because the spread had no interior. */
+                    skips: 0,
+                    /** touch re-measurements (boot + periodic + recovery). */
+                    remeasures: 0,
                     gasRefills: 0,
                     lastError: null as string | null,
                 };
@@ -418,33 +616,13 @@ export function tradeSimMember(opts: TradeSimOptions) {
                  *  refused pre-execution). */
                 const gasBudgetFor = (): bigint =>
                     gasBalance > 0n && gasBalance < GAS_BUDGET ? gasBalance : GAS_BUDGET;
-                const knownGasIds = new Set<string>([WHALE_GAS_COIN]);
 
-                // The whale's pinned coin (~4 SUI) can't cover the 3× quote
-                // funding below AND leave gas runway — top up from the fork
-                // faucet up-front when it's available. The faucet coin is
-                // fork-local, so enumeration finds it; it merges into the gas
-                // coin as a second gas payment on the first setup tx.
-                if (deps.sui.fundingFaucetStrategy !== null) {
-                    yield* deps.sui.fundingFaucetStrategy
-                        .request({ address: WHALE, amount: 20_000_000_000n })
-                        .pipe(Effect.catch(() => Effect.void));
-                    const owned = yield* Effect.promise(() =>
-                        core.listOwnedObjects({ owner: WHALE }).catch(() => ({ objects: [] })),
-                    );
-                    const fresh = (owned.objects ?? []).find(
-                        (o) =>
-                            String(o.type ?? "").includes("::coin::Coin<") &&
-                            String(o.type ?? "").includes("::sui::SUI") &&
-                            !knownGasIds.has(o.objectId),
-                    );
-                    if (fresh) {
-                        knownGasIds.add(fresh.objectId);
-                        pendingGasTopUp = yield* getRef(fresh.objectId).pipe(
-                            Effect.catch(() => Effect.succeed(null)),
-                        );
-                    }
-                }
+                // (The old boot-time faucet top-up is gone: devstack's fork
+                // faucet strategy is structurally null on a fork, so the block
+                // never ran — and its ListOwnedObjects discovery is the exact
+                // call that can hang forever, SUI-FORK-ISSUES #11. Gas refills
+                // now come solely from maybeRefillGas below, which runs on the
+                // FIRST tick.)
 
                 /** Gas payment for the next tx — merges any pending faucet
                  *  top-up into the tracked gas coin (multi-coin gas payments
@@ -546,19 +724,125 @@ export function tradeSimMember(opts: TradeSimOptions) {
                         }
                     });
 
-                // --- per-pool setup: prewarm + one-time funding ------------------
+                // --- per-pool setup: measure the touch + boot funding -----------
                 type PoolState = {
                     name: string;
                     pin: (typeof ids.pools)[string];
                     qty: bigint;
                     tick: bigint;
-                    priceMult: bigint;
                     centerTicks: bigint;
                     walkTicks: bigint;
                     clientOrderId: bigint;
-                    /** funded base amount — inventory above it ⇒ sell tick. */
+                    /** post-funding base inventory — the level the IOC
+                     *  direction steers back toward when knocked off it. */
                     targetBase: bigint;
+                    /** measured touch (ticks); a null side is an empty side. */
+                    bestBidTicks: bigint | null;
+                    bestAskTicks: bigint | null;
+                    /** per-pool IOC alternator (tick parity breaks under the
+                     *  multi-pool round-robin). */
+                    flip: boolean;
                 };
+
+                /** (Re-)measure a pool's touch and recenter the walk on its
+                 *  midpoint. Boot treats a failure as fatal (placing without a
+                 *  measurement is how the sim used to market-buy its own quote
+                 *  away); steady state swallows it and keeps the last read. */
+                const measure = (pool: PoolState): Effect.Effect<void, unknown> =>
+                    Effect.tryPromise({
+                        try: () => readBookTouch(core, pool.pin.objectId, pool.tick),
+                        catch: (cause) =>
+                            fail(
+                                "book",
+                                `${pool.name}: touch read failed: ${describeCause(cause)}`,
+                                cause,
+                            ),
+                    }).pipe(
+                        Effect.map((touch) => {
+                            pool.bestBidTicks = touch.bestBidTicks;
+                            pool.bestAskTicks = touch.bestAskTicks;
+                            stats.remeasures += 1;
+                            if (touch.bestBidTicks !== null && touch.bestAskTicks !== null) {
+                                pool.centerTicks = (touch.bestBidTicks + touch.bestAskTicks) / 2n;
+                            }
+                        }),
+                    );
+
+                /** Deposit whatever the manager is short of the 3× working
+                 *  amounts (the pair + IOC lock ≈ 2× each side concurrently).
+                 *  Quote need prices qty at the current center in raw book
+                 *  units (quote = base × price / 10^9). Runs at boot and on
+                 *  failure-streak recovery, so a drained leg heals without a
+                 *  stack restart. */
+                const topUpBalances = (pool: PoolState): Effect.Effect<void, unknown> =>
+                    Effect.gen(function* () {
+                        const needs = new Map<string, bigint>();
+                        needs.set(pool.pin.baseType, pool.qty * 3n);
+                        needs.set(
+                            pool.pin.quoteType,
+                            (pool.qty * pool.centerTicks * pool.tick * 3n) / 1_000_000_000n,
+                        );
+                        let deposited = false;
+                        for (const [coinType, needed] of needs) {
+                            const have = yield* bmBalance(coinType);
+                            if (have >= needed) continue;
+                            const shortfall = needed - have;
+                            const sym = coinSymbol(coinType);
+                            const tx = new Transaction();
+                            if (sym === "SUI") {
+                                const [chunk] = tx.splitCoins(tx.gas, [tx.pure.u64(shortfall)]);
+                                tx.moveCall({
+                                    target: `${pkg}::balance_manager::deposit`,
+                                    arguments: [bmRef(tx), chunk],
+                                    typeArguments: [coinType],
+                                });
+                            } else if (sym === "DEEP") {
+                                const deepRef = yield* getRef(WHALE_DEEP_COIN);
+                                const [chunk] = tx.splitCoins(tx.objectRef(deepRef), [
+                                    tx.pure.u64(shortfall),
+                                ]);
+                                tx.moveCall({
+                                    target: `${pkg}::balance_manager::deposit`,
+                                    arguments: [bmRef(tx), chunk],
+                                    typeArguments: [coinType],
+                                });
+                            } else {
+                                // USDC needs the mint flow — keep the always-on
+                                // sim to DEEP/SUI pools; seed-trades covers USDC
+                                // pools one-shot.
+                                return yield* Effect.fail(
+                                    fail(
+                                        "funding",
+                                        `pool ${pool.name} needs ${sym} funding — the sim only ` +
+                                            "self-funds SUI/DEEP (run scripts/seed-trades.ts for " +
+                                            "USDC pools, or extend the sim)",
+                                    ),
+                                );
+                            }
+                            const raw = yield* impersonate(
+                                tx,
+                                WHALE,
+                                takeGasPayment(),
+                                `deposit ${sym}`,
+                            );
+                            gasRef = refreshedRef(raw, gasRef);
+                            deposited = true;
+                        }
+                        // A SUI deposit spends from the gas coin itself — re-read
+                        // the balance so the declared-budget cap stays honest.
+                        if (deposited) {
+                            gasBalance = yield* Effect.promise(() =>
+                                core
+                                    .getObject({
+                                        objectId: gasRef.objectId,
+                                        include: { content: true },
+                                    })
+                                    .then((r) => coinBalanceFromContent(r.object?.content))
+                                    .catch(() => gasBalance),
+                            );
+                        }
+                    });
+
                 const pools: PoolState[] = [];
                 for (const name of poolNames) {
                     const pin = ids.pools[name];
@@ -575,42 +859,31 @@ export function tradeSimMember(opts: TradeSimOptions) {
                     const qty = POOL_QTY[name] ?? 10_000_000n;
                     const priceMult = 10n ** BigInt(9 + quoteDec - baseDec);
                     const tick = BigInt(pin.tickSize);
-                    // SIM_TICK_BIAS nudges the whole walk out of a hostile book
-                    // region (poisoned pin-era makers) — same knob seed-trades has.
+                    // Fallback center for an EMPTY book, from pin-era USD mids;
+                    // a measured touch overrides it. SIM_TICK_BIAS nudges only
+                    // this fallback — same knob seed-trades has.
                     const centerTicks =
                         BigInt(Math.round((mid * Number(priceMult)) / Number(tick))) +
                         BigInt(process.env.SIM_TICK_BIAS ?? 0);
 
-                    // Pre-warm the pool's Versioned inner (execution child reads
-                    // don't lazy-fetch on the fork — SUI-FORK-ISSUES / SEDEFI-448).
-                    const warmed = yield* Effect.promise(async () => {
-                        const poolObj = await core.getObject({
-                            objectId: pin.objectId,
-                            include: { content: true },
-                        });
-                        const content = poolObj.object?.content;
-                        if (!content || content.length < 72) return false;
-                        const innerUid = `0x${Buffer.from(content.slice(32, 64)).toString("hex")}`;
-                        const innerVersion = new DataView(
-                            content.buffer,
-                            content.byteOffset + 64,
-                            8,
-                        ).getBigUint64(0, true);
-                        const innerFieldId = deriveDynamicFieldID(
-                            innerUid,
-                            "u64",
-                            bcs.u64().serialize(innerVersion).toBytes(),
-                        );
-                        return core
-                            .getObject({ objectId: innerFieldId })
-                            .then(() => true)
-                            .catch(() => false);
-                    });
-                    if (!warmed) {
-                        return yield* Effect.fail(
-                            fail("prewarm", `could not pre-warm pool inner for ${name}`),
-                        );
-                    }
+                    const pool: PoolState = {
+                        name,
+                        pin,
+                        qty,
+                        tick,
+                        centerTicks,
+                        walkTicks: 0n,
+                        clientOrderId: BigInt(Date.now()) * 1000n,
+                        targetBase: 0n, // set below, after funding
+                        bestBidTicks: null,
+                        bestAskTicks: null,
+                        flip: false,
+                    };
+
+                    // Measure the touch — fatal at boot, and it doubles as the
+                    // pre-warm of the pool inner + touch slices the orders walk
+                    // (SUI-FORK-ISSUES #2 / SEDEFI-448).
+                    yield* measure(pool);
 
                     // A REUSED manager may hold funds locked in leftover resting
                     // orders from a previous run — reclaim before topping up from
@@ -645,106 +918,37 @@ export function tradeSimMember(opts: TradeSimOptions) {
                         gasRef = refreshedRef(raw, gasRef);
                     }
 
-                    // One-time funding: the tick locks a straddle pair + an IOC
-                    // leg concurrently (≈2× each side) — 3× headroom keeps the
-                    // whitelisted (zero-fee) cycle solvent forever.
-                    const needs = new Map<string, bigint>();
-                    needs.set(pin.baseType, qty * 3n);
-                    needs.set(
-                        pin.quoteType,
-                        BigInt(Math.ceil(Number(qty) * mid * Math.pow(10, quoteDec - baseDec) * 3)),
-                    );
-                    for (const [coinType, needed] of needs) {
-                        const have = yield* bmBalance(coinType);
-                        if (have >= needed) continue;
-                        const shortfall = needed - have;
-                        const sym = coinSymbol(coinType);
-                        const tx = new Transaction();
-                        if (sym === "SUI") {
-                            const [chunk] = tx.splitCoins(tx.gas, [tx.pure.u64(shortfall)]);
-                            tx.moveCall({
-                                target: `${pkg}::balance_manager::deposit`,
-                                arguments: [bmRef(tx), chunk],
-                                typeArguments: [coinType],
-                            });
-                        } else if (sym === "DEEP") {
-                            const deepRef = yield* getRef(WHALE_DEEP_COIN);
-                            const [chunk] = tx.splitCoins(tx.objectRef(deepRef), [
-                                tx.pure.u64(shortfall),
-                            ]);
-                            tx.moveCall({
-                                target: `${pkg}::balance_manager::deposit`,
-                                arguments: [bmRef(tx), chunk],
-                                typeArguments: [coinType],
-                            });
-                        } else {
-                            // USDC needs the mint flow — keep the always-on sim to
-                            // DEEP/SUI pools; seed-trades covers USDC pools one-shot.
-                            return yield* Effect.fail(
-                                fail(
-                                    "funding",
-                                    `pool ${name} needs ${sym} funding — the sim only self-funds SUI/DEEP ` +
-                                        "(run scripts/seed-trades.ts for USDC pools, or extend the sim)",
-                                ),
-                            );
-                        }
-                        const raw = yield* impersonate(
-                            tx,
-                            WHALE,
-                            takeGasPayment(),
-                            `deposit ${sym}`,
-                        );
-                        gasRef = refreshedRef(raw, gasRef);
-                    }
+                    // Re-measure now that OUR leftovers are out of the book: a
+                    // previous run's pair sat inside the spread, and measuring
+                    // it as foreign would needlessly shrink (even empty) the
+                    // interior for the first MEASURE_EVERY ticks.
+                    yield* measure(pool);
 
-                    pools.push({
-                        name,
-                        pin,
-                        qty,
-                        tick,
-                        priceMult,
-                        centerTicks,
-                        walkTicks: 0n,
-                        clientOrderId: BigInt(Date.now()) * 1000n,
-                        targetBase: (qty * 23n) / 20n,
-                    });
+                    // Boot funding to the 3× working amounts — the whitelisted
+                    // (zero-fee) interior cycle then leaks nothing.
+                    yield* topUpBalances(pool);
+                    // The steering level is the POST-funding inventory, not a
+                    // formula: a reused manager can sit far above any formula
+                    // (e.g. after the old crossing bug converted its quote to
+                    // base) and must not be locked into permanent one-way
+                    // selling by that history.
+                    pool.targetBase = yield* bmBalance(pin.baseType);
+                    pools.push(pool);
                 }
 
-                /** Recenter a pool's walk on the server's last real fill price —
-                 *  the sim's only reliable view of where the pin-era book
-                 *  actually trades (no dev_inspect on the fork). */
-                const recenter = (pool: PoolState): Effect.Effect<void> =>
-                    Effect.promise(async () => {
-                        try {
-                            const res = await fetch(`http://127.0.0.1:9008/ticker`, {
-                                signal: AbortSignal.timeout(3_000),
-                            });
-                            const body = (await res.json()) as Record<
-                                string,
-                                { last_price?: number }
-                            >;
-                            const last = body[pool.name]?.last_price ?? 0;
-                            if (Number.isFinite(last) && last > 0) {
-                                pool.centerTicks = BigInt(
-                                    Math.round((last * Number(pool.priceMult)) / Number(pool.tick)),
-                                );
-                            }
-                        } catch {
-                            /* keep the current center */
-                        }
-                    });
-
                 // --- gas top-up -------------------------------------------------
+                // Grants come from the impersonated SUI donor (suiGrantViaWhale):
                 // devstack's fork faucet strategy is STRUCTURALLY null here (it
-                // vets its whale with the index-backed listCoins, which is empty
-                // on a fork — see fork-sui-grant.ts), so the old faucet-only
-                // path never fired even once: the sim just logged "the sim will
-                // stop when dry" and then ran dry, wedging every later tx. Grant
-                // from the impersonated SUI donor instead — the same source the
-                // faucet member moved to, whose coin holds thousands of SUI.
-                const faucet = deps.sui.fundingFaucetStrategy;
+                // vets its whale with the index-backed listCoins, empty on a
+                // fork — see fork-sui-grant.ts), so the old faucet-only path
+                // never fired even once and the sim just ran dry. The grant
+                // resolves to the created coin's id straight from its own tx
+                // effects — the ListOwnedObjects discovery this used to do is
+                // the call that parked this fiber FOREVER, twice, with zero
+                // errors (SUI-FORK-ISSUES #11).
                 const grantCore = deps.sui.sdk.client.core as unknown as GrantCore;
                 const maybeRefillGas = Effect.gen(function* () {
+                    beat("gas-check enter");
                     const balance = yield* Effect.promise(() =>
                         core
                             .getObject({ objectId: gasRef.objectId, include: { content: true } })
@@ -752,6 +956,7 @@ export function tradeSimMember(opts: TradeSimOptions) {
                             .catch(() => 0n),
                     );
                     gasBalance = balance;
+                    beat(`gas-check balance ${balance}`);
                     if (balance >= GAS_LOW_WATER_MIST) return;
                     if (balance < MIN_FORK_GAS_BUDGET) {
                         console.error(
@@ -759,41 +964,27 @@ export function tradeSimMember(opts: TradeSimOptions) {
                                 `${MIN_FORK_GAS_BUDGET} floor; topping up from the donor`,
                         );
                     }
-                    let topUp: Effect.Effect<unknown, unknown>;
-                    if (faucet === null) {
-                        topUp = Effect.tryPromise({
-                            try: () => suiGrantViaWhale(grantCore, WHALE, GAS_REFILL_MIST),
-                            catch: (cause) => cause,
-                        });
-                    } else {
-                        topUp = faucet.request({ address: WHALE, amount: GAS_REFILL_MIST });
-                    }
-                    yield* topUp.pipe(
+                    const granted = yield* Effect.tryPromise({
+                        try: () => suiGrantViaWhale(grantCore, WHALE, GAS_REFILL_MIST),
+                        catch: (cause) => cause,
+                    }).pipe(
                         Effect.catch((cause) =>
-                            Effect.sync(() => {
+                            Effect.sync((): string | null => {
                                 stats.lastError = `gas refill failed: ${describeCause(cause).slice(0, 160)}`;
+                                return null;
                             }),
                         ),
                     );
-                    // The top-up transfers a NEW coin to the whale; fork-local
-                    // objects ARE enumerable (unlike pre-fork mainnet state).
-                    const owned = yield* Effect.promise(() =>
-                        core.listOwnedObjects({ owner: WHALE }).catch(() => ({ objects: [] })),
+                    beat(`gas-check granted ${granted}`);
+                    if (granted === null) return;
+                    const fresh = yield* getRef(granted).pipe(
+                        Effect.catch(() => Effect.succeed(null)),
                     );
-                    const fresh = (owned.objects ?? []).find(
-                        (o) =>
-                            String(o.type ?? "").includes("::coin::Coin<") &&
-                            String(o.type ?? "").includes("::sui::SUI") &&
-                            !knownGasIds.has(o.objectId),
-                    );
-                    if (fresh) {
-                        knownGasIds.add(fresh.objectId);
-                        pendingGasTopUp = yield* getRef(fresh.objectId).pipe(
-                            Effect.catch(() => Effect.succeed(null)),
-                        );
+                    if (fresh !== null) {
                         // The coin merges into the gas payment on the next tx;
                         // credit it now so the budget cap lifts immediately
                         // rather than after the next balance read.
+                        pendingGasTopUp = fresh;
                         gasBalance += GAS_REFILL_MIST;
                         stats.gasRefills += 1;
                     }
@@ -801,9 +992,13 @@ export function tradeSimMember(opts: TradeSimOptions) {
 
                 // --- the tick ---------------------------------------------------
                 let tickCount = 0;
+                /** Set by the failure path: the next tick re-measures the touch
+                 *  and re-runs shortfall funding before placing. */
+                let recoverPending = false;
                 const tick = Effect.gen(function* () {
                     tickCount += 1;
                     const pool = pools[tickCount % pools.length]!;
+                    beat(`tick ${tickCount} start`);
 
                     // Gas check FIRST, and unconditionally. It used to live at
                     // the end of the success path, which deadlocks the moment
@@ -851,29 +1046,65 @@ export function tradeSimMember(opts: TradeSimOptions) {
                         );
                         gasRef = refreshedRef(rawA, gasRef);
                     }
+                    beat(`tick ${tickCount} reclaimed`);
 
-                    // bounded random walk: ±1 tick per fill, clamped to ±10.
+                    // Recovery / periodic re-measure — AFTER the committed
+                    // reclaim (so funding sees settled balances), BEFORE
+                    // placement (so the pair uses fresh bounds).
+                    if (recoverPending) {
+                        recoverPending = false;
+                        yield* measure(pool).pipe(Effect.catch(() => Effect.void));
+                        yield* topUpBalances(pool);
+                    } else if (tickCount % MEASURE_EVERY === 0) {
+                        // Track a touch that users move; a failed read keeps the
+                        // last measurement.
+                        yield* measure(pool).pipe(Effect.catch(() => Effect.void));
+                    }
+                    beat(`tick ${tickCount} measured ${pool.bestBidTicks}/${pool.bestAskTicks}`);
+
+                    // bounded random walk: ±1 tick per fill, clamped to ±10 —
+                    // picks WHERE inside a wide interior the pair sits.
                     const step = Math.random() < 0.5 ? -1n : 1n;
                     pool.walkTicks = BigInt(
                         Math.max(-10, Math.min(10, Number(pool.walkTicks + step))),
                     );
-                    // qty jitter 80–110%, lot-aligned — must stay INSIDE the 115%
-                    // one-time funding headroom or fills abort on balance.
+                    // qty jitter 80–110%, lot-aligned — must stay INSIDE the 3×
+                    // funding headroom or fills abort on balance.
                     const lot = BigInt(pool.pin.lotSize);
                     const jittered =
                         (pool.qty * BigInt(80 + Math.floor(Math.random() * 31))) / 100n;
                     let qty = jittered >= lot ? (jittered / lot) * lot : lot;
 
-                    // Direction by inventory: above the funded base target ⇒ sell;
-                    // else buy. Cycling keeps both legs solvent indefinitely.
+                    // The pair, strictly inside the measured spread.
+                    const pair = interiorPair(
+                        pool.bestBidTicks,
+                        pool.bestAskTicks,
+                        pool.centerTicks + pool.walkTicks,
+                    );
+                    if (pair === null) {
+                        // No interior to sit in (≤1-tick spread) — placing
+                        // anything would execute against the real book.
+                        stats.skips += 1;
+                        if (stats.skips === 1 || stats.skips % 100 === 0) {
+                            console.error(
+                                `[trade-sim] ${pool.name}: spread too tight to sit inside ` +
+                                    `(bid ${pool.bestBidTicks} / ask ${pool.bestAskTicks} ` +
+                                    `ticks) — ${stats.skips} ticks skipped`,
+                            );
+                        }
+                        return;
+                    }
+
+                    // IOC direction: alternate inside the ±2-fill inventory band
+                    // (price variety, zero net drift under self-fills); outside
+                    // the band an external taker ate one side — trade back.
                     const baseBal = yield* bmBalance(pool.pin.baseType);
-                    const sell = baseBal > pool.targetBase;
-                    // Straddle center X (walked); pair rests at X∓2, IOC crosses
-                    // to the matching edge.
-                    const xTicks = pool.centerTicks + pool.walkTicks;
-                    const bidTicks = xTicks - 2n > 1n ? xTicks - 2n : 1n;
-                    const askTicks = xTicks + 2n;
-                    const iocTicks = sell ? bidTicks : askTicks;
+                    const drift = baseBal - pool.targetBase;
+                    const band = pool.qty * 2n;
+                    pool.flip = !pool.flip;
+                    let sell = pool.flip;
+                    if (drift > band) sell = true;
+                    if (drift < -band) sell = false;
 
                     // TX B — the straddle + IOC (may abort; state stays clean).
                     const tx = new Transaction();
@@ -907,9 +1138,9 @@ export function tradeSimMember(opts: TradeSimOptions) {
                             typeArguments: [pool.pin.baseType, pool.pin.quoteType],
                         });
                     };
-                    order(true, 0, bidTicks, qty); // resting straddle bid @ X-2
-                    order(false, 0, askTicks, qty); // resting straddle ask @ X+2
-                    order(!sell, 1, iocTicks, qty); // IOC into our own straddle edge
+                    order(true, 0, pair.bid, qty); // rests above the real best bid
+                    order(false, 0, pair.ask, qty); // rests below the real best ask
+                    order(!sell, 1, sell ? pair.bid : pair.ask, qty); // IOC into our own pair
 
                     const raw = yield* impersonate(
                         tx,
@@ -920,6 +1151,9 @@ export function tradeSimMember(opts: TradeSimOptions) {
                     gasRef = refreshedRef(raw, gasRef);
                     stats.fills += 1;
                     stats.consecutiveFailures = 0;
+                    beat(
+                        `tick ${tickCount} filled ${sell ? "sell" : "buy"} ${pair.bid}/${pair.ask}`,
+                    );
 
                     // Clock: deliberately NOT advanced here — the clock-driver
                     // member owns it. This loop used to chase wall time off a
@@ -927,11 +1161,15 @@ export function tradeSimMember(opts: TradeSimOptions) {
                     // stale: a low local read yields an oversized advance, and
                     // fills stamped past wall drop out of every server window
                     // until wall time catches up.
-                    // Track the real book: recenter the walk on the last fill.
-                    if (tickCount % 40 === 0) {
-                        yield* recenter(pool);
-                    }
                 }).pipe(
+                    // A tick normally takes well under a second; fork gRPC calls
+                    // can hang FOREVER (SUI-FORK-ISSUES #11), and a parked await
+                    // kills the repeat loop with no error and no status change —
+                    // the sim's worst failure mode. Bound the whole tick so a
+                    // hang degrades into a counted failure + recovery instead.
+                    // (An abandoned in-flight tx may still land — harmless: the
+                    // next tick's reclaim re-baselines the manager.)
+                    Effect.timeout(Duration.seconds(30)),
                     Effect.catch((cause) =>
                         Effect.sync(() => {
                             stats.failures += 1;
@@ -943,6 +1181,9 @@ export function tradeSimMember(opts: TradeSimOptions) {
                                 stats.consecutiveFailures === 1 ||
                                 stats.consecutiveFailures % 25 === 0
                             ) {
+                                // A streak that survives one recovery retries a
+                                // fresh measure + top-up as the streak grows.
+                                recoverPending = true;
                                 console.error(
                                     `[trade-sim] fill failed (${stats.consecutiveFailures} consecutive): ${stats.lastError}`,
                                 );
@@ -955,6 +1196,7 @@ export function tradeSimMember(opts: TradeSimOptions) {
                 let ohlcvRuns = 0;
                 const aggregate = Effect.gen(function* () {
                     ohlcvRuns += 1;
+                    beat(`ohlcv ${ohlcvRuns}`);
                     const now = Date.now();
                     const psql = (sql: string) =>
                         runtime.exec(deps.postgres.handle, [
