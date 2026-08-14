@@ -1,14 +1,8 @@
-import { useState } from "react";
-import {
-    Wallet,
-    ArrowDownToLine,
-    ArrowUpFromLine,
-    ExternalLink,
-    Loader2,
-    Plus,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Wallet, ArrowDownToLine, ArrowUpFromLine, Check, Copy, Loader2, Plus } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { TxResultLink } from "@/components/tx-result-link";
 import { CoinIcon } from "./coin-icon";
 import { SdkCodeBlock } from "./sdk-code-block";
 import { depositSnippet, withdrawSnippet, SDK_DOCS } from "./sdk-snippets";
@@ -35,8 +29,28 @@ function truncate(addr: string): string {
     return `${addr.slice(0, 10)}...${addr.slice(-6)}`;
 }
 
-function explorerUrl(objectId: string): string {
-    return `https://explorer.polymedia.app/object/${objectId}?network=local`;
+/** A BalanceManager is created ON the fork, so it exists on no public chain and
+ *  no explorer can render it (see lib/explorer.ts) — offer the id to copy. */
+function CopyId({ value }: { value: string }) {
+    const [copied, setCopied] = useState(false);
+    useEffect(() => {
+        if (!copied) return;
+        const t = setTimeout(() => setCopied(false), 1500);
+        return () => clearTimeout(t);
+    }, [copied]);
+    return (
+        <button
+            type="button"
+            onClick={() => {
+                void navigator.clipboard.writeText(value);
+                setCopied(true);
+            }}
+            title={`Copy BalanceManager id (fork-local — no explorer can show it): ${value}`}
+            className="rounded p-0.5 text-zinc-500 transition-colors hover:text-zinc-200"
+        >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+    );
 }
 
 export function BalanceManagerSetup({
@@ -181,16 +195,7 @@ export function BalanceManagerSetup({
                             {balanceManagerId ? truncate(balanceManagerId) : ""}
                         </span>
                     )}
-                    {balanceManagerId && (
-                        <a
-                            href={explorerUrl(balanceManagerId)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="rounded p-0.5 text-zinc-500 transition-colors hover:text-zinc-200"
-                        >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                    )}
+                    {balanceManagerId && <CopyId value={balanceManagerId} />}
                 </div>
 
                 {/* BM Balances with coin icons */}
@@ -281,15 +286,10 @@ export function BalanceManagerSetup({
                     <div>
                         <p className="text-xs text-emerald-400 flex items-center gap-1.5">
                             {success.message}
-                            <a
-                                href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                            <TxResultLink
+                                digest={success.digest}
                                 className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
-                            >
-                                View tx
-                                <ExternalLink className="h-3 w-3" />
-                            </a>
+                            />
                         </p>
                         {success.snippet && (
                             <SdkCodeBlock

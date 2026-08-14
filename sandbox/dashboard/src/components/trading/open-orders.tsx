@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { List, X } from "lucide-react";
+import { List, Loader2, X } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SdkCodeBlock } from "./sdk-code-block";
@@ -10,10 +10,19 @@ interface OpenOrdersProps {
     poolKey: PoolKey;
     orders: OrderDetail[];
     isLoading: boolean;
+    /** A trade has settled on-chain and we are polling for the indexer to
+     *  catch up — the list is briefly, knowably behind the chain. */
+    isSyncing?: boolean;
     onCancelOrder: (orderId: string) => Promise<string>;
 }
 
-export function OpenOrders({ poolKey, orders, isLoading, onCancelOrder }: OpenOrdersProps) {
+export function OpenOrders({
+    poolKey,
+    orders,
+    isLoading,
+    isSyncing = false,
+    onCancelOrder,
+}: OpenOrdersProps) {
     const [cancelingId, setCancelingId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [lastSnippet, setLastSnippet] = useState<string | null>(null);
@@ -38,6 +47,15 @@ export function OpenOrders({ poolKey, orders, isLoading, onCancelOrder }: OpenOr
                 <CardTitle className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                     <List className="h-4 w-4 text-zinc-500" />
                     Open Orders
+                    {isSyncing && (
+                        <span
+                            className="inline-flex items-center gap-1 text-[11px] font-normal text-zinc-500"
+                            title="Your transaction is on-chain; waiting for the indexer to pick it up"
+                        >
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Syncing
+                        </span>
+                    )}
                 </CardTitle>
             </CardHeader>
             <CardContent>
