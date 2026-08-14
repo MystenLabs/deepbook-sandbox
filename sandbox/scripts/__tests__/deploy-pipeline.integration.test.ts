@@ -98,11 +98,24 @@ describe("deploy-all pipeline (localnet)", () => {
     let pools: Record<string, PoolEntry>;
     let marginResult: MarginPoolsResult;
 
+    // Environment snapshot, restored in afterAll — see the note there.
+    let envSnapshot: NodeJS.ProcessEnv;
+
     // Exit handler ref so we can deregister in afterAll
     let exitHandler: (() => void) | undefined;
 
     beforeAll(async () => {
         client = new SuiGrpcClient({ network: "localnet", baseUrl: RPC_URL });
+
+        // Snapshot the environment. updateEnvFile now mirrors its writes into
+        // process.env (SEDEFI-442), and vitest.integration.config.ts runs with
+        // singleFork: true — so without this, PRIVATE_KEY and the deployment IDs
+        // written here would leak into the next integration file in the same
+        // process. deploy-all-e2e spawns deploy-all with `{ ...process.env }`, and
+        // dotenv does not overwrite an existing variable, so an inherited
+        // PRIVATE_KEY would silently push it down the user-key branch instead of
+        // the container-key path that test exists to cover.
+        envSnapshot = { ...process.env };
 
         // ── Route all env file I/O to .env.test (keeps user's .env untouched) ──
         process.env.SANDBOX_ENV_FILE = ENV_FILE;
@@ -528,6 +541,11 @@ describe("deploy-all pipeline (localnet)", () => {
             /* may not exist */
         }
         delete process.env.SANDBOX_ENV_FILE;
+
+        // Restore the environment captured in beforeAll, so nothing this suite
+        // wrote (PRIVATE_KEY, package and pool IDs, MM/oracle keys) reaches the
+        // next integration file sharing this fork.
+        process.env = envSnapshot;
 
         // Remove shared keystore
         try {

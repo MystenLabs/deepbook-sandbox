@@ -1,8 +1,20 @@
 import { readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { z } from "zod";
-import { getEnvFileName } from "./docker-compose";
 import log from "./logger";
+
+/**
+ * Return the env filename to use for Docker Compose and env file I/O.
+ * Defaults to ".env"; tests set SANDBOX_ENV_FILE=".env.test" so the
+ * user's real .env is never touched.
+ *
+ * Lives here rather than in docker-compose.ts so the dependency runs one way:
+ * docker-compose.ts imports from env.ts. The reverse direction was a cycle
+ * waiting to happen the moment compose code needed to write an env value.
+ */
+export function getEnvFileName(): string {
+    return process.env.SANDBOX_ENV_FILE || ".env";
+}
 
 /** Keys that must be present with non-empty values after cleaning. */
 export const REQUIRED_ENV_KEYS = ["PRIVATE_KEY", "SUI_TOOLS_IMAGE"] as const;
@@ -124,6 +136,19 @@ export function cleanEnvFile(sandboxRoot: string, preserveKeys: Set<string>): vo
  * Update or set key=value pairs in the env file.
  * Preserves existing keys not in updates, preserves order and comments.
  * Uses SANDBOX_ENV_FILE when set (tests use ".env.test"), otherwise ".env".
+ *
+ * Also mirrors the same values into `process.env`, which is load-bearing rather
+ * than a convenience (SEDEFI-442).
+ *
+ * `config.ts` does `import "dotenv/config"`, so the PREVIOUS deployment's .env is
+ * loaded into `process.env` before deploy-all writes anything. Docker Compose ranks
+ * the shell environment above the .env file — correctly and by design — so without
+ * this sync a compose invocation later in the same run receives the old package and
+ * pool IDs while the file on disk holds the new ones. The market maker then boots
+ * against a package that no longer exists and crash-loops on `Object 0x… not found`.
+ *
+ * Syncing here rather than inverting Compose's precedence keeps a genuine shell
+ * override working: this only writes keys the caller is already writing to disk.
  */
 export function updateEnvFile(sandboxRoot: string, updates: Record<string, string>): void {
     const envPath = path.join(sandboxRoot, getEnvFileName());
@@ -156,4 +181,9 @@ export function updateEnvFile(sandboxRoot: string, updates: Record<string, strin
     }
 
     writeFileSync(envPath, result.join("\n") + (result.length ? "\n" : ""), "utf-8");
+
+    // Keep this process's view of the world in step with what was just written.
+    // See the note above: Docker Compose reads the shell environment first, so a
+    // stale value here silently outranks the file we just updated.
+    Object.assign(process.env, updates);
 }

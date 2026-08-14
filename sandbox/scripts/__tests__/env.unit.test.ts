@@ -3,7 +3,13 @@ import { tmpdir } from "os";
 import path from "path";
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 
-import { cleanEnvFile, REQUIRED_ENV_KEYS, USER_ENV_KEYS, validateEnvFile } from "../utils/env";
+import {
+    cleanEnvFile,
+    REQUIRED_ENV_KEYS,
+    updateEnvFile,
+    USER_ENV_KEYS,
+    validateEnvFile,
+} from "../utils/env";
 import log from "../utils/logger";
 
 describe("env utility tests", () => {
@@ -289,6 +295,90 @@ describe("env utility tests", () => {
             } finally {
                 warnSpy.mockRestore();
             }
+        });
+    });
+
+    // -----------------------------------------------------------------------
+    // SEDEFI-442: a stale process.env silently outranks the file we just wrote.
+    //
+    // config.ts does `import "dotenv/config"`, so the PREVIOUS deployment's .env
+    // is already in process.env when deploy-all starts. Docker Compose reads the
+    // shell environment ahead of the .env file, so writing the file alone leaves
+    // containers booting against the old package and pool IDs.
+    //
+    // CI never caught this because CI always starts from a clean .env — there is
+    // nothing stale to inherit. It only bites a developer re-running a deploy,
+    // which is exactly what README.md used to suggest as a fix for oracle trouble.
+    // -----------------------------------------------------------------------
+    describe("updateEnvFile keeps process.env in step (SEDEFI-442)", () => {
+        const TOUCHED = ["SEDEFI442_PKG", "SEDEFI442_POOL", "SEDEFI442_UNRELATED", "SEDEFI442_NEW"];
+        const saved = new Map<string, string | undefined>();
+
+        beforeEach(() => {
+            for (const key of TOUCHED) {
+                saved.set(key, process.env[key]);
+                delete process.env[key];
+            }
+        });
+
+        afterEach(() => {
+            for (const [key, value] of saved) {
+                if (value === undefined) delete process.env[key];
+                else process.env[key] = value;
+            }
+            saved.clear();
+        });
+
+        it("overwrites a stale value left in process.env by a previous deployment", async () => {
+            // Simulate dotenv having loaded the previous run's .env at startup.
+            process.env.SEDEFI442_PKG = "0xOLD_PACKAGE";
+            await writeEnv(requiredBlock() + "SEDEFI442_PKG=0xOLD_PACKAGE\n");
+
+            updateEnvFile(tmpDir, { SEDEFI442_PKG: "0xNEW_PACKAGE" });
+
+            // The file is updated...
+            expect(await readEnv()).toContain("SEDEFI442_PKG=0xNEW_PACKAGE");
+            // ...and so is the environment Docker Compose will actually consult.
+            // Without the sync this assertion fails with the old value, which is
+            // precisely what the containers used to receive.
+            expect(process.env.SEDEFI442_PKG).toBe("0xNEW_PACKAGE");
+        });
+
+        it("sets keys that were not previously in process.env", async () => {
+            await writeEnv(requiredBlock());
+
+            updateEnvFile(tmpDir, { SEDEFI442_NEW: "fresh" });
+
+            expect(process.env.SEDEFI442_NEW).toBe("fresh");
+        });
+
+        it("leaves keys it was not asked to write alone", async () => {
+            // A genuine shell override must survive. updateEnvFile only ever writes
+            // the keys it is handed, which is why syncing here is safe and why we
+            // did not invert Docker Compose's documented precedence instead.
+            process.env.SEDEFI442_UNRELATED = "from-the-shell";
+            await writeEnv(requiredBlock());
+
+            updateEnvFile(tmpDir, { SEDEFI442_POOL: "0xPOOL" });
+
+            expect(process.env.SEDEFI442_UNRELATED).toBe("from-the-shell");
+            expect(process.env.SEDEFI442_POOL).toBe("0xPOOL");
+        });
+
+        it("keeps the file and process.env agreeing across successive writes", async () => {
+            // The real shape of a deploy: several updateEnvFile calls in one run.
+            await writeEnv(requiredBlock() + "SEDEFI442_PKG=0xGEN1\nSEDEFI442_POOL=0xGEN1\n");
+            process.env.SEDEFI442_PKG = "0xGEN1";
+            process.env.SEDEFI442_POOL = "0xGEN1";
+
+            updateEnvFile(tmpDir, { SEDEFI442_PKG: "0xGEN2" });
+            updateEnvFile(tmpDir, { SEDEFI442_POOL: "0xGEN2" });
+
+            const file = await readEnv();
+            expect(file).toContain("SEDEFI442_PKG=0xGEN2");
+            expect(file).toContain("SEDEFI442_POOL=0xGEN2");
+            expect(process.env.SEDEFI442_PKG).toBe("0xGEN2");
+            expect(process.env.SEDEFI442_POOL).toBe("0xGEN2");
         });
     });
 });
