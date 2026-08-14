@@ -30,6 +30,7 @@ describe("production devstack.config.ts", () => {
                 "pools-seed",
                 "trade-sim",
                 "registry-init",
+                "clock-driver",
                 "sandbox-api",
                 "trading-dashboard",
             ]),
@@ -37,7 +38,8 @@ describe("production devstack.config.ts", () => {
         // sui, whale, deepFunding, deepCoin, usdcMinter, usdcFunding, usdcCoin,
         // deepbook, margin, liquidation, admin, dashboard, wallet,
         // postgres, indexer, server, pools-seed, trade-sim,
-        // registry-init, sandbox-api, trading-dashboard (last three: SEDEFI-445/456)
-        expect(members).toHaveLength(21);
+        // registry-init, sandbox-api, trading-dashboard (SEDEFI-445/456),
+        // clock-driver (SEDEFI-317)
+        expect(members).toHaveLength(22);
     });
 });

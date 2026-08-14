@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { explorerObjectUrl } from "@/lib/explorer";
 
 /* ------------------------------------------------------------------ */
 /*  Types (matching deployment manifest shape)                         */
@@ -354,8 +355,10 @@ function AddressCell({
         setCopied(true);
     };
 
-    const net = network === "localnet" ? "local" : network;
-    const explorerUrl = `https://explorer.polymedia.app/${kind}/${value}?network=${net}`;
+    // These ids come from the manifest, i.e. they are mainnet-inherited — so on
+    // a fork they resolve on the MAINNET explorer, which is the useful target.
+    // (The old code emitted `?network=fork` here and simply 404'd.)
+    const explorerUrl = explorerObjectUrl(network, kind, value, "mainnet-inherited");
 
     return (
         <span className="inline-flex items-center gap-1.5">
@@ -366,14 +369,17 @@ function AddressCell({
             >
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </button>
-            <a
-                href={explorerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded p-0.5 text-zinc-500 transition-colors hover:text-zinc-200"
-            >
-                <ExternalLink className="h-3.5 w-3.5" />
-            </a>
+            {explorerUrl !== null && (
+                <a
+                    href={explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="View on the mainnet explorer — the fork inherits this object from mainnet"
+                    className="rounded p-0.5 text-zinc-500 transition-colors hover:text-zinc-200"
+                >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+            )}
         </span>
     );
 }

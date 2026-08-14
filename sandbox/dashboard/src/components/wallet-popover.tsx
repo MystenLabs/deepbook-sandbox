@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Wallet, Copy, Check, ExternalLink } from "lucide-react";
+import { Wallet, Copy, Check } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { CoinIcon } from "@/components/trading/coin-icon";
@@ -12,9 +12,9 @@ function truncateAddress(addr: string) {
     return `${addr.slice(0, 8)}...${addr.slice(-6)}`;
 }
 
-function explorerUrl(addr: string) {
-    return `https://explorer.polymedia.app/address/${addr}?network=local`;
-}
+// No explorer link here: the dev wallet is generated for the fork, so it exists
+// on no public chain (see lib/explorer.ts). The copy button beside it is the
+// useful affordance.
 
 export function WalletPopover() {
     const { address } = useDeepBookClient();
@@ -56,14 +56,6 @@ export function WalletPopover() {
                                     <Copy className="h-3 w-3" />
                                 )}
                             </button>
-                            <a
-                                href={explorerUrl(address)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="rounded p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
-                            >
-                                <ExternalLink className="h-3 w-3" />
-                            </a>
                         </div>
                     </div>
                 )}

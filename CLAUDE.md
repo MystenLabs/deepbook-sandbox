@@ -42,6 +42,7 @@ former docker-compose remnant (the compose file is deleted):
 | **registry-init** (`registry-init.ts`)         | Task: admin-impersonated `init_balance_manager_map`³     | —                     |
 | **sandbox-api** (`sandbox-api.ts`)             | Old `sandbox/api` contract: GET /manifest, POST /faucet⁴ | 9009                  |
 | **trading-dashboard** (`trading-dashboard.ts`) | The old trading dashboard's Vite dev server (SEDEFI-456) | 5173                  |
+| **clock-driver** (`clock-driver.ts`)           | Holds the fork's on-chain Clock at wall time⁵            | —                     |
 
 ¹ Degraded on the fork: the server's live reads (/status, /orderbook,
 /deep_supply, /fees, /margin_supply) are JSON-RPC and the fork is gRPC-only;
@@ -52,6 +53,16 @@ user-driven BM registration would abort without it; idempotent per chain.
 ⁴ In-process HTTP (not a container): the funding strategies only exist inside
 the supervisor, and the devstack dashboard's `fund` mutation cannot route SUI
 on a fork — DEEP/USDC only.
+⁵ In-process loop (SEDEFI-317 / DBSF-013, first slice). The fork Clock never
+ticks on its own (SUI-FORK-ISSUES #6) and checkpoints seal with whatever it
+says, so without this every fill is stamped in the past — below the DeepBook
+server's wall-relative 24h `/ticker` window, which is what the trading
+dashboard prices orders off. Advances by exactly the measured deficit every
+`CLOCK_INTERVAL_MS` (default 5s), forward-only and never past wall;
+`CLOCK_DRIVER_DISABLED=1` opts out. It is the stack's SINGLE clock authority —
+trade-sim deliberately no longer advances the Clock (two advancers, one
+tracking it locally, race it past wall). The Hermes → advance-clock → Pyth
+submit half of DBSF-013 lands on top of this loop.
 
 Wiring resolves from devstack state, not env: the members get the fork RPC URL
 from the sui member's `hostGateway.rpcUrl` (the ACTUAL brokered port, not a
@@ -114,8 +125,9 @@ tail -f .devstack-supervisor.log
 # Member container logs (names are devstack-derived; find them by label)
 docker logs -f "$(docker ps --filter label=devstack.plugin=deepbook-indexer --format '{{.Names}}')"
 
-# Fork clock -> wall time (the fork clock never ticks on its own; run this
-# when faucet/trade activity looks stale in the explorer — SEDEFI-453)
+# Fork clock -> wall time. The clock-driver member holds it there while the
+# stack is up; this is the manual mover for a stack running with
+# CLOCK_DRIVER_DISABLED=1, or when the supervisor is down (SEDEFI-453).
 pnpm clock:sync
 ```
 

@@ -50,6 +50,34 @@ const COIN_SCALARS: Record<string, number> = {
 };
 const SUI_TYPE = "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI";
 
+/* --- post-trade order sync ------------------------------------------------
+ * Open orders are read from the indexer (server /orders), never from chain —
+ * `getAccountOrderDetails` simulates, which the fork cannot do. So a placed or
+ * cancelled order only appears once the indexer has ingested its checkpoint.
+ * That pipeline is fast (measured on the fork stack: the indexer runs ONE
+ * checkpoint behind the tip), but it is not instant, so the invalidation fired
+ * the moment a trade settles usually reads a table that does not have the
+ * order yet — and the next poll was a flat 10s away. That gap, not the
+ * indexer, is why a new order "took a while" to show up.
+ *
+ * Fix: poll every second for a short window after any settled trade, then drop
+ * back to the idle cadence. The window is generous relative to the real lag so
+ * a slow checkpoint still lands inside it. */
+const ORDERS_IDLE_POLL_MS = 10_000;
+const ORDERS_SYNC_POLL_MS = 1_000;
+const ORDERS_SYNC_WINDOW_MS = 20_000;
+
+/** Module-level so every hook instance (trading page, market-maker page)
+ *  shares one window — the same reason the BM selection uses a module store. */
+let lastSettledAt = 0;
+
+/** True while a just-settled trade is still expected to appear. Read at render
+ *  time; during the window renders happen ~1s apart, so a UI flag derived from
+ *  it stays steady rather than flickering. */
+export function isSyncingOrders(): boolean {
+    return Date.now() - lastSettledAt < ORDERS_SYNC_WINDOW_MS;
+}
+
 /** Fork-mode branch info for the hooks (react-query dedupes the manifest
  *  fetch with useDeepBookClient's). null = localnet / not loaded yet. */
 function useForkManifest(): ForkManifest | null {
@@ -265,7 +293,9 @@ export function useOpenOrders(
             });
         },
         enabled: !!client && !!balanceManagerId,
-        refetchInterval: 10_000,
+        // Re-evaluated by react-query after each fetch, so the cadence tightens
+        // as soon as a trade settles and relaxes on its own afterwards.
+        refetchInterval: () => (isSyncingOrders() ? ORDERS_SYNC_POLL_MS : ORDERS_IDLE_POLL_MS),
     });
 }
 
@@ -313,6 +343,9 @@ export function useTrading(
     const fork = useForkManifest();
 
     const invalidateAll = useCallback(() => {
+        // Opens the fast-poll window: this first refetch usually races the
+        // indexer and comes back without the order.
+        lastSettledAt = Date.now();
         queryClient.invalidateQueries({ queryKey: ["open-orders"] });
         queryClient.invalidateQueries({ queryKey: ["bm-balances"] });
         queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });

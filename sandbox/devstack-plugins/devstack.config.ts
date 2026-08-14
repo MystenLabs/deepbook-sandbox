@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { account, coin, dashboard, defineDevstack, sui, wallet } from "@mysten-incubation/devstack";
 
+import { clockDriverMember } from "./clock-driver.ts";
 import { deepFundingFromWhale, DEEP_COIN_TYPE } from "./deep-funding.ts";
 import { resolveForkCheckpoint } from "./fork-checkpoint.ts";
 import {
@@ -145,6 +146,12 @@ const poolsSeed = poolsSeedMember({ postgres, indexer });
 // port 9009, and trading-dashboard runs the Vite dev server with
 // fork-resolved wiring on port 5173.
 const registryInit = registryInitMember({ sui: suiRef });
+// Holds the fork's on-chain Clock at wall time (SEDEFI-317 / DBSF-013, first
+// slice). Without it the Clock sits at the checkpoint pin and every fill is
+// stamped weeks in the past — below the DeepBook server's 24h /ticker window,
+// which is what the dashboard prices orders off (CLOCK_DRIVER_DISABLED=1 opts
+// out; CLOCK_INTERVAL_MS tunes it).
+const clockDriver = clockDriverMember({ sui: suiRef, registryInit });
 // Continuous self-fill loop so the dashboard's Price panel / ticker stay
 // live (SIM_DISABLED=1 opts out; SIM_POOLS / SIM_INTERVAL_MS tune it).
 const tradeSim = tradeSimMember({ sui: suiRef, postgres, poolsSeed, indexer, registryInit });
@@ -179,6 +186,7 @@ export const members = [
     poolsSeed,
     tradeSim,
     registryInit,
+    clockDriver,
     sandboxApi,
     tradingDashboard,
 ];

@@ -7,6 +7,7 @@ import {
     useTrading,
     useOpenOrders,
     useCreateBalanceManager,
+    isSyncingOrders,
 } from "./hooks";
 import { BalanceManagerSetup } from "./balance-manager-setup";
 import { MarketOrderCard, LimitOrderCard, CancelOrdersCard } from "./action-cards";
@@ -113,6 +114,9 @@ export function TradingPage() {
                         poolKey={POOL_KEY}
                         orders={openOrders.data ?? []}
                         isLoading={openOrders.isLoading}
+                        // Gated on the post-trade window so the indicator never
+                        // flickers on the idle 10s poll.
+                        isSyncing={openOrders.isFetching && isSyncingOrders()}
                         onCancelOrder={trading.cancelOrder}
                     />
                     <CancelOrdersCard

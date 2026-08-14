@@ -21,7 +21,7 @@ gitignored — the Dockerfile applies the patches at build time).
 | 3   | fork-genesis regression on every rev after ~Jul 8    | can't bump the rev; blocks the #27520 fix    | stay pinned to `16f1402387`                 | SEDEFI-449                                  |
 | 4   | protocol-130 framework skew panic-aborts execution   | any tx against post-2026-07-31 state         | `FORK_CHECKPOINT=304941000` pin             | SEDEFI-450                                  |
 | 5   | `availableRange` phones home uncached                | flaky checkpoint reads, boots, indexer       | image patch: memoize first answer           | SEDEFI-452                                  |
-| 6   | checkpoint timestamps frozen at the on-chain Clock   | fills invisible to time-windowed readers     | `pnpm clock:sync` / advance around trading  | SEDEFI-453                                  |
+| 6   | checkpoint timestamps frozen at the on-chain Clock   | fills invisible to time-windowed readers     | `clock-driver` member; `pnpm clock:sync`    | SEDEFI-453                                  |
 | 7   | `simulate_transaction` unsupported                   | all SDK read paths (devInspect)              | none — SDK examples stay blocked            | SEDEFI-358 / sui#27520                      |
 | 8   | (devstack) `advanceClock` mutation no-ops on fork    | silent — returns `ok: true`                  | shell out to the `sui-fork` CLI             | SEDEFI-454                                  |
 | 9   | fresh-chain first commit panic-aborts (framework)    | first fork-local commit on a fresh chain     | registry-init pre-warms 0x1/0x2/0x3/0x5/0x6 | new (SEDEFI-456 find) — ticket TBD          |
@@ -64,6 +64,22 @@ For a DeepBook pool the set IS enumerable, so the dashboard now walks it:
 inner, then both `BigVector` order books root-slice-first down to every leaf,
 before any order is built. Without it a market order that crosses
 mainnet-inherited liquidity aborts the moment matching reaches an unread leaf.
+
+**Pyth/Wormhole are NOT exempt** (2026-08-14, SEDEFI-317). The DBSF-004 spike
+recorded that "the Pyth/Wormhole shared objects do not trip sui-fork's
+stale-shared-object bug, so no `--object` seeding is needed" — true in June
+against a fork of the live tip, false at the `FORK_CHECKPOINT` pin. A real
+Hermes update PTB fails twice over: input-object checking rejects it with
+`Dependent package not found on-chain: 0x8d97f1cd…` (the pyth ORIGINAL package,
+carried in the type tags), and once that is read, execution aborts in
+`wormhole::package_utils::assert_version` (code 1) — which reads the State's
+`Field<CurrentPackage, PackageInfo>` child, NOT a stale package id. Both
+package ids were verified current at the pin, so an `assert_version` abort here
+is never package skew. The five ids to read first are pinned under `pyth.prewarm`
+in `deployments/mainnet-fork.json`; with them warmed the same PTB lands and
+`get_price_no_older_than(clock, 60)` passes. Enumerate such children against
+MAINNET — the fork's `dynamic_field_iter` is a patched-out stub returning empty
+— and rely on ids being parent+key derived, hence identical on the fork.
 **Upstream ask:** route execution-time child/shared-object reads through the
 same lazy-fetch path gRPC reads use.
 
@@ -120,10 +136,18 @@ advances on its own — so all fork activity is timestamped days in the past and
 invisible to every wall-relative consumer (DeepBook server 24h windows, OHLCV
 aggregation). `sui-fork advance-clock` is the only mover.
 
-**Local:** `pnpm clock:sync` (scripts/sync-fork-clock.ts) brings the Clock to
-wall time on demand — run it whenever "new" activity looks stale in the
-explorer; `scripts/seed-trades.ts` also advances the clock towards (never
-past) wall time around trading.
+**Local:** the `clock-driver` member (devstack-plugins/clock-driver.ts,
+SEDEFI-317) holds the Clock at wall time for the life of the stack — it
+re-measures the deficit from `fork.status` every `CLOCK_INTERVAL_MS` (default
+5s) and closes exactly that, forward-only. `pnpm clock:sync`
+(scripts/sync-fork-clock.ts) remains the on-demand mover for a stack running
+with `CLOCK_DRIVER_DISABLED=1` or a dead supervisor; `scripts/seed-trades.ts`
+also advances the clock towards (never past) wall time around trading.
+
+Note the failure mode that motivated a standalone driver: the clock used to be
+advanced by trade-sim after each fill, so when that sim stalled the Clock
+stopped with it — observed live 2026-08-14 on a one-hour-old stack whose Clock
+had frozen at its boot-time catch-up, 1.44h behind wall.
 **Upstream ask:** an opt-in mode where the fork's Clock tracks wall time.
 
 ## 7. `simulate_transaction` unsupported

@@ -74,14 +74,22 @@ const CONFIG = {
     // enumerable SUI on a fresh fork, so PTB gas auto-selection fails with
     // "Cannot find gas coin". If SENDER_GAS_COIN is unset, `run` mode funds the
     // sender 1 SUI from the donor below (referenced by id — a fresh fork can't
-    // enumerate the donor's un-fetched coins). Same whale as the other spikes.
+    // enumerate the donor's un-fetched coins).
+    //
+    // Donor swapped 2026-08-14 (SEDEFI-317): this used to point at the DEEP
+    // whale, whose single SUI coin is now drained to ~0.0997 SUI by the stack's
+    // boot funding. Sui rejects a tx whose gas coin holds less than the DECLARED
+    // budget before execution, so every run died on "Balance of gas object
+    // 99695273 is lower than the needed amount: 100000000". This is the deepbook
+    // adminWallet's 5493 SUI coin — the same donor the faucet moved to in the
+    // fork-sui-grant plugin, for the same reason.
     senderGasCoin: process.env.SENDER_GAS_COIN || null,
     suiDonor:
         process.env.SUI_DONOR ||
-        "0x9548232f9cebbc1eec56cfb25b99f61e17924b4908248c260c8d70100c59c70d",
+        "0xd0ec0b201de6b4e7f425918bbd7151c37fc1b06c59b3961a2a00db74f6ea865e",
     donorGasCoin:
         process.env.SUI_DONOR_GAS_COIN ||
-        "0xc866352dd2574aa14752dd09afca89cd993f573c59218ff278c3dafbd24ca714",
+        "0xd99d6529c67e2330a856e98c141ff57bc8069e36646523ad2f3981cdec8b6f67",
     fundAmount: process.env.FUND_AMOUNT || "1000000000", // 1 SUI to the sender
 
     // Pyth's default stale_price_threshold. The whole point of this spike

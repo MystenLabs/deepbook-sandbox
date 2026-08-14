@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { ShoppingCart, BookOpen, XCircle, ExternalLink, Loader2 } from "lucide-react";
+import { ShoppingCart, BookOpen, XCircle, Loader2 } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { TxResultLink } from "@/components/tx-result-link";
 import { SdkCodeBlock } from "./sdk-code-block";
 import {
     placeMarketOrderSnippet,
@@ -189,15 +190,10 @@ export function MarketOrderCard({ poolKey, minSize, lotSize, onPlace }: MarketOr
                 {success && (
                     <p className="text-xs text-emerald-400 flex items-center gap-1.5">
                         {success.message}
-                        <a
-                            href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <TxResultLink
+                            digest={success.digest}
                             className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
-                        >
-                            View tx
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
+                        />
                     </p>
                 )}
             </CardContent>
@@ -395,15 +391,10 @@ export function LimitOrderCard({
                 {success && (
                     <p className="text-xs text-emerald-400 flex items-center gap-1.5">
                         {success.message}
-                        <a
-                            href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <TxResultLink
+                            digest={success.digest}
                             className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
-                        >
-                            View tx
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
+                        />
                     </p>
                 )}
             </CardContent>
@@ -483,15 +474,10 @@ export function CancelOrdersCard({ poolKey, orderCount, onCancelAll }: CancelOrd
                 {success && (
                     <p className="text-xs text-emerald-400 flex items-center gap-1.5">
                         {success.message}
-                        <a
-                            href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <TxResultLink
+                            digest={success.digest}
                             className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
-                        >
-                            View tx
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
+                        />
                     </p>
                 )}
             </CardContent>
