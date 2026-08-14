@@ -1,80 +1,53 @@
 import type { ReactNode } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useCurrentClient } from "@mysten/dapp-kit-react";
-import {
-    Box,
-    Activity,
-    ArrowLeftRight,
-    Droplets,
-    Play,
-    RefreshCw,
-    RotateCcw,
-    Server,
-    Square,
-} from "lucide-react";
+import { ArrowLeftRight, Box, Clock, Droplets, RefreshCw, Server } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useManifest, isForkManifest } from "@/hooks/use-deepbook-client";
+import { coreOf, forkClockMs, forkRecentTrades, type ForkTrade } from "@/lib/fork";
 
 /* ------------------------------------------------------------------ */
-/*  Types (matching actual service responses)                         */
+/*  What this page checks — the devstack members, from the browser     */
 /* ------------------------------------------------------------------ */
+//
+// Every card maps to a member of the running fork stack, using only
+// browser-reachable signals (the localnet-era oracle/market-maker cards and
+// the /api/services start/stop controls pointed at services and routes that
+// no longer exist; services are devstack members now — member-level control
+// lives on the devstack dashboard):
+//
+//   fork chain    → gRPC via the /api/sui proxy (checkpoint / epoch / gas)
+//   clock-driver  → |wall − on-chain Clock| (it exists to hold that at ~0;
+//                   the fork clock never ticks by itself)
+//   trade-sim     → age of the newest DEEP_SUI fill; this doubles as the
+//                   indexer-freshness signal, since fills reach us through
+//                   chain → indexer → Postgres → server
+//   server (+ Postgres) → /ticker, a Postgres-backed endpoint (the /status
+//                   health route is live-RPC — dead on the gRPC-only fork)
+//   sandbox-api   → GET /api/ (manifest + faucet service)
 
-interface FaucetResponse {
+interface SandboxApiResponse {
     service: string;
     network: string;
-    /** Localnet-era field; the fork-mode sandbox-api member omits it. */
-    deployer?: string;
 }
 
-interface OracleResponse {
-    status: string;
-    updates: number;
-    errors: number;
-    lastUpdate: string | null;
-    prices: { sui: string | null; deep: string | null };
+interface TickerEntry {
+    last_price: number;
+    base_volume: number;
+    quote_volume: number;
+    isFrozen: number;
 }
-
-interface PoolHealth {
-    orders: number;
-    lastError: string | null;
-}
-
-interface MarketMakerResponse {
-    status: "healthy" | "unhealthy";
-    timestamp: string;
-    uptime: number;
-    /** Per-pool view keyed by "BASE_QUOTE" (e.g. "DEEP_SUI"). */
-    pools?: Record<string, PoolHealth>;
-    details: {
-        activeOrders: number;
-        totalOrdersPlaced: number;
-        totalRebalances: number;
-        errors: number;
-    };
-}
-
-interface ServerStatusResponse {
-    status: "OK" | "UNHEALTHY";
-    latest_onchain_checkpoint: number;
-    current_time_ms: number;
-    earliest_checkpoint: number;
-    max_checkpoint_lag: number;
-    max_time_lag_seconds: number;
-    pipelines: {
-        pipeline: string;
-        indexed_checkpoint: number;
-        checkpoint_lag: number;
-        time_lag_seconds: number;
-    }[];
-}
-
-/* ------------------------------------------------------------------ */
-/*  Constants                                                         */
-/* ------------------------------------------------------------------ */
 
 const REFETCH_INTERVAL = 10_000;
+/** clock-driver holds the Clock every 5s; more than this is a stall. */
+const CLOCK_DRIFT_UNHEALTHY_MS = 30_000;
+/** trade-sim fills roughly every second; quiet longer than this is a stall. */
+const FILL_AGE_UNHEALTHY_MS = 60_000;
+
+const DEVSTACK_DASHBOARD_URL = "http://api.deepbook-sandbox.devstack-plugins.localhost:9810";
 
 /* ------------------------------------------------------------------ */
 /*  HealthPage                                                        */
@@ -82,6 +55,8 @@ const REFETCH_INTERVAL = 10_000;
 
 export function HealthPage() {
     const client = useCurrentClient();
+    const manifest = useManifest();
+    const network = manifest.data && isForkManifest(manifest.data) ? "mainnet fork" : "localnet";
 
     const sui = useQuery<string>({
         queryKey: ["sui-checkpoint"],
@@ -95,14 +70,11 @@ export function HealthPage() {
         retry: false,
     });
 
-    const suiState = useQuery<{ epoch: string; epochDurationMs: string }>({
+    const suiState = useQuery<string>({
         queryKey: ["sui-system-state"],
         queryFn: async () => {
             const resp = await client.ledgerService.getEpoch({}).response;
-            return {
-                epoch: String(resp.epoch?.epoch ?? "0"),
-                epochDurationMs: "0",
-            };
+            return String(resp.epoch?.epoch ?? "0");
         },
         refetchInterval: REFETCH_INTERVAL,
         retry: false,
@@ -118,44 +90,50 @@ export function HealthPage() {
         retry: false,
     });
 
-    const oracle = useQuery<OracleResponse>({
-        queryKey: ["oracle-health"],
+    const clock = useQuery<{ clockMs: number; driftMs: number }>({
+        queryKey: ["health-clock"],
         queryFn: async () => {
-            const r = await fetch("/api/oracle/");
+            const clockMs = await forkClockMs(coreOf(client));
+            return { clockMs, driftMs: Math.abs(Date.now() - clockMs) };
+        },
+        refetchInterval: REFETCH_INTERVAL,
+        retry: false,
+    });
+    const clockStatus =
+        clock.data && clock.data.driftMs > CLOCK_DRIFT_UNHEALTHY_MS ? "unhealthy" : undefined;
+
+    const lastFill = useQuery<{ trade: ForkTrade | null; ageMs: number | null }>({
+        queryKey: ["health-last-fill"],
+        queryFn: async () => {
+            // Age computed at fetch time (render must stay pure); it refreshes
+            // with every poll, which is exactly its precision anyway.
+            const trade = (await forkRecentTrades("DEEP_SUI", 1))[0] ?? null;
+            return { trade, ageMs: trade ? Date.now() - trade.timestamp : null };
+        },
+        refetchInterval: REFETCH_INTERVAL,
+        retry: false,
+    });
+    const fillAgeMs = lastFill.data?.ageMs ?? null;
+    const simStalled = fillAgeMs === null || fillAgeMs > FILL_AGE_UNHEALTHY_MS;
+    let simStatus: string | undefined;
+    if (!lastFill.isError && !lastFill.isLoading && simStalled) simStatus = "unhealthy";
+
+    const ticker = useQuery<Record<string, TickerEntry>>({
+        queryKey: ["health-ticker"],
+        queryFn: async () => {
+            const r = await fetch("/api/deepbook/ticker");
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return r.json();
         },
         refetchInterval: REFETCH_INTERVAL,
         retry: false,
     });
+    const deepSui = ticker.data?.DEEP_SUI;
 
-    const mm = useQuery<MarketMakerResponse>({
-        queryKey: ["mm-health"],
-        queryFn: async () => {
-            const r = await fetch("/api/mm/health");
-            // MM returns 503 when unhealthy — still parse the body for status details
-            if (!r.ok && r.status !== 503) throw new Error(`HTTP ${r.status}`);
-            return r.json();
-        },
-        refetchInterval: REFETCH_INTERVAL,
-        retry: false,
-    });
-
-    const faucet = useQuery<FaucetResponse>({
-        queryKey: ["faucet-health"],
+    const api = useQuery<SandboxApiResponse>({
+        queryKey: ["sandbox-api-health"],
         queryFn: async () => {
             const r = await fetch("/api/");
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.json();
-        },
-        refetchInterval: REFETCH_INTERVAL,
-        retry: false,
-    });
-
-    const server = useQuery<ServerStatusResponse>({
-        queryKey: ["server-health"],
-        queryFn: async () => {
-            const r = await fetch("/api/deepbook/status");
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return r.json();
         },
@@ -168,16 +146,25 @@ export function HealthPage() {
             <div className="space-y-1">
                 <h1 className="text-lg font-semibold">Service Health</h1>
                 <p className="text-xs text-muted-foreground">
-                    Auto-refreshes every {REFETCH_INTERVAL / 1000}s
+                    The stack&apos;s devstack members, checked from the browser — auto-refreshes
+                    every {REFETCH_INTERVAL / 1000}s. Member-level detail and control:{" "}
+                    <a
+                        href={DEVSTACK_DASHBOARD_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline hover:text-zinc-300"
+                    >
+                        devstack dashboard
+                    </a>
                 </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-                {/* Sui Node */}
+                {/* Fork chain */}
                 <GridCard>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                             <Box className="h-4 w-4 text-zinc-500" />
-                            Sui Node
+                            Fork Chain
                         </CardTitle>
                         <div className="flex items-center gap-2">
                             <StatusIndicator isLoading={sui.isLoading} isError={sui.isError} />
@@ -193,10 +180,7 @@ export function HealthPage() {
                             <MetricValue isLoading={sui.isLoading} value={sui.data} />
                         </MetricRow>
                         <MetricRow label="Epoch">
-                            <MetricValue
-                                isLoading={suiState.isLoading}
-                                value={suiState.data?.epoch}
-                            />
+                            <MetricValue isLoading={suiState.isLoading} value={suiState.data} />
                         </MetricRow>
                         <MetricRow label="Gas Price">
                             <MetricValue
@@ -205,200 +189,110 @@ export function HealthPage() {
                             />
                         </MetricRow>
                         <MetricRow label="Network">
-                            <MetricValue isLoading={false} value="localnet" />
+                            <MetricValue isLoading={manifest.isLoading} value={network} />
                         </MetricRow>
                     </CardContent>
                 </GridCard>
 
-                {/* Oracle */}
+                {/* Clock driver */}
                 <GridCard>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                            <Activity className="h-4 w-4 text-zinc-500" />
-                            Oracle
+                            <Clock className="h-4 w-4 text-zinc-500" />
+                            Clock Driver
                         </CardTitle>
                         <div className="flex items-center gap-2">
                             <StatusIndicator
-                                isLoading={oracle.isLoading}
-                                isError={oracle.isError}
+                                isLoading={clock.isLoading}
+                                isError={clock.isError}
+                                status={clockStatus}
                             />
-                            <StatusBadge isLoading={oracle.isLoading} isError={oracle.isError} />
+                            <StatusBadge
+                                isLoading={clock.isLoading}
+                                isError={clock.isError}
+                                status={clockStatus}
+                            />
                             <RefreshButton
-                                isFetching={oracle.isFetching}
-                                onRefresh={() => oracle.refetch()}
-                            />
-                            <ServiceActions
-                                service="oracle-service"
-                                queryKey="oracle-health"
-                                isDown={oracle.isError}
+                                isFetching={clock.isFetching}
+                                onRefresh={() => clock.refetch()}
                             />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                        <MetricRow label="SUI Price">
+                        <MetricRow label="On-chain Clock">
                             <MetricValue
-                                isLoading={oracle.isLoading}
-                                value={oracle.data?.prices.sui}
-                            />
-                        </MetricRow>
-                        <MetricRow label="DEEP Price">
-                            <MetricValue
-                                isLoading={oracle.isLoading}
-                                value={oracle.data?.prices.deep}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Updates">
-                            <MetricValue
-                                isLoading={oracle.isLoading}
-                                value={oracle.data?.updates}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Errors">
-                            <MetricValue isLoading={oracle.isLoading} value={oracle.data?.errors} />
-                        </MetricRow>
-                        <MetricRow label="Last Update">
-                            <MetricValue
-                                isLoading={oracle.isLoading}
+                                isLoading={clock.isLoading}
                                 value={
-                                    oracle.data?.lastUpdate
-                                        ? formatTimestamp(oracle.data.lastUpdate)
+                                    clock.data
+                                        ? new Date(clock.data.clockMs).toLocaleTimeString()
                                         : undefined
                                 }
                             />
                         </MetricRow>
+                        <MetricRow label="Drift vs Wall">
+                            <MetricValue
+                                isLoading={clock.isLoading}
+                                value={clock.data ? formatAge(clock.data.driftMs) : undefined}
+                            />
+                        </MetricRow>
+                        <p className="pt-1 text-xs text-zinc-600">
+                            The fork clock never ticks by itself — this member holds it at wall time
+                            so fills stay inside the server&apos;s time windows.
+                        </p>
                     </CardContent>
                 </GridCard>
 
-                {/* Market Maker */}
+                {/* Trade sim */}
                 <GridCard>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                             <ArrowLeftRight className="h-4 w-4 text-zinc-500" />
-                            Market Maker
+                            Trade Sim
                         </CardTitle>
                         <div className="flex items-center gap-2">
                             <StatusIndicator
-                                isLoading={mm.isLoading}
-                                isError={mm.isError}
-                                status={mm.data?.status}
+                                isLoading={lastFill.isLoading}
+                                isError={lastFill.isError}
+                                status={simStatus}
                             />
                             <StatusBadge
-                                isLoading={mm.isLoading}
-                                isError={mm.isError}
-                                status={mm.data?.status}
+                                isLoading={lastFill.isLoading}
+                                isError={lastFill.isError}
+                                status={simStatus}
                             />
                             <RefreshButton
-                                isFetching={mm.isFetching}
-                                onRefresh={() => mm.refetch()}
-                            />
-                            <ServiceActions
-                                service="market-maker"
-                                queryKey="mm-health"
-                                isDown={mm.isError}
+                                isFetching={lastFill.isFetching}
+                                onRefresh={() => lastFill.refetch()}
                             />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                        <MetricRow label="Active Orders">
+                        <MetricRow label="Last Fill">
                             <MetricValue
-                                isLoading={mm.isLoading}
-                                value={mm.data?.details.activeOrders}
+                                isLoading={lastFill.isLoading}
+                                value={fillAgeMs !== null ? `${formatAge(fillAgeMs)} ago` : "none"}
                             />
                         </MetricRow>
-                        <MetricRow label="Total Orders">
+                        <MetricRow label="Price">
                             <MetricValue
-                                isLoading={mm.isLoading}
-                                value={mm.data?.details.totalOrdersPlaced}
+                                isLoading={lastFill.isLoading}
+                                value={lastFill.data?.trade?.price}
                             />
                         </MetricRow>
-                        <MetricRow label="Rebalances">
+                        <MetricRow label="Size (DEEP)">
                             <MetricValue
-                                isLoading={mm.isLoading}
-                                value={mm.data?.details.totalRebalances}
+                                isLoading={lastFill.isLoading}
+                                value={lastFill.data?.trade?.base_volume}
                             />
                         </MetricRow>
-                        <MetricRow label="Uptime">
-                            <MetricValue
-                                isLoading={mm.isLoading}
-                                value={mm.data ? formatUptime(mm.data.uptime) : undefined}
-                            />
-                        </MetricRow>
-                        {mm.data?.pools && Object.keys(mm.data.pools).length > 0 && (
-                            <div className="space-y-1 border-t border-zinc-800 pt-2">
-                                {Object.entries(mm.data.pools).map(([pair, p]) => (
-                                    <div key={pair} className="flex items-start gap-2 text-xs">
-                                        <span
-                                            className={
-                                                p.lastError ? "text-red-400" : "text-green-400"
-                                            }
-                                            aria-hidden
-                                        >
-                                            ●
-                                        </span>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex justify-between gap-2">
-                                                <span className="font-medium text-zinc-200">
-                                                    {pair}
-                                                </span>
-                                                <span className="text-zinc-400">
-                                                    {p.orders} orders
-                                                </span>
-                                            </div>
-                                            {p.lastError && (
-                                                <div
-                                                    className="mt-0.5 text-red-300 break-words"
-                                                    title={p.lastError}
-                                                >
-                                                    {p.lastError}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        <p className="pt-1 text-xs text-zinc-600">
+                            Fills reach this page through chain → indexer → Postgres → server, so a
+                            fresh fill also proves the indexer is ingesting.
+                        </p>
                     </CardContent>
                 </GridCard>
 
-                {/* Faucet — status only; the api drives /services routes so we
-                    can't offer actions for itself (stop/start are non-recoverable
-                    from the UI, and the refresh/restart buttons are hidden to
-                    keep the card minimal). */}
-                <GridCard>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                            <Droplets className="h-4 w-4 text-zinc-500" />
-                            Faucet
-                        </CardTitle>
-                        <div className="flex items-center gap-2">
-                            <StatusIndicator
-                                isLoading={faucet.isLoading}
-                                isError={faucet.isError}
-                            />
-                            <StatusBadge isLoading={faucet.isLoading} isError={faucet.isError} />
-                        </div>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                        <MetricRow label="Network">
-                            <MetricValue
-                                isLoading={faucet.isLoading}
-                                value={faucet.data?.network}
-                            />
-                        </MetricRow>
-                        <MetricRow label="Deployer">
-                            <MetricValue
-                                isLoading={faucet.isLoading}
-                                value={
-                                    faucet.data?.deployer
-                                        ? truncateAddress(faucet.data.deployer)
-                                        : undefined
-                                }
-                            />
-                        </MetricRow>
-                    </CardContent>
-                </GridCard>
-
-                {/* DeepBook Server */}
+                {/* DeepBook server (+ Postgres) */}
                 <GridCard>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="flex items-center gap-2 text-sm font-medium text-zinc-200">
@@ -407,60 +301,69 @@ export function HealthPage() {
                         </CardTitle>
                         <div className="flex items-center gap-2">
                             <StatusIndicator
-                                isLoading={server.isLoading}
-                                isError={server.isError}
-                                status={
-                                    server.data?.status === "UNHEALTHY" ? "unhealthy" : undefined
-                                }
+                                isLoading={ticker.isLoading}
+                                isError={ticker.isError}
                             />
-                            <StatusBadge
-                                isLoading={server.isLoading}
-                                isError={server.isError}
-                                status={
-                                    server.data?.status === "UNHEALTHY" ? "unhealthy" : undefined
-                                }
-                            />
+                            <StatusBadge isLoading={ticker.isLoading} isError={ticker.isError} />
                             <RefreshButton
-                                isFetching={server.isFetching}
-                                onRefresh={() => server.refetch()}
-                            />
-                            <ServiceActions
-                                service="deepbook-server"
-                                queryKey="server-health"
-                                isDown={server.isError}
+                                isFetching={ticker.isFetching}
+                                onRefresh={() => ticker.refetch()}
                             />
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                        <MetricRow label="Status">
-                            <MetricValue isLoading={server.isLoading} value={server.data?.status} />
-                        </MetricRow>
-                        <MetricRow label="Onchain Checkpoint">
+                        <MetricRow label="Pools Tracked">
                             <MetricValue
-                                isLoading={server.isLoading}
-                                value={server.data?.latest_onchain_checkpoint}
+                                isLoading={ticker.isLoading}
+                                value={ticker.data ? Object.keys(ticker.data).length : undefined}
                             />
                         </MetricRow>
-                        <MetricRow label="Max Checkpoint Lag">
-                            <MetricValue
-                                isLoading={server.isLoading}
-                                value={server.data?.max_checkpoint_lag}
-                            />
+                        <MetricRow label="DEEP/SUI Last Price">
+                            <MetricValue isLoading={ticker.isLoading} value={deepSui?.last_price} />
                         </MetricRow>
-                        <MetricRow label="Max Time Lag">
+                        <MetricRow label="DEEP/SUI 24h Volume">
                             <MetricValue
-                                isLoading={server.isLoading}
+                                isLoading={ticker.isLoading}
                                 value={
-                                    server.data ? `${server.data.max_time_lag_seconds}s` : undefined
+                                    deepSui
+                                        ? `${deepSui.base_volume.toLocaleString()} DEEP`
+                                        : undefined
                                 }
                             />
                         </MetricRow>
-                        <MetricRow label="Pipelines">
-                            <MetricValue
-                                isLoading={server.isLoading}
-                                value={server.data?.pipelines.length}
+                        <p className="pt-1 text-xs text-zinc-600">
+                            Checked via /ticker (Postgres-backed) — a passing check covers the
+                            Postgres member too.
+                        </p>
+                    </CardContent>
+                </GridCard>
+
+                {/* Sandbox API */}
+                <GridCard>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+                            <Droplets className="h-4 w-4 text-zinc-500" />
+                            Sandbox API
+                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                            <StatusIndicator isLoading={api.isLoading} isError={api.isError} />
+                            <StatusBadge isLoading={api.isLoading} isError={api.isError} />
+                            <RefreshButton
+                                isFetching={api.isFetching}
+                                onRefresh={() => api.refetch()}
                             />
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        <MetricRow label="Service">
+                            <MetricValue isLoading={api.isLoading} value={api.data?.service} />
                         </MetricRow>
+                        <MetricRow label="Network">
+                            <MetricValue isLoading={api.isLoading} value={api.data?.network} />
+                        </MetricRow>
+                        <p className="pt-1 text-xs text-zinc-600">
+                            Serves the deployment manifest and the SUI/DEEP/USDC faucet.
+                        </p>
                     </CardContent>
                 </GridCard>
             </div>
@@ -487,88 +390,6 @@ function RefreshButton({ isFetching, onRefresh }: { isFetching: boolean; onRefre
                     </button>
                 </TooltipTrigger>
                 <TooltipContent>Refresh</TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
-    );
-}
-
-type ControllableService = "oracle-service" | "market-maker" | "deepbook-server";
-
-type ServiceAction = "start" | "stop" | "restart";
-
-function ServiceActions({
-    service,
-    queryKey,
-    isDown,
-}: {
-    service: ControllableService;
-    queryKey: string;
-    isDown: boolean;
-}) {
-    const qc = useQueryClient();
-
-    const post = async (action: ServiceAction) => {
-        try {
-            await fetch(`/api/services/${service}/${action}`, { method: "POST" });
-        } catch {
-            /* network errors surface via the next health poll; nothing to do here */
-        }
-    };
-
-    // Docker takes 1–3s to actually flip container state after our 202. A single
-    // refetch on settle lands too early and sees stale "healthy". Burst a few
-    // delayed invalidations so the UI reflects reality within ~2s of the click.
-    const kickHealthQuery = () => {
-        qc.invalidateQueries({ queryKey: [queryKey] });
-        setTimeout(() => qc.invalidateQueries({ queryKey: [queryKey] }), 1500);
-        setTimeout(() => qc.invalidateQueries({ queryKey: [queryKey] }), 4000);
-    };
-
-    const primary = useMutation({
-        mutationFn: (action: "start" | "stop") => post(action),
-        onSettled: kickHealthQuery,
-    });
-    const restart = useMutation({
-        mutationFn: () => post("restart"),
-        onSettled: kickHealthQuery,
-    });
-
-    const busy = primary.isPending || restart.isPending;
-    const primaryAction: "start" | "stop" = isDown ? "start" : "stop";
-    const PrimaryIcon = isDown ? Play : Square;
-    const primaryLabel = isDown ? "Start service" : "Stop service";
-
-    return (
-        <TooltipProvider delayDuration={200}>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <button
-                        onClick={() => primary.mutate(primaryAction)}
-                        disabled={busy}
-                        aria-label={primaryLabel}
-                        className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
-                    >
-                        <PrimaryIcon
-                            className={`h-3.5 w-3.5 ${primary.isPending ? "animate-pulse" : ""}`}
-                        />
-                    </button>
-                </TooltipTrigger>
-                <TooltipContent>{primaryLabel}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <button
-                        onClick={() => restart.mutate()}
-                        disabled={busy}
-                        aria-label="Restart service"
-                        className="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200 disabled:opacity-50"
-                    >
-                        <RotateCcw
-                            className={`h-3.5 w-3.5 ${restart.isPending ? "animate-spin" : ""}`}
-                        />
-                    </button>
-                </TooltipTrigger>
-                <TooltipContent>Restart service</TooltipContent>
             </Tooltip>
         </TooltipProvider>
     );
@@ -626,7 +447,7 @@ function StatusBadge({
 }) {
     if (isLoading) return <Skeleton className="h-5 w-14 bg-zinc-800" />;
     if (isError) return <Badge variant="destructive">Offline</Badge>;
-    if (status === "unhealthy") return <Badge variant="warning">Unhealthy</Badge>;
+    if (status === "unhealthy") return <Badge variant="warning">Stalled</Badge>;
     return <Badge variant="success">Online</Badge>;
 }
 
@@ -650,21 +471,10 @@ function MetricValue({
     return <span className="text-sm font-medium text-zinc-200">{value ?? "—"}</span>;
 }
 
-function formatUptime(ms: number): string {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m ${seconds}s`;
-}
-
-function formatTimestamp(iso: string): string {
-    const d = new Date(iso);
-    return d.toLocaleTimeString();
-}
-
-function truncateAddress(addr: string): string {
-    if (addr.length <= 12) return addr;
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+function formatAge(ms: number): string {
+    if (ms < 1_000) return `${ms}ms`;
+    if (ms < 120_000) return `${(ms / 1000).toFixed(1)}s`;
+    const minutes = Math.floor(ms / 60_000);
+    if (minutes < 120) return `${minutes}m`;
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }

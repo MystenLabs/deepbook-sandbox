@@ -26,6 +26,7 @@ gitignored — the Dockerfile applies the patches at build time).
 | 8   | (devstack) `advanceClock` mutation no-ops on fork    | silent — returns `ok: true`                  | shell out to the `sui-fork` CLI             | SEDEFI-454                                  |
 | 9   | fresh-chain first commit panic-aborts (framework)    | first fork-local commit on a fresh chain     | registry-init pre-warms 0x1/0x2/0x3/0x5/0x6 | new (SEDEFI-456 find) — ticket TBD          |
 | 10  | a Bag entry can go permanently unreadable (VM + RPC) | that coin's deposits vanish; its sells abort | none — abandon the poisoned BalanceManager  | new (SEDEFI-459/460 find) — ticket TBD      |
+| 11  | gRPC `ListOwnedObjects` can hang forever             | un-timeouted awaits park loops silently      | effects-returned ids; timeout on loops      | new (SEDEFI-455 find) — ticket TBD          |
 
 ## 1. `todo!()` index stubs panic-abort the process
 
@@ -216,6 +217,10 @@ fork-local dynamic fields normally work. What poisons an individual entry is
 not yet isolated — the dead one belongs to a Bag that had a full-balance
 `withdraw_all` (which does `Bag::remove`) earlier in its history, so a
 create → remove → re-create cycle on the same derived id is the prime suspect.
+Such cycles are routine, not exotic: `balance_manager::withdraw_with_proof`
+also `remove`s the entry whenever a withdrawal exactly empties it
+(`withdraw_amount == acc_value`), so any trading flow that drains a balance
+to zero re-creates the entry on its next deposit.
 
 **Blast radius:** silent and value-losing — deposits into the affected coin
 vanish, the UI reads 0 for it, and every sell of it aborts with code 3. Only
@@ -228,3 +233,31 @@ signal either, since it counts the phantom re-adds.
 **Upstream ask:** make child-object reads (VM and RPC) resolve what the
 execution write-set committed, and make `Bag::add` on an existing derived id a
 detectable error rather than a silent second insert.
+
+## 11. gRPC `ListOwnedObjects` can hang forever
+
+`core.listOwnedObjects({ owner })` sometimes never settles — no error, no
+timeout, the returned promise just stays pending. Observed live twice on
+2026-08-14 in the trade-sim member: its gas-refill path called it right after
+a successful donor grant, and the await parked the tick fiber permanently —
+64/64 ticks had filled, then total silence with the member still `ready` and
+its sibling OHLCV fiber (same member, same process) beating on. A per-stage
+`appendFileSync` heartbeat (`SIM_HEARTBEAT_PATH`) pinpointed it:
+
+    15:51:20.205Z gas-check balance 912460176
+    15:51:20.231Z gas-check granted      <- executeTransaction fine, 26ms
+    (nothing further from this fiber; ohlcv beats continue every 8s)
+
+The same call HAS completed normally in other runs against the same fork, so
+the hang is intermittent — which makes it the nastiest failure shape
+available: any un-timeouted await on this surface silently kills the calling
+loop with no error and no status change anywhere.
+
+**Blast radius:** any supervisor-side loop that awaits enumeration without a
+timeout dies silently and stays "ready".
+**Local:** avoided structurally — `suiGrantViaWhale` now returns the created
+coin id straight from its own tx effects so nothing needs to enumerate, and
+the trade-sim tick runs under `Effect.timeout(30s)` so ANY hung fork call
+degrades into a counted failure + streak recovery instead of fiber death.
+**Upstream ask:** make `ListOwnedObjects` either answer or fail; a request
+that can park forever breaks every naive client.

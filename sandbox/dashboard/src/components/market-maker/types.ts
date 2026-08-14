@@ -25,6 +25,16 @@ export interface OracleResponse {
     prices: { sui: string | null; deep: string | null; usdc: string | null };
 }
 
+/** The slice of pool details the stat cards render — assembled from
+ *  devInspect helpers on localnet, from manifest pins + the measured book
+ *  mid on the fork (where devInspect is dead). */
+export interface PoolDetailsView {
+    midPrice: number;
+    tickSize: number;
+    lotSize: number;
+    minSize: number;
+}
+
 export interface OrderBookRow {
     price: number;
     size: number;

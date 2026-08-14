@@ -524,6 +524,217 @@ export async function prewarmPoolBook(core: ForkCore, poolId: string): Promise<v
     }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Book levels — the fork's order-book view (chain read)              */
+/* ------------------------------------------------------------------ */
+//
+// The server's /orderbook is a LIVE-RPC endpoint (JSON-RPC — dead on the
+// gRPC-only fork), so the only truthful book view is the chain itself: the
+// same BigVector walk the pre-warm does, but parsing leaf VALUES too. Each
+// leaf `vals` entry is a fixed-size 99-byte `book::order::Order`:
+//   balance_manager_id ID(32) | order_id u128(16) | client_order_id u64(8)
+//   | quantity u64 @56 | filled_quantity u64 @64 | fee_is_deep bool(1)
+//   | OrderDeepPrice{bool,u64}(9) | epoch u64(8) | status u8(1)
+//   | expire_timestamp u64 @91
+// Levels aggregate remaining (quantity − filled) per price; lazily-expired
+// orders (expire_timestamp in the past, not yet purged by matching) are
+// dead liquidity and skipped.
+
+const ORDER_BCS_BYTES = 99;
+/** Price bits of a DeepBook order-id key (bit 127 flags an ask). */
+const ORDER_PRICE_MASK = (1n << 63n) - 1n;
+
+const u128le = (b: Uint8Array, off: number): bigint => u64le(b, off) + (u64le(b, off + 8) << 64n);
+
+export interface BookLevel {
+    /** human price (quote per base) */
+    price: number;
+    /** human remaining quantity (base units) */
+    quantity: number;
+}
+
+export interface ForkBookSnapshot {
+    /** best-first (descending price) */
+    bids: BookLevel[];
+    /** best-first (ascending price) */
+    asks: BookLevel[];
+}
+
+/** Decimal scalars by coin SYMBOL (same table the trading hooks use). */
+export const BOOK_COIN_SCALARS: Record<string, number> = {
+    SUI: 1_000_000_000,
+    DEEP: 1_000_000,
+    USDC: 1_000_000,
+};
+const symbolOfType = (coinType: string): string =>
+    (coinType.split("::").pop() ?? coinType).toUpperCase();
+
+/** Slices read per side per snapshot — a leaf holds ~64 orders, so two
+ *  cover any sane levels-per-side ask while bounding a pathological book. */
+const MAX_LEAVES_PER_SIDE = 4;
+
+/**
+ * Top `levelsPerSide` price levels of a pool's book, straight off the chain.
+ *
+ * Descends each side's BigVector to its extreme leaf (rightmost for bids,
+ * leftmost for asks), then follows the leaf chain inward (`prev`/`next`
+ * links) until enough levels are aggregated. ~6-10 getObjects per call
+ * against the local fork.
+ */
+export async function readBookLevels(
+    core: ForkCore,
+    pool: { objectId: string; baseType: string; quoteType: string },
+    levelsPerSide: number,
+): Promise<ForkBookSnapshot> {
+    const baseScalar = BOOK_COIN_SCALARS[symbolOfType(pool.baseType)] ?? 1_000_000;
+    const quoteScalar = BOOK_COIN_SCALARS[symbolOfType(pool.quoteType)] ?? 1_000_000;
+    // priceRaw = human × FLOAT_SCALAR × quoteScalar / baseScalar (the same
+    // formula usePoolParams applies to tickSize).
+    const priceDiv = (FLOAT_SCALAR * quoteScalar) / baseScalar;
+
+    const poolObj = await core.getObject({ objectId: pool.objectId, include: { content: true } });
+    const c = poolObj.object?.content;
+    if (!c || c.length < 72) throw new Error(`pool ${pool.objectId}: no content`);
+    const innerFieldId = deriveDynamicFieldID(
+        `0x${bytesToHex(c.slice(32, 64))}`,
+        "u64",
+        bcs.u64().serialize(u64le(c, 64)).toBytes(),
+    );
+    const inner = await core.getObject({ objectId: innerFieldId, include: { content: true } });
+    const ic = inner.object?.content;
+    if (!ic) throw new Error(`pool ${pool.objectId}: inner Versioned field has no content`);
+    let off = 40;
+    const allowed = readUleb(ic, off);
+    off += allowed.size + allowed.value * 8 + 32 + 24;
+
+    const side = (o: number) => ({
+        uid: `0x${bytesToHex(ic.slice(o, o + 32))}`,
+        depth: ic[o + 32] ?? 0,
+        length: u64le(ic, o + 33),
+        rootId: u64le(ic, o + 57),
+    });
+    const bidsSide = side(off);
+    const asksSide = side(off + BIG_VECTOR_BYTES);
+    const nowMs = BigInt(Date.now());
+
+    const readSlice = async (uid: string, sliceId: bigint): Promise<Uint8Array | null> => {
+        const fieldId = deriveDynamicFieldID(uid, "u64", bcs.u64().serialize(sliceId).toBytes());
+        const res = await core
+            .getObject({ objectId: fieldId, include: { content: true } })
+            .catch(() => null);
+        return res?.object?.content ?? null;
+    };
+
+    // edge 0 = leftmost (asks: best = min key), -1 = rightmost (bids).
+    const readSideLevels = async (
+        s: ReturnType<typeof side>,
+        edge: 0 | -1,
+    ): Promise<BookLevel[]> => {
+        if (s.length === 0n || s.rootId === NO_SLICE) return [];
+        let sliceId = s.rootId;
+        for (let d = 0; d < s.depth; d++) {
+            const sc = await readSlice(s.uid, sliceId);
+            if (!sc) return [];
+            let so = 56;
+            const keys = readUleb(sc, so);
+            so += keys.size + keys.value * 16;
+            const vals = readUleb(sc, so);
+            if (vals.value === 0) return [];
+            so += vals.size;
+            sliceId = u64le(sc, so + (edge === 0 ? 0 : vals.value - 1) * 8);
+        }
+        // Leaf chain walk, best price outward: aggregate per-price levels.
+        // One EXTRA level is collected and dropped — a price can span a leaf
+        // boundary, so only levels with a strictly-worse successor are
+        // guaranteed complete.
+        const wanted = levelsPerSide + 1;
+        const levels = new Map<bigint, bigint>();
+        const order: bigint[] = [];
+        for (let leaves = 0; leaves < MAX_LEAVES_PER_SIDE; leaves++) {
+            const sc = await readSlice(s.uid, sliceId);
+            if (!sc) break;
+            const so = 56;
+            const keys = readUleb(sc, so);
+            const keysAt = so + keys.size;
+            let vo = keysAt + keys.value * 16;
+            const vals = readUleb(sc, vo);
+            vo += vals.size;
+            const n = Math.min(keys.value, vals.value);
+            for (let j = 0; j < n; j++) {
+                // Best-first: ascending for asks (edge 0), descending for bids.
+                const i = edge === 0 ? j : n - 1 - j;
+                const vAt = vo + i * ORDER_BCS_BYTES;
+                const expire = u64le(sc, vAt + 91);
+                if (expire < nowMs) continue; // lazily-expired: dead liquidity
+                const remaining = u64le(sc, vAt + 56) - u64le(sc, vAt + 64);
+                if (remaining <= 0n) continue;
+                const price = (u128le(sc, keysAt + i * 16) >> 64n) & ORDER_PRICE_MASK;
+                if (!levels.has(price)) {
+                    if (levels.size >= wanted) break;
+                    levels.set(price, 0n);
+                    order.push(price);
+                }
+                levels.set(price, levels.get(price)! + remaining);
+            }
+            if (levels.size >= wanted) break;
+            // prev @40 / next @48 (after the 40-byte Field header).
+            const link = u64le(sc, edge === 0 ? 48 : 40);
+            if (link === NO_SLICE) break;
+            sliceId = link;
+        }
+        return order.slice(0, levelsPerSide).map((p) => ({
+            price: Number(p) / priceDiv,
+            quantity: Number(levels.get(p)!) / baseScalar,
+        }));
+    };
+
+    const [bids, asks] = await Promise.all([
+        readSideLevels(bidsSide, -1),
+        readSideLevels(asksSide, 0),
+    ]);
+    return { bids, asks };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Recent trades — the server's Postgres-backed fills tape            */
+/* ------------------------------------------------------------------ */
+
+/** One fill from the server's /trades projection (indexer-fed, so it works
+ *  on the fork — every local fill lands here regardless of who traded). */
+export interface ForkTrade {
+    trade_id: string;
+    maker_order_id: string;
+    taker_order_id: string;
+    maker_balance_manager_id: string;
+    taker_balance_manager_id?: string;
+    price: number;
+    base_volume: number;
+    quote_volume?: number;
+    /** taker side */
+    type: "buy" | "sell";
+    timestamp: number;
+    digest: string;
+}
+
+export async function forkRecentTrades(poolKey: string, limit: number): Promise<ForkTrade[]> {
+    const res = await fetch(`/api/deepbook/trades/${poolKey}?limit=${limit}`);
+    if (!res.ok) throw new Error(`trades HTTP ${res.status}`);
+    const rows = (await res.json()) as ForkTrade[];
+    return rows.sort((a, b) => b.timestamp - a.timestamp);
+}
+
+const CLOCK_OBJECT_ID = "0x0000000000000000000000000000000000000000000000000000000000000006";
+
+/** The on-chain Clock's timestamp_ms (object 0x6: UID(32) + u64 LE). On the
+ *  fork this is what the clock-driver member holds at wall time — comparing
+ *  it to `Date.now()` IS the health check for that member. */
+export async function forkClockMs(core: ForkCore): Promise<number> {
+    const res = await core.getObject({ objectId: CLOCK_OBJECT_ID, include: { content: true } });
+    const c = res.object?.content;
+    if (!c || c.length < 40) throw new Error("Clock object (0x6) unreadable");
+    return Number(new DataView(c.buffer, c.byteOffset + 32, 8).getBigUint64(0, true));
+}
+
 /** Shared prologue for the order calls: concrete pool + BM args and an
  *  owner trade proof. Pre-warms the book first — every one of these calls
  *  walks it during execution. */

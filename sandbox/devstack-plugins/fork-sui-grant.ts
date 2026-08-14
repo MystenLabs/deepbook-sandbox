@@ -99,6 +99,23 @@ export async function cappedForkGasBudget(
     return balance < ceiling ? balance : ceiling;
 }
 
+type ChangedLike = { objectId?: string; idOperation?: string };
+
+/** The one object a grant CREATES: the split chunk transferred to the
+ *  recipient (the gas coin is only mutated). Returned so callers never have
+ *  to find it by enumeration — `ListOwnedObjects` can hang forever on the
+ *  fork (SUI-FORK-ISSUES #11), and the tx effects already name the coin. */
+const createdObjectId = (raw: unknown): string | null => {
+    const tx = (raw as { Transaction?: { effects?: { changedObjects?: ChangedLike[] } } })
+        .Transaction;
+    for (const c of tx?.effects?.changedObjects ?? []) {
+        if (String(c.idOperation ?? "").toUpperCase() === "CREATED" && c.objectId) {
+            return String(c.objectId);
+        }
+    }
+    return null;
+};
+
 const executionFailed = (raw: unknown): string | null => {
     type Status = { success?: boolean; error?: unknown };
     type Tx = { status?: Status; effects?: { status?: Status } };
@@ -125,16 +142,18 @@ const GRANT_RETRY_MS = 2_000;
 
 /**
  * Transfer `amountMist` SUI from the impersonated SUI donor to `recipient`.
- * Throws with a pointed message when the donor coin can't cover it; callers
- * should treat failure as non-fatal where the stack is still useful without
- * the grant.
+ * Resolves to the created coin's object id (null only if the effects shape
+ * ever drifts) so callers can track it WITHOUT enumerating the recipient's
+ * objects. Throws with a pointed message when the donor coin can't cover it;
+ * callers should treat failure as non-fatal where the stack is still useful
+ * without the grant.
  */
 export function suiGrantViaWhale(
     core: FullCore,
     recipient: string,
     amountMist: bigint,
-): Promise<void> {
-    const run = async (): Promise<void> => {
+): Promise<string | null> {
+    const run = async (): Promise<string | null> => {
         const res = await core.getObject({
             objectId: SUI_DONOR_COIN,
             include: { content: true },
@@ -178,8 +197,9 @@ export function suiGrantViaWhale(
         });
         const failure = executionFailed(raw);
         if (failure !== null) throw new Error(`sui grant reverted: ${failure}`);
+        return createdObjectId(raw);
     };
-    const runWithRetry = async (): Promise<void> => {
+    const runWithRetry = async (): Promise<string | null> => {
         let lastError: unknown;
         for (let attempt = 1; attempt <= GRANT_ATTEMPTS; attempt++) {
             try {

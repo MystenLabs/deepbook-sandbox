@@ -33,16 +33,17 @@ routed by Host header `api.deepbook-sandbox.devstack-plugins.localhost` on port
 9810), and — since SEDEFI-445 (DBSF-032) — **container-backed members** for the
 former docker-compose remnant (the compose file is deleted):
 
-| Member (plugin module)                         | Description                                              | Host ports            |
-| ---------------------------------------------- | -------------------------------------------------------- | --------------------- |
-| **postgres** (`postgres-member.ts`)            | Database for the indexer (data in the writable layer)    | 5432                  |
-| **indexer** (`indexer-member.ts`)              | Ingests DeepBook events from the fork over gRPC          | 9184 (metrics)        |
-| **server** (`server-member.ts`)                | REST API for indexed data (live-RPC endpoints degraded¹) | 9008, 9186 (metrics²) |
-| **pools-seed** (`pools-seed.ts`)               | Task: seeds the server's manual `pools` config table     | —                     |
-| **registry-init** (`registry-init.ts`)         | Task: admin-impersonated `init_balance_manager_map`³     | —                     |
-| **sandbox-api** (`sandbox-api.ts`)             | Old `sandbox/api` contract: GET /manifest, POST /faucet⁴ | 9009                  |
-| **trading-dashboard** (`trading-dashboard.ts`) | The old trading dashboard's Vite dev server (SEDEFI-456) | 5173                  |
-| **clock-driver** (`clock-driver.ts`)           | Holds the fork's on-chain Clock at wall time⁵            | —                     |
+| Member (plugin module)                         | Description                                                                                             | Host ports            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------- |
+| **postgres** (`postgres-member.ts`)            | Database for the indexer (data in the writable layer)                                                   | 5432                  |
+| **indexer** (`indexer-member.ts`)              | Ingests DeepBook events from the fork over gRPC                                                         | 9184 (metrics)        |
+| **server** (`server-member.ts`)                | REST API for indexed data (live-RPC endpoints degraded¹)                                                | 9008, 9186 (metrics²) |
+| **pools-seed** (`pools-seed.ts`)               | Task: seeds the server's manual `pools` config table                                                    | —                     |
+| **registry-init** (`registry-init.ts`)         | Task: admin-impersonated `init_balance_manager_map`³                                                    | —                     |
+| **sandbox-api** (`sandbox-api.ts`)             | Old `sandbox/api` contract: GET /manifest, POST /faucet⁴                                                | 9009                  |
+| **trading-dashboard** (`trading-dashboard.ts`) | The old trading dashboard's Vite dev server (SEDEFI-456)                                                | 5173                  |
+| **clock-driver** (`clock-driver.ts`)           | Holds the fork's on-chain Clock at wall time⁵                                                           | —                     |
+| **trade-sim** (`trade-sim.ts`)                 | Continuous self-fills strictly inside the measured real spread (SEDEFI-455) keep /ticker + candles live | —                     |
 
 ¹ Degraded on the fork: the server's live reads (/status, /orderbook,
 /deep_supply, /fees, /margin_supply) are JSON-RPC and the fork is gRPC-only;
