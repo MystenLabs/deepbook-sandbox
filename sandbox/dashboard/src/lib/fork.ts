@@ -587,9 +587,10 @@ export async function forkPlaceLimitOrder(
  * someone else filled later: those sit as settled amounts until your next
  * interaction with the pool. Cheap, and a no-op when nothing is parked.
  *
- * Note the coin bought may still read as 0 in the UI afterwards — that is
- * SUI-FORK-ISSUES #10 (the fork won't serve fork-created dynamic-field
- * children), not a missing settlement.
+ * If a bought coin still reads as 0 afterwards AND selling it aborts with
+ * `abort code: 3` in `withdraw_with_proof`, that BalanceManager's Bag entry
+ * for the coin has gone unreadable to the VM itself — SUI-FORK-ISSUES #10.
+ * Deposits into it are lost; the only escape is a different BalanceManager.
  */
 function settleInto(
     tx: Transaction,
