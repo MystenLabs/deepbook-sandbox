@@ -227,7 +227,8 @@ They read `sandbox/deployments/localnet.json`, so the stack must be running. See
 
 One thing worth carrying into your own integration: the market maker empties the order
 book on every rebalance, so reads that need both sides must be retried and fills must be
-verified from a balance delta rather than from a transaction digest. See §12.
+verified from a balance delta rather than from a transaction digest. `setup.ts` exports
+`getMidPrice`, `getBookTicks` and `waitForLiquidity` for this — see the entry in §12.
 
 ## 8. Using the Faucet
 
@@ -365,7 +366,9 @@ bunx prettier-move -c *.move --write
 
 **"Transaction failed" in oracle service** — The oracle's dedicated keypair ran out of SUI. This shouldn't happen since `deploy-all` funds it automatically. If it does, check `docker logs oracle-service`, then run `pnpm down` followed by `pnpm deploy-all` — see the next entry for why the teardown is not optional.
 
-**"Failed to publish token" when re-running `pnpm deploy-all`** — A second `deploy-all` over a completed deployment fails in Phase 3. `Pub.localnet.toml` survives the first run and records the packages as already published, so `sui client test-publish` cannot proceed. Always `pnpm down` first; it removes that file along with the containers and volumes.
+**"Failed to publish token" when re-running `pnpm deploy-all`** — A second `deploy-all` over a completed deployment fails in Phase 3. The publish manifest lives inside the running `sui-localnet` container at `/workspace/Pub.localnet.toml` and records the packages as already published, so `sui client test-publish` cannot proceed. Always `pnpm down` first — it clears the manifest by destroying the container. Deleting the host copy at `sandbox/Pub.localnet.toml` on its own is not enough.
+
+**Order book reads return nothing, or `midPrice()` throws `Cannot read properties of undefined (reading 'returnValues')`** — The market maker cancels its whole grid in one transaction and places the replacement in another, so the book is briefly empty on **both** sides every rebalance cycle. Retry the read; `examples/sandbox/setup.ts` exports `getMidPrice`, `getBookTicks` and `waitForLiquidity` for this. Note a market order against an empty book matches nothing and still returns a successful digest, so verify fills from a balance delta rather than from the digest.
 
 **"Failed to publish pyth" / `curl 56 GnuTLS recv error`** — The pyth package resolves a git dependency from the `sui` repo at publish time, so a flaky connection kills the deploy with `fatal: index-pack failed`. This is a clone failure, not a broken sandbox. Re-run it.
 
