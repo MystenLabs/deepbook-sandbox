@@ -227,18 +227,16 @@ export function useOpenOrders(
                 // client_order_id is not indexed — the UI tolerates "".
                 if (!balanceManagerId) return [];
                 const orders = await forkOpenOrders(poolKey, balanceManagerId);
-                return orders.map(
-                    (o): OrderDetail => ({
-                        order_id: String(o.order_id),
-                        client_order_id: "",
-                        quantity: String(o.original_quantity),
-                        filled_quantity: String(o.filled_quantity),
-                        fee_is_deep: false,
-                        status: o.current_status,
-                        is_bid: o.type === "buy",
-                        price: String(o.price),
-                    }),
-                );
+                return orders.map((o): OrderDetail => ({
+                    order_id: String(o.order_id),
+                    client_order_id: "",
+                    quantity: String(o.original_quantity),
+                    filled_quantity: String(o.filled_quantity),
+                    fee_is_deep: false,
+                    status: o.current_status,
+                    is_bid: o.type === "buy",
+                    price: String(o.price),
+                }));
             }
             const raw = await client.deepbook.getAccountOrderDetails(poolKey, BALANCE_MANAGER_KEY);
             return raw.map((order) => {

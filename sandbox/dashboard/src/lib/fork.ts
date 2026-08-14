@@ -280,8 +280,7 @@ export async function sharedObjectArg(
     const res = await core.getObject({ objectId, include: {} });
     const owner = (
         res.object as
-            | { owner?: { Shared?: { initialSharedVersion?: string | number } } }
-            | undefined
+            { owner?: { Shared?: { initialSharedVersion?: string | number } } } | undefined
     )?.owner;
     const initial = owner?.Shared?.initialSharedVersion;
     if (initial === undefined) {
