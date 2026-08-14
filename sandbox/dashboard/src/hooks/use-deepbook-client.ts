@@ -9,7 +9,7 @@
  * All SDK queries and transaction building use this client.
  */
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentAccount, useCurrentClient } from "@mysten/dapp-kit-react";
 import { deepbook, type DeepBookClient } from "@mysten/deepbook-v3";
@@ -230,6 +230,54 @@ function buildClient(
     }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Which discovered BalanceManager to trade with                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Discovery stays on-chain (the registry's owner→BM map); this is only a
+ * per-wallet PREFERENCE for which of the discovered ids the page trades with.
+ * It exists because a manager's Bag entry can go permanently unreadable on
+ * the fork (SUI-FORK-ISSUES #10): deposits of that coin vanish and every sell
+ * aborts, with no way to detect it by reading, so the user needs to abandon
+ * that manager for another one. Shared through a module-level store so every
+ * `useDeepBookClient` instance (the trading page, the market-maker page's
+ * client) agrees on the selection.
+ */
+const BM_SELECTION_KEY = "deepbook-sandbox:selected-bm";
+
+type BmSelections = Record<string, string>;
+
+const readSelections = (): BmSelections => {
+    try {
+        const raw = localStorage.getItem(BM_SELECTION_KEY);
+        return raw ? (JSON.parse(raw) as BmSelections) : {};
+    } catch {
+        return {}; // private mode / corrupt value — fall back to the default pick
+    }
+};
+
+let selections: BmSelections = readSelections();
+const selectionListeners = new Set<() => void>();
+
+const subscribeSelections = (listener: () => void): (() => void) => {
+    selectionListeners.add(listener);
+    return () => selectionListeners.delete(listener);
+};
+/** Stable reference unless a selection actually changes (useSyncExternalStore). */
+const selectionsSnapshot = (): BmSelections => selections;
+
+function storeSelection(address: string, balanceManagerId: string): void {
+    if (selections[address] === balanceManagerId) return;
+    selections = { ...selections, [address]: balanceManagerId };
+    try {
+        localStorage.setItem(BM_SELECTION_KEY, JSON.stringify(selections));
+    } catch {
+        /* preference is best-effort; the in-memory store still works */
+    }
+    selectionListeners.forEach((listener) => listener());
+}
+
 export function useDeepBookClient() {
     const suiClient = useCurrentClient();
     const account = useCurrentAccount();
@@ -242,31 +290,47 @@ export function useDeepBookClient() {
         return buildClient(suiClient, account.address, manifest.data, null);
     }, [suiClient, account?.address, manifest.data]);
 
-    // Discover the user's BM via the on-chain registry. Returns the first
-    // BM ID owned by the connected address, or null if none registered yet.
-    // Fork mode reads the registry's map via derived dynamic fields — the
-    // SDK helper simulates a tx, and the fork has no simulate_transaction
-    // (SUI-FORK-ISSUES #7).
-    const bmQuery = useQuery<string | null>({
+    // Discover the user's BMs via the on-chain registry — every id owned by
+    // the connected address, in registration order. Fork mode reads the
+    // registry's map via derived dynamic fields; the SDK helper simulates a
+    // tx and the fork has no simulate_transaction (SUI-FORK-ISSUES #7).
+    const bmQuery = useQuery<string[]>({
         queryKey: ["balance-manager-id", account?.address ?? null],
         queryFn: async () => {
-            if (!bareClient || !account?.address || !manifest.data) return null;
+            if (!bareClient || !account?.address || !manifest.data) return [];
             if (isForkManifest(manifest.data)) {
-                const ids = await forkBalanceManagerIds(
+                return await forkBalanceManagerIds(
                     coreOf(suiClient),
                     manifest.data.deepbook.registry.objectId,
                     account.address,
                 );
-                return ids[0] ?? null;
             }
-            const ids = await bareClient.deepbook.getBalanceManagerIds(account.address);
-            return ids[0] ?? null;
+            return await bareClient.deepbook.getBalanceManagerIds(account.address);
         },
         enabled: !!bareClient && !!account?.address,
         staleTime: 60_000,
     });
 
-    const balanceManagerId = bmQuery.data ?? null;
+    const balanceManagerIds = useMemo(() => bmQuery.data ?? [], [bmQuery.data]);
+    const selected = useSyncExternalStore(
+        subscribeSelections,
+        selectionsSnapshot,
+        selectionsSnapshot,
+    );
+
+    // The stored preference only wins while it is still one of the user's
+    // managers (a wallet swap or a fork wipe invalidates it).
+    const preferred = account?.address ? selected[account.address] : undefined;
+    const balanceManagerId =
+        (preferred && balanceManagerIds.includes(preferred) ? preferred : balanceManagerIds[0]) ??
+        null;
+
+    const selectBalanceManager = useCallback(
+        (id: string) => {
+            if (account?.address) storeSelection(account.address, id);
+        },
+        [account?.address],
+    );
 
     // Full client — has the BM in config if discovery found one.
     const client = useMemo(() => {
@@ -279,6 +343,9 @@ export function useDeepBookClient() {
         isReady: !!client,
         address: account?.address ?? null,
         balanceManagerId,
+        /** Every manager the registry lists for this wallet, registration order. */
+        balanceManagerIds,
+        selectBalanceManager,
         isSetup: !!balanceManagerId,
         manifest: manifest.data ?? null,
         manifestLoading: manifest.isLoading,

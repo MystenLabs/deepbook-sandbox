@@ -17,7 +17,16 @@ const DISPLAY_COINS = ["SUI", "DEEP"];
 const POOL_KEY = "DEEP_SUI" as const;
 
 export function TradingPage() {
-    const { client, isReady, address, isSetup, balanceManagerId, manifest } = useDeepBookClient();
+    const {
+        client,
+        isReady,
+        address,
+        isSetup,
+        balanceManagerId,
+        balanceManagerIds,
+        selectBalanceManager,
+        manifest,
+    } = useDeepBookClient();
 
     const walletBalances = useWalletBalances(address);
     const bmBalances = useBmBalances(client, balanceManagerId);
@@ -73,6 +82,8 @@ export function TradingPage() {
             <BalanceManagerSetup
                 isSetup={isSetup}
                 balanceManagerId={balanceManagerId}
+                balanceManagerIds={balanceManagerIds}
+                onSelectBalanceManager={selectBalanceManager}
                 balances={bmBalances.data}
                 walletBalances={walletBalances.data?.balances}
                 canCreate={!!client && !!manifest && !!address}
