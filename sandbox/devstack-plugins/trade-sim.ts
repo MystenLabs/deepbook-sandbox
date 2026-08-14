@@ -72,6 +72,11 @@ import {
 
 import { memberError } from "./container-util.ts";
 import { mainnetForkDeepbookIds } from "./deepbook-known.ts";
+import {
+    MIN_FORK_GAS_BUDGET,
+    suiGrantViaWhale,
+    type FullCore as GrantCore,
+} from "./fork-sui-grant.ts";
 import type { indexerMember } from "./indexer-member.ts";
 import type { poolsSeedMember } from "./pools-seed.ts";
 import type { postgresMember } from "./postgres-member.ts";
@@ -97,6 +102,13 @@ const WHALE_GAS_COIN =
     process.env.SUI_GAS_COIN_ID?.trim() ||
     "0xc866352dd2574aa14752dd09afca89cd993f573c59218ff278c3dafbd24ca714";
 
+/** Ceiling, not a constant. Sui rejects any tx whose gas coin holds LESS than
+ *  the declared budget, before execution — so once the whale's SUI coin dips
+ *  under this, EVERY sim tx is refused and the error arrives thrown (not as a
+ *  FailedTransaction), which is how a broke sim used to look like a mystery
+ *  `reclaim: [object Object]` loop. The budget is capped to the coin's actual
+ *  balance (`gasBudgetFor`), the same fix already applied to dashboard writes,
+ *  DEEP/USDC funding and the faucet. */
 const GAS_BUDGET = 100_000_000n;
 const GAS_PRICE = 1_000n;
 const MAX_TIMESTAMP = 1_844_674_407_370_955_161n; // SDK MAX_TIMESTAMP
@@ -150,9 +162,10 @@ const buildImpersonationBytes = async (
     tx: Transaction,
     sender: string,
     gas: readonly ObjectRef[],
+    budget: bigint,
 ): Promise<Uint8Array> => {
     tx.setSender(sender);
-    tx.setGasBudget(GAS_BUDGET);
+    tx.setGasBudget(budget);
     tx.setGasPrice(GAS_PRICE);
     tx.setGasOwner(WHALE);
     tx.setGasPayment([...gas]);
@@ -181,6 +194,31 @@ const changedObjects = (
         | { effects?: { changedObjects?: ChangedObject[] }; objectTypes?: Record<string, string> }
         | undefined;
     return { changed: tx?.effects?.changedObjects ?? [], types: tx?.objectTypes ?? {} };
+};
+
+/**
+ * Human-readable text for a thrown/failed cause.
+ *
+ * `String(cause)` yields "[object Object]" for the tagged, non-Error shapes
+ * devstack and the fork RPC reject with — which is exactly what this loop
+ * logged 7000+ times while the real message ("Balance of gas object N is lower
+ * than the needed amount") sat one property away. Reverts print fine
+ * (`revertReason` below); this covers everything that fails BEFORE execution.
+ */
+const describeCause = (cause: unknown): string => {
+    if (cause == null) return "unknown error";
+    if (typeof cause === "string") return cause;
+    const message = (cause as { message?: unknown }).message;
+    if (typeof message === "string" && message.length > 0) return message;
+    if (cause instanceof Error) return cause.message || cause.name;
+    try {
+        return JSON.stringify(cause, (_k, v) => (typeof v === "bigint" ? String(v) : v)).slice(
+            0,
+            300,
+        );
+    } catch {
+        return Object.prototype.toString.call(cause);
+    }
 };
 
 /** Extract the on-chain failure reason from the execution envelope (both the
@@ -316,15 +354,16 @@ export function tradeSimMember(opts: TradeSimOptions) {
                 ): Effect.Effect<unknown, unknown> =>
                     Effect.gen(function* () {
                         const bytes = yield* Effect.tryPromise({
-                            try: () => buildImpersonationBytes(tx, sender, gas),
-                            catch: (cause) => fail("build-tx", `${label}: ${String(cause)}`, cause),
+                            try: () => buildImpersonationBytes(tx, sender, gas, gasBudgetFor()),
+                            catch: (cause) =>
+                                fail("build-tx", `${label}: ${describeCause(cause)}`, cause),
                         });
                         const result = yield* fork
                             .impersonate(sender, bytes)
                             .pipe(
                                 Effect.catch((cause) =>
                                     Effect.fail(
-                                        fail("execute", `${label}: ${String(cause)}`, cause),
+                                        fail("execute", `${label}: ${describeCause(cause)}`, cause),
                                     ),
                                 ),
                             );
@@ -365,6 +404,20 @@ export function tradeSimMember(opts: TradeSimOptions) {
                 let gasRef = yield* getRef(WHALE_GAS_COIN);
                 /** faucet-funded coin waiting to be merged into the gas coin. */
                 let pendingGasTopUp: ObjectRef | null = null;
+                /** Last observed balance of the gas coin, refreshed on every gas
+                 *  check and after every top-up. Only ever used to LOWER the
+                 *  declared budget, so staleness cannot cause a rejection. */
+                let gasBalance = yield* Effect.promise(() =>
+                    core
+                        .getObject({ objectId: gasRef.objectId, include: { content: true } })
+                        .then((r) => coinBalanceFromContent(r.object?.content))
+                        .catch(() => 0n),
+                );
+                /** Declared budget for the next tx: the ceiling, or the coin's
+                 *  balance when that is smaller (a budget above the balance is
+                 *  refused pre-execution). */
+                const gasBudgetFor = (): bigint =>
+                    gasBalance > 0n && gasBalance < GAS_BUDGET ? gasBalance : GAS_BUDGET;
                 const knownGasIds = new Set<string>([WHALE_GAS_COIN]);
 
                 // The whale's pinned coin (~4 SUI) can't cover the 3× quote
@@ -681,8 +734,16 @@ export function tradeSimMember(opts: TradeSimOptions) {
                         }
                     });
 
-                // --- gas top-up via devstack's fork faucet -----------------------
+                // --- gas top-up -------------------------------------------------
+                // devstack's fork faucet strategy is STRUCTURALLY null here (it
+                // vets its whale with the index-backed listCoins, which is empty
+                // on a fork — see fork-sui-grant.ts), so the old faucet-only
+                // path never fired even once: the sim just logged "the sim will
+                // stop when dry" and then ran dry, wedging every later tx. Grant
+                // from the impersonated SUI donor instead — the same source the
+                // faucet member moved to, whose coin holds thousands of SUI.
                 const faucet = deps.sui.fundingFaucetStrategy;
+                const grantCore = deps.sui.sdk.client.core as unknown as GrantCore;
                 const maybeRefillGas = Effect.gen(function* () {
                     const balance = yield* Effect.promise(() =>
                         core
@@ -690,19 +751,31 @@ export function tradeSimMember(opts: TradeSimOptions) {
                             .then((r) => coinBalanceFromContent(r.object?.content))
                             .catch(() => 0n),
                     );
+                    gasBalance = balance;
                     if (balance >= GAS_LOW_WATER_MIST) return;
-                    if (faucet === null) {
-                        stats.lastError = `gas low (${balance} MIST) and no fork faucet strategy — the sim will stop when dry`;
-                        return;
+                    if (balance < MIN_FORK_GAS_BUDGET) {
+                        console.error(
+                            `[trade-sim] gas coin down to ${balance} MIST — below the ` +
+                                `${MIN_FORK_GAS_BUDGET} floor; topping up from the donor`,
+                        );
                     }
-                    yield* faucet.request({ address: WHALE, amount: GAS_REFILL_MIST }).pipe(
+                    let topUp: Effect.Effect<unknown, unknown>;
+                    if (faucet === null) {
+                        topUp = Effect.tryPromise({
+                            try: () => suiGrantViaWhale(grantCore, WHALE, GAS_REFILL_MIST),
+                            catch: (cause) => cause,
+                        });
+                    } else {
+                        topUp = faucet.request({ address: WHALE, amount: GAS_REFILL_MIST });
+                    }
+                    yield* topUp.pipe(
                         Effect.catch((cause) =>
                             Effect.sync(() => {
-                                stats.lastError = `gas refill failed: ${String(cause).slice(0, 160)}`;
+                                stats.lastError = `gas refill failed: ${describeCause(cause).slice(0, 160)}`;
                             }),
                         ),
                     );
-                    // The faucet transfers a NEW coin to the whale; fork-local
+                    // The top-up transfers a NEW coin to the whale; fork-local
                     // objects ARE enumerable (unlike pre-fork mainnet state).
                     const owned = yield* Effect.promise(() =>
                         core.listOwnedObjects({ owner: WHALE }).catch(() => ({ objects: [] })),
@@ -718,6 +791,10 @@ export function tradeSimMember(opts: TradeSimOptions) {
                         pendingGasTopUp = yield* getRef(fresh.objectId).pipe(
                             Effect.catch(() => Effect.succeed(null)),
                         );
+                        // The coin merges into the gas payment on the next tx;
+                        // credit it now so the budget cap lifts immediately
+                        // rather than after the next balance read.
+                        gasBalance += GAS_REFILL_MIST;
                         stats.gasRefills += 1;
                     }
                 });
@@ -727,6 +804,16 @@ export function tradeSimMember(opts: TradeSimOptions) {
                 const tick = Effect.gen(function* () {
                     tickCount += 1;
                     const pool = pools[tickCount % pools.length]!;
+
+                    // Gas check FIRST, and unconditionally. It used to live at
+                    // the end of the success path, which deadlocks the moment
+                    // gas is the thing that broke: no gas -> no fill -> the
+                    // check never runs -> no refill -> no gas. That is how the
+                    // sim reached 9000+ consecutive failures with a refill
+                    // routine that had never once executed.
+                    if (tickCount % GAS_CHECK_EVERY === 1) {
+                        yield* maybeRefillGas;
+                    }
 
                     // TX A — reclaim, in its OWN transaction. When cleanup shares
                     // a tx with the order placement, an aborting bid reverts the
@@ -840,9 +927,6 @@ export function tradeSimMember(opts: TradeSimOptions) {
                     // stale: a low local read yields an oversized advance, and
                     // fills stamped past wall drop out of every server window
                     // until wall time catches up.
-                    if (tickCount % GAS_CHECK_EVERY === 0) {
-                        yield* maybeRefillGas;
-                    }
                     // Track the real book: recenter the walk on the last fill.
                     if (tickCount % 40 === 0) {
                         yield* recenter(pool);
