@@ -118,6 +118,116 @@ docker compose logs -f market-maker       # Market maker logs only
 
 > Run `pnpm deploy-all` to start localnet, deploy contracts, and automatically launch the oracle service and market maker containers with the correct env vars.
 
+### Running the sandbox reliably
+
+Operating knowledge that is easy to lose. Each item cites its source file where one
+exists, so it can be re-checked rather than trusted.
+
+**1. Always `pnpm down` before re-running `pnpm deploy-all`.**
+
+A second `deploy-all` over a completed deployment **fails in Phase 3** at
+`sui client test-publish`. The publish manifest lives _inside_ the running
+`sui-localnet` container at `/workspace/Pub.localnet.toml` — `deployer.ts` passes it
+as `--pubfile-path` over `docker exec` — and it records the packages as already
+published. `pnpm down` clears it by destroying the container. Deleting the host copy
+at `sandbox/Pub.localnet.toml` alone does **not** unblock the republish.
+
+There is a second reason, which bites when a deploy fails **partway**. A first run that
+published packages and wrote `.env` but did not finish leaves stale IDs in that file.
+`dotenv` loads them into `process.env` at the start of the next run (`utils/config.ts`),
+and `deploy-all.ts` writes new IDs to the file without updating `process.env`. Docker
+Compose ranks the environment above the `.env` file, so containers boot against the
+_previous_ deployment's packages and the market maker crash-loops on
+`Object 0x… not found`. **Delete this paragraph if SEDEFI-442 lands** — it fixes exactly
+this, and the reason would then be obsolete.
+
+**2. Prefer `pnpm deploy-all --quick`.**
+
+The default path adds `--build`, which compiles the Rust indexer **and** server images
+from the `external/deepbook` submodule (see the `build:` contexts in
+`docker-compose.yml`). It is the slowest and least reliable step in the system.
+`--quick` omits `--build`, so Compose uses the pinned images and pulls them only when
+they are missing locally.
+
+**3. Host ports the stack binds.**
+
+`5432` (postgres), `9000` (RPC), `9123` (localnet faucet), `9008` (server),
+`9009` (sandbox API / faucet), `9010` (oracle status), `9184` (indexer metrics),
+`9185` (server metrics), `5173` (dashboard), `3001` (market-maker health),
+`9091` (market-maker metrics). Source of truth is the `ports:` keys in
+`sandbox/docker-compose.yml` — several map a different container port, so read the
+host side.
+
+A conflict on any of them fails the deploy with a bare Docker networking error that
+does **not** name the port's owner. Check first with `lsof -i :5432` or equivalent.
+
+**4. Working in a git worktree? Initialise the submodule first.**
+
+`git worktree add` does **not** populate submodules, so `external/deepbook` is empty.
+Phase 3 then aborts while _staging_ the submodule packages — before any publish — with
+`ENOENT … external/deepbook/packages/token` (`utils/deployer.ts`, `stageExternalPackages`).
+Run:
+
+```bash
+git submodule update --init --recursive
+```
+
+**5. `pnpm down` does not work in a fresh checkout.**
+
+It shells out to `docker compose down` (`scripts/down.ts`), which must interpolate
+`SUI_TOOLS_IMAGE`, and a fresh checkout has no `.env` yet. It fails with
+`required variable SUI_TOOLS_IMAGE is missing a value`. Tear down by name instead:
+
+```bash
+docker rm -f sui-localnet deepbook-postgres deepbook-indexer deepbook-server \
+  deepbook-sandbox-api oracle-service deepbook-market-maker deepbook-dashboard
+docker volume rm -f sandbox_sui_data sandbox_postgres_data sandbox_checkpoint_data
+```
+
+The `sandbox_` prefix is the Compose project name, taken from the `sandbox/` directory.
+If the volume names do not match, run `docker volume ls | grep _data`.
+
+**6. A failed deploy is often just the network.**
+
+The pyth package resolves a git dependency from the `sui` repo at publish time, so a
+deploy can die with `curl 56 GnuTLS recv error … fatal: index-pack failed`. This is a
+clone flake, not a broken sandbox — re-run it.
+
+**7. The order book is regularly empty, and that is normal.**
+
+The market maker cancels its whole grid in one transaction and places the replacement
+in another, so between them the book is empty on **both** sides. The cycle is
+`MM_REBALANCE_INTERVAL_MS` (default in `market-maker/config.ts`) plus one full pass
+over every pool — about 13s with the two default pools on localnet. The gap is wider
+than a single transaction round trip: `topUpPool()` runs between the cancel and the
+placement and can issue its own deposits.
+
+`midPrice()` **aborts on-chain** unless both sides have resting orders, and the SDK
+surfaces the abort as an opaque
+`Cannot read properties of undefined (reading 'returnValues')`.
+
+`examples/sandbox/setup.ts` exports `getMidPrice`, `getBookTicks` and
+`waitForLiquidity` for exactly this — copy that pattern rather than calling the SDK
+directly and trusting the first answer. Note also that a market order against an empty
+book matches nothing and **still returns a successful digest**, so verify fills from a
+balance delta rather than from the digest.
+
+A book that stays _one-sided_ for longer has a different cause: the maker drops the ask
+side when it runs out of base balance, and the bid side when it runs out of quote
+(`market-maker.ts`).
+
+**8. A dirty working copy after a deploy is expected.**
+
+`deploy-all` patches `sandbox/packages/pyth/Move.toml` and
+`sandbox/packages/usdc/Move.toml` in place. `pnpm down` reverts them, or
+`git checkout -- sandbox/packages/*/Move.toml` if you are not tearing down.
+
+**9. Running the SDK examples.**
+
+The stack must be up first — they read `sandbox/deployments/localnet.json`. Install
+from `examples/sandbox/`, not from `sandbox/`; the examples keep their own
+`node_modules`.
+
 ## Development Commands
 
 ### Sandbox Deployment

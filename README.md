@@ -204,6 +204,32 @@ The `--pubfile-path` flag tells the Sui CLI where to find the already-published 
 - **Build without publishing**: Run `sui move build --build-env localnet` from your contract directory to check compilation.
 - **Fresh start**: Run `pnpm down` to tear down everything, then `pnpm deploy-all` again. You'll need to re-publish your custom contract since the chain state is wiped.
 
+### Integrating from TypeScript
+
+For talking to DeepBook from an app rather than from Move, [`examples/sandbox/`](examples/sandbox/) holds five runnable examples using the `@mysten/deepbook-v3` SDK against your local sandbox:
+
+| Example              | What it shows                                           |
+| -------------------- | ------------------------------------------------------- |
+| `check-order-book`   | Mid price and order book depth — read-only, no wallet   |
+| `swap-tokens`        | A direct wallet swap, no BalanceManager                 |
+| `place-limit-order`  | Creating a BalanceManager and resting a limit order     |
+| `place-market-order` | A market order filling against the sandbox market maker |
+| `query-user-orders`  | The full place → query → cancel lifecycle               |
+
+```bash
+cd examples/sandbox
+pnpm install
+pnpm check-order-book
+```
+
+They read `sandbox/deployments/localnet.json`, so the stack must be running. See
+[`examples/sandbox/README.md`](examples/sandbox/README.md) for the details.
+
+One thing worth carrying into your own integration: the market maker empties the order
+book on every rebalance, so reads that need both sides must be retried and fills must be
+verified from a balance delta rather than from a transaction digest. `setup.ts` exports
+`getMidPrice`, `getBookTicks` and `waitForLiquidity` for this — see the entry in §12.
+
 ## 8. Using the Faucet
 
 The faucet service on port 9009 distributes SUI, DEEP, and USDC tokens. It's separate from the native Sui faucet (port 9123) because DEEP and USDC tokens require a signed transfer from the deployer's wallet.
@@ -253,7 +279,12 @@ cd sandbox
 
 # Start fresh (first time or after teardown)
 pnpm deploy-all              # builds indexer/server from source
-pnpm deploy-all --quick      # uses pre-built images
+pnpm deploy-all --quick      # uses pre-built images — prefer this
+
+# Re-deploying? Tear down FIRST. A second deploy-all over a completed
+# deployment fails in Phase 3: Pub.localnet.toml still lists the packages
+# as published, so sui client test-publish refuses to republish them.
+pnpm down && pnpm deploy-all --quick
 
 # Check that prices are updating
 curl http://localhost:9010/
@@ -333,11 +364,21 @@ bunx prettier-move -c *.move --write
 
 **"Failed to connect to Sui RPC"** — Docker is not running, or the Sui container hasn't started yet. Run `docker ps` to check.
 
-**"Transaction failed" in oracle service** — The oracle's dedicated keypair ran out of SUI. This shouldn't happen since `deploy-all` funds it automatically. If it does, check `docker logs oracle-service` and re-run `pnpm deploy-all`.
+**"Transaction failed" in oracle service** — The oracle's dedicated keypair ran out of SUI. This shouldn't happen since `deploy-all` funds it automatically. If it does, check `docker logs oracle-service`, then run `pnpm down` followed by `pnpm deploy-all` — see the next entry for why the teardown is not optional.
+
+**"Failed to publish token" when re-running `pnpm deploy-all`** — A second `deploy-all` over a completed deployment fails in Phase 3. The publish manifest lives inside the running `sui-localnet` container at `/workspace/Pub.localnet.toml` and records the packages as already published, so `sui client test-publish` cannot proceed. Always `pnpm down` first — it clears the manifest by destroying the container. Deleting the host copy at `sandbox/Pub.localnet.toml` on its own is not enough.
+
+**Order book reads return nothing, or `midPrice()` throws `Cannot read properties of undefined (reading 'returnValues')`** — The market maker cancels its whole grid in one transaction and places the replacement in another, so the book is briefly empty on **both** sides every rebalance cycle. Retry the read; `examples/sandbox/setup.ts` exports `getMidPrice`, `getBookTicks` and `waitForLiquidity` for this. Note a market order against an empty book matches nothing and still returns a successful digest, so verify fills from a balance delta rather than from the digest.
+
+**"Failed to publish pyth" / `curl 56 GnuTLS recv error`** — The pyth package resolves a git dependency from the `sui` repo at publish time, so a flaky connection kills the deploy with `fatal: index-pack failed`. This is a clone failure, not a broken sandbox. Re-run it.
+
+**`pnpm down` fails with "required variable SUI_TOOLS_IMAGE is missing a value"** — `down` shells out to `docker compose down`, which needs that variable to interpolate, and a fresh checkout has no `.env` yet. Nothing is running to tear down in that case; if containers do exist, remove them by name (`docker rm -f sui-localnet deepbook-postgres …`).
+
+**Move publish fails with "ENOENT ... external/deepbook/packages/token"** — You're in a git worktree and the submodule was never populated: `git worktree add` does not do it for you. Run `git submodule update --init --recursive`.
 
 **Deploy takes a long time building Rust images** — The indexer and server are Rust services that compile from source by default. This is normal on first run (can take several minutes). You can skip the build with `pnpm deploy-all --quick` and download the pre-built images from Docker Hub.
 
-**Port conflicts** — Another process is using port 9000, 5432, or 9123. Stop the conflicting process or change ports in `docker-compose.yml`.
+**Port conflicts** — The stack binds `5432` (postgres), `9000` (RPC), `9123` (localnet faucet), `9008` (server), `9009` (sandbox API / faucet), `9010` (oracle status), `9184` (indexer metrics), `5173` (dashboard), `3001` (market-maker health), `9091` (market-maker metrics) and `9185` (server metrics). A conflict on any of them fails the deploy with a bare Docker networking error that does not name the port's owner — check with `lsof -i :5432` first. Stop the conflicting process or change ports in `docker-compose.yml`.
 
 **Dashboard can't connect** — Make sure the sandbox is running (`docker compose ps`). The dashboard proxies requests to `localhost:9000` (RPC), `localhost:9009` (faucet), `localhost:9010` (oracle), `localhost:3001` (market maker), and `localhost:9008` (server).
 
