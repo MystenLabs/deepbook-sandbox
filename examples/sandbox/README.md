@@ -89,9 +89,13 @@ interval. Raise it if you raise `MM_REBALANCE_INTERVAL_MS`.
 `place-market-order` also proves its fill from the BalanceManager balance delta rather
 than trusting the digest, and exits non-zero unless the whole order filled.
 
-`swap-tokens` deliberately has no such guard: it uses `minOut: 0` and reports only the
-digest, so a swap during the empty window returns nothing and still succeeds. That keeps
-the example minimal — real integrations should set a real `minOut`.
+`swap-tokens` keeps `minOut: 0` — that slippage simplification is deliberate, and real
+integrations should set a real `minOut`. It does still verify the swap afterwards from the
+wallet balance delta, because `minOut: 0` means an empty ask side would otherwise be a
+successful no-op.
+
+Every example exits non-zero when its own assertion fails: no fill, no resting order, a
+cancel that removed nothing. That is what lets CI check them with exit codes alone.
 
 ### SDK Pattern
 

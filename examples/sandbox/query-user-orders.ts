@@ -95,11 +95,15 @@ async function main() {
     const remaining = await client.deepbook.accountOpenOrders("DEEP_SUI", balanceManagerKey);
     console.log(`Open orders after cancel: ${remaining.length}`);
 
-    if (remaining.length === 0) {
-        console.log("All orders successfully canceled.");
-    } else {
-        console.log("Warning: some orders remain:", remaining);
+    // A cancel that removes nothing still returns a successful digest, so this
+    // check is the only thing standing between a broken cancel and a green run.
+    if (remaining.length > 0) {
+        console.error(`\nCancel failed: ${remaining.length} order(s) still open:`, remaining);
+        console.error("cancelAllOrders returned a successful digest but removed nothing.");
+        process.exit(1);
     }
+
+    console.log("All orders successfully canceled.");
 
     console.log("\nDone.");
 }

@@ -1,0 +1,261 @@
+name: Examples
+
+# examples/sandbox had no CI of any kind, which is why the SEDEFI-440 runtime
+# failures survived unnoticed until the docs team asked whether the examples were
+# safe to cite. Three jobs, each catching something the others structurally cannot:
+#
+#   typecheck — the SDK renamed or removed something we call.
+#   unit      — the two faults an end-to-end run can never see (see the test file).
+#   e2e       — it compiles and the units pass, but it does not work against a chain.
+
+# Path notes:
+#   - "external/deepbook" (no /**) is the one that matters. A submodule bump changes
+#     the gitlink entry at that exact path, which "external/deepbook/**" does NOT
+#     match. Move-side changes are precisely what the SEDEFI-440 retry cannot
+#     survive, so this trigger must not miss them. Both forms are listed.
+#   - Dashboard-only changes cannot break the examples, so they are excluded rather
+#     than paying for a full localnet deploy. Negation must follow the pattern it
+#     narrows; order is significant.
+on:
+  pull_request:
+    paths:
+      - "examples/**"
+      - "sandbox/**"
+      - "!sandbox/dashboard/**"
+      - "external/deepbook"
+      - "external/deepbook/**"
+      - ".github/workflows/examples.yml"
+  push:
+    branches: [main]
+    paths:
+      - "examples/**"
+      - "sandbox/**"
+      - "!sandbox/dashboard/**"
+      - "external/deepbook"
+      - "external/deepbook/**"
+      - ".github/workflows/examples.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: examples-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep in sync with integration-tests.yml. Pinned, never `compat`: that tag is
+  # rebuilt from sui main and has broken CI before (SEDEFI-348).
+  SUI_TOOLS_IMAGE: mysten/sui-tools:testnet-v1.75.1
+  INDEXER_IMAGE: mysten/deepbookv3-sandbox-indexer:794efb1c54ee5cc4f0f367233a4e70818aa0defb
+  SERVER_IMAGE: mysten/deepbookv3-server:794efb1c54ee5cc4f0f367233a4e70818aa0defb
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Fast feedback: no Docker, no chain. Both finish in about a minute.
+  # --------------------------------------------------------------------------
+  static:
+    name: typecheck + unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: examples/sandbox/pnpm-lock.yaml
+
+      # Must run before tsc: tsconfig includes ./**/*.ts, so the unit tests are in
+      # the typecheck scope and need vitest's types resolvable.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: examples/sandbox
+
+      - name: Typecheck
+        run: pnpm typecheck
+        working-directory: examples/sandbox
+
+      - name: Unit tests
+        run: pnpm test:unit
+        working-directory: examples/sandbox
+
+  # --------------------------------------------------------------------------
+  # Deploys a real sandbox and runs all five examples. Slow, so it only fires on
+  # changes that could plausibly break them.
+  # --------------------------------------------------------------------------
+  e2e:
+    name: run the examples against a live sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          # This job installs both subprojects, so both lockfiles key the cache.
+          cache-dependency-path: |
+            sandbox/pnpm-lock.yaml
+            examples/sandbox/pnpm-lock.yaml
+
+      - name: Install sandbox dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: sandbox
+
+      - name: Install example dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: examples/sandbox
+
+      # Same extraction as integration-tests.yml: the host CLI must match the
+      # localnet container's version.
+      - name: Install sui CLI from Docker image
+        run: |
+          docker pull ${{ env.SUI_TOOLS_IMAGE }}
+          CONTAINER_ID=$(docker create ${{ env.SUI_TOOLS_IMAGE }} true)
+          sudo docker cp "$CONTAINER_ID:/usr/local/bin/sui" /usr/local/bin/sui
+          docker rm "$CONTAINER_ID"
+          sui --version
+
+      - name: Bootstrap sui CLI config
+        run: |
+          CFG="$HOME/.sui/sui_config"
+          mkdir -p "$CFG"
+          echo '[]' > "$CFG/sui.keystore"
+          printf -- '---\nkeystore:\n  File: %s/sui.keystore\nenvs: []\nactive_env: ~\nactive_address: ~\n' "$CFG" > "$CFG/client.yaml"
+
+      - name: Prepare bind-mount directories
+        run: mkdir -p sandbox/deployments
+
+      - name: Seed env and pull pre-built images
+        run: |
+          cat > .env.test <<EOF
+          PRIVATE_KEY=dummy
+          SUI_TOOLS_IMAGE=${SUI_TOOLS_IMAGE}
+          FORCE_REGENESIS=true
+          INDEXER_IMAGE=${INDEXER_IMAGE}
+          SERVER_IMAGE=${SERVER_IMAGE}
+          EOF
+          sed -i 's/^ *//' .env.test
+
+          # Retry: a registry timeout is infrastructure, not an examples regression,
+          # and a job that reds out for it teaches people to ignore this workflow.
+          pull() { for a in 1 2 3; do docker pull "$1" && return 0; echo "pull $1 failed (attempt $a)"; sleep 15; done; return 1; }
+          pull postgres:16-alpine
+          pull "$INDEXER_IMAGE"
+          pull "$SERVER_IMAGE"
+
+          docker compose --env-file .env.test --profile localnet build market-maker oracle-service deepbook-sandbox-api
+        working-directory: sandbox
+
+      # --quick uses the pre-built indexer/server images above. The default path
+      # compiles them from a full sui clone, which is slow and network-fragile.
+      - name: Deploy the sandbox
+        run: pnpm deploy-all --quick
+        env:
+          SANDBOX_ENV_FILE: .env.test
+        working-directory: sandbox
+
+      # The examples retry for ~15s on their own, but starting before the maker
+      # has ever quoted would burn that budget on the very first run.
+      # Gate on resting orders, NOT on container health. getHealthStatus() reports
+      # healthy from `isRunning && !anyPoolError`, and isRunning is set before the
+      # first rebalance places anything — so a health check passes with an empty
+      # book, which is exactly the race this step exists to prevent. It also stays
+      # healthy when the maker drops one side after running out of balance.
+      - name: Wait for the market maker to quote
+        run: |
+          for i in $(seq 1 60); do
+            orders=$(curl -sf http://localhost:3001/health | jq -r '.pools.DEEP_SUI.orders // 0' 2>/dev/null || echo 0)
+            if [ "${orders:-0}" -gt 0 ]; then
+              echo "market maker quoting $orders DEEP_SUI orders after $((i * 5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "market maker never placed a DEEP_SUI order"
+          curl -s http://localhost:3001/health || true
+          docker logs deepbook-market-maker --tail 200 || true
+          exit 1
+
+      # A faucet fault otherwise surfaces as `exit code 1` from whichever example
+      # ran first, which is indistinguishable from a real regression. Naming it in
+      # its own step means the red says what actually broke. Observed in practice:
+      # the faucet returning 500 with a TimeoutError under load.
+      - name: Verify the sandbox faucet
+        run: |
+          ADDR=0x$(openssl rand -hex 32)
+          for a in 1 2 3; do
+            if curl -sf -X POST http://localhost:9009/faucet \
+              -H 'Content-Type: application/json' \
+              -d "{\"address\":\"$ADDR\",\"token\":\"SUI\"}"; then
+              echo "faucet OK"
+              exit 0
+            fi
+            echo "faucet attempt $a failed, retrying"
+            sleep 10
+          done
+          echo "SANDBOX FAUCET IS DOWN — infrastructure, not an examples regression"
+          docker logs deepbook-sandbox-api --tail 100 || true
+          exit 1
+
+      # Each example exits non-zero on failure, including place-market-order when
+      # nothing fills — so plain exit codes are a sufficient assertion here.
+      #
+      # Coverage note: `check-order-book` only calls getMidPrice when the book is
+      # two-sided, so a green run there proves nothing about the retry helper. That
+      # coverage comes from the unit job and from query-user-orders, which calls it
+      # unconditionally.
+      - name: Run the examples
+        run: |
+          set -e
+          pnpm check-order-book
+          pnpm swap-tokens
+          pnpm place-limit-order
+          pnpm place-market-order
+          pnpm query-user-orders
+        working-directory: examples/sandbox
+
+      - name: Capture Docker diagnostics
+        if: failure()
+        run: |
+          mkdir -p /tmp/docker-logs
+          echo "=== docker ps -a ===" > /tmp/docker-logs/diagnostics.log
+          docker ps -a >> /tmp/docker-logs/diagnostics.log 2>&1 || true
+          echo "" >> /tmp/docker-logs/diagnostics.log
+          echo "=== market maker health ===" >> /tmp/docker-logs/diagnostics.log
+          curl -s http://localhost:3001/health >> /tmp/docker-logs/diagnostics.log 2>&1 || true
+          echo "" >> /tmp/docker-logs/diagnostics.log
+          echo "=== market maker orders ===" >> /tmp/docker-logs/diagnostics.log
+          curl -s http://localhost:3001/orders >> /tmp/docker-logs/diagnostics.log 2>&1 || true
+          echo "" >> /tmp/docker-logs/diagnostics.log
+          echo "=== deployment manifest ===" >> /tmp/docker-logs/diagnostics.log
+          cat sandbox/deployments/localnet.json >> /tmp/docker-logs/diagnostics.log 2>&1 || echo "no manifest" >> /tmp/docker-logs/diagnostics.log
+          echo "" >> /tmp/docker-logs/diagnostics.log
+          # No --tail: the maker logs ~150 lines/min, so 500 lines is about three
+          # minutes of history in a job that can run for two hours. The deploy and
+          # first rebalances — the part you actually need — would already be gone.
+          echo "=== all compose logs ===" > /tmp/docker-logs/compose.log
+          cd sandbox && docker compose --env-file .env.test --profile localnet logs --no-color >> /tmp/docker-logs/compose.log 2>&1 || true
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples-e2e-logs
+          path: /tmp/docker-logs/
+          retention-days: 7
+
+      - name: Cleanup containers
+        if: always()
+        run: docker compose --env-file .env.test --profile localnet down -v --remove-orphans || true
+        working-directory: sandbox

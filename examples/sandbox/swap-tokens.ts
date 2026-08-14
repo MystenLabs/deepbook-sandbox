@@ -13,10 +13,15 @@
  */
 
 import { Transaction } from "@mysten/sui/transactions";
-import { setupSandbox, signAndExecute } from "./setup.js";
+import { setupSandbox, signAndExecute, waitForLiquidity } from "./setup.js";
 
 async function main() {
-    const { client, keypair, address } = await setupSandbox();
+    const { client, keypair, address, manifest } = await setupSandbox();
+    const deepType = manifest.pools.DEEP_SUI.baseCoinType;
+
+    // A swap against an empty ask side matches nothing and STILL returns a
+    // successful digest, exactly like a market order. Wait for depth first.
+    await waitForLiquidity(client, "DEEP_SUI", "ask");
 
     // Swap 0.1 SUI for DEEP on the DEEP/SUI pool.
     // Since SUI is the quote coin in DEEP/SUI, we use swapExactQuoteForBase.
@@ -43,7 +48,24 @@ async function main() {
     const result = await signAndExecute(client, keypair, tx);
     console.log(`Transaction digest: ${result.digest}`);
 
-    console.log("\nDone. Check explorer for detailed balance changes.");
+    // Read the fill from the transaction's OWN balance changes. Querying the node
+    // for a balance afterwards is a separate, asynchronously-indexed read that can
+    // still return the pre-swap figure, which would report a good swap as a failure.
+    const received = (result.balanceChanges ?? [])
+        .filter((c) => c.address === address && c.coinType === deepType)
+        .reduce((sum, c) => sum + BigInt(c.amount), 0n);
+
+    if (received <= 0n) {
+        console.error("\nThe swap returned no DEEP, but the transaction succeeded.");
+        console.error("minOut is 0, so an empty ask side makes this a silent no-op —");
+        console.error("the ask side most likely emptied between the depth check and the swap.");
+        console.error("Check the market maker with: docker compose logs -f market-maker");
+        process.exit(1);
+    }
+
+    // DEEP has 6 decimals; divide for a human-readable figure.
+    console.log(`Received ${Number(received) / 1_000_000} DEEP.`);
+    console.log("\nDone.");
 }
 
 main().catch((err) => {

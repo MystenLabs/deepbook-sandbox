@@ -231,8 +231,12 @@ const REBALANCE_HINT =
  * failed simulation surfaces the same bare TypeError. An aborted `midPrice` on an
  * empty book looks identical to a stale manifest or a wrong pool ID. Callers must
  * therefore confirm the cause before treating it as an empty book.
+ *
+ * Exported for tests. The message it matches is a V8 TypeError, not an SDK
+ * contract, so a unit test is the only thing that notices if a future SDK
+ * version starts throwing something else and the retry silently stops working.
  */
-function isEmptyCommandResultError(err: unknown): boolean {
+export function isEmptyCommandResultError(err: unknown): boolean {
     return err instanceof Error && /returnValues|reading '0'/.test(err.message);
 }
 
@@ -435,7 +439,10 @@ export async function signAndExecute(
     const result = await client.core.signAndExecuteTransaction({
         transaction: tx,
         signer: keypair,
-        include: { effects: true },
+        // balanceChanges lets a caller prove what a transaction actually moved,
+        // straight from its own result. Asking the node afterwards is a separate,
+        // asynchronously-indexed read that can still show pre-transaction values.
+        include: { effects: true, balanceChanges: true },
     });
 
     if (result.$kind === "FailedTransaction") {

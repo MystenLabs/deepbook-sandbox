@@ -71,11 +71,20 @@ async function main() {
     const result = await signAndExecute(client, keypair, orderTx);
     console.log(`Order placed. Transaction digest: ${result.digest}\n`);
 
-    // Verify the order is resting on the book
+    // Verify the order is resting on the book. This is the whole point of the
+    // example, so a count of zero is a failure, not an observation — the
+    // transaction can succeed while the order never rests.
     const openOrders = await client.deepbook.accountOpenOrders("DEEP_SUI", balanceManagerKey);
     console.log(`Open orders: ${openOrders.length}`);
     for (const orderId of openOrders) {
         console.log(`  Order ID: ${orderId}`);
+    }
+
+    if (openOrders.length === 0) {
+        console.error("\nThe order did not rest on the book.");
+        console.error("The transaction succeeded, but accountOpenOrders returned nothing");
+        console.error("for this BalanceManager.");
+        process.exit(1);
     }
 
     console.log("\nDone.");
