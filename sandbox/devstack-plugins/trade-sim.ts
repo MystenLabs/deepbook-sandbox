@@ -36,10 +36,10 @@
 //   - Crossing a POISONED pin-era maker aborts the tick (SUI-FORK-ISSUES
 //     #2) — caught, counted, and the walk moves on.
 //   - Clock: fills are only visible to the server's wall-relative windows if
-//     checkpoint timestamps track wall time (SUI-FORK-ISSUES #6) — the loop
-//     advances the fork Clock toward `Date.now()` after every fill
-//     (forward-only, NEVER past wall: future-stamped fills vanish from every
-//     window until wall time catches up).
+//     checkpoint timestamps track wall time (SUI-FORK-ISSUES #6). The
+//     clock-driver member (SEDEFI-317) holds the Clock at wall time for the
+//     whole stack; this loop only does a one-shot catch-up at boot, so its
+//     first fills are visible even if it wins the race with the driver.
 //   - OHLCV: `ohclv_1m/1d` are plain tables production fills via pg_cron
 //     (absent in postgres:16-alpine) — a second loop CALLs update_ohclv_*
 //     through the postgres member's container handle every few seconds.
@@ -340,14 +340,17 @@ export function tradeSimMember(opts: TradeSimOptions) {
                     });
 
                 // --- clock catch-up (SUI-FORK-ISSUES #6): fills must land inside
-                // the server's wall-relative windows. Forward-only, never past wall.
+                // the server's wall-relative windows. Forward-only, never past
+                // wall. STEADY-STATE clock movement is the clock-driver
+                // member's job (SEDEFI-317); this one-shot only covers the sim
+                // booting before the driver's own catch-up lands, and keeps the
+                // sim usable under CLOCK_DRIVER_DISABLED=1.
                 const status = yield* fork.status.pipe(
                     Effect.catch((cause) =>
                         Effect.fail(fail("status", "fork status read failed", cause)),
                     ),
                 );
-                let chainClock = status.clock;
-                const catchUp = Date.now() - chainClock;
+                const catchUp = Date.now() - status.clock;
                 if (catchUp > 0) {
                     yield* fork
                         .advanceClock(catchUp)
@@ -356,7 +359,6 @@ export function tradeSimMember(opts: TradeSimOptions) {
                                 Effect.fail(fail("clock", "initial clock catch-up failed", cause)),
                             ),
                         );
-                    chainClock += catchUp;
                 }
 
                 // --- gas coin (version tracked from effects after each tx) ------
@@ -832,16 +834,12 @@ export function tradeSimMember(opts: TradeSimOptions) {
                     stats.fills += 1;
                     stats.consecutiveFailures = 0;
 
-                    // Clock: chase wall time, forward-only, never past it.
-                    const room = Date.now() - chainClock;
-                    const advance = Math.max(1, Math.min(room, intervalMs * 3));
-                    yield* fork.advanceClock(advance);
-                    chainClock += advance;
-                    // Correct local drift from the source periodically.
-                    if (tickCount % 100 === 0) {
-                        const s = yield* fork.status;
-                        chainClock = s.clock;
-                    }
+                    // Clock: deliberately NOT advanced here — the clock-driver
+                    // member owns it. This loop used to chase wall time off a
+                    // LOCALLY tracked clock, which a second advancer makes
+                    // stale: a low local read yields an oversized advance, and
+                    // fills stamped past wall drop out of every server window
+                    // until wall time catches up.
                     if (tickCount % GAS_CHECK_EVERY === 0) {
                         yield* maybeRefillGas;
                     }
