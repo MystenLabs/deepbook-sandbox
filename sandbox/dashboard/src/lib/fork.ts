@@ -723,6 +723,18 @@ export async function forkRecentTrades(poolKey: string, limit: number): Promise<
     return rows.sort((a, b) => b.timestamp - a.timestamp);
 }
 
+const CLOCK_OBJECT_ID = "0x0000000000000000000000000000000000000000000000000000000000000006";
+
+/** The on-chain Clock's timestamp_ms (object 0x6: UID(32) + u64 LE). On the
+ *  fork this is what the clock-driver member holds at wall time — comparing
+ *  it to `Date.now()` IS the health check for that member. */
+export async function forkClockMs(core: ForkCore): Promise<number> {
+    const res = await core.getObject({ objectId: CLOCK_OBJECT_ID, include: { content: true } });
+    const c = res.object?.content;
+    if (!c || c.length < 40) throw new Error("Clock object (0x6) unreadable");
+    return Number(new DataView(c.buffer, c.byteOffset + 32, 8).getBigUint64(0, true));
+}
+
 /** Shared prologue for the order calls: concrete pool + BM args and an
  *  owner trade proof. Pre-warms the book first — every one of these calls
  *  walks it during execution. */

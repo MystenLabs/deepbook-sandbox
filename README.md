@@ -32,9 +32,13 @@ stack as a devstack member:
 (/ticker, /trades, /ohclv, /orders) does. Full architecture notes live in
 [`CLAUDE.md`](./CLAUDE.md) ("The Stack").
 
-**Not running:** the localnet-era market-maker and oracle-service containers
-are retired (see Q&A below), and `docker-compose.yml` is gone — devstack is
-the only orchestrator.
+**Retired:** the localnet-era **market-maker** and **oracle-service**. On an
+empty localnet the oracle pushed real-world Pyth prices on-chain so the market
+maker could quote realistic grids — the fork makes both redundant: the book
+arrives pre-loaded with real mainnet prices, **trade-sim** has taken over the
+market maker's role of keeping quotes and fills alive (priced off the book
+itself, no oracle needed), and the oracle service has no consumer left.
+`docker-compose.yml` is gone too — devstack is the only orchestrator.
 
 ## Prerequisites
 
@@ -64,13 +68,13 @@ pnpm down         # stop + wipe (removes member containers, resets the chain)
 
 Once it's up:
 
-| Endpoint           | URL                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------ |
-| Trading dashboard  | [http://localhost:5173](http://localhost:5173) (Trading, Market Maker, Faucet, Deployment) |
-| devstack dashboard | http://api.deepbook-sandbox.devstack-plugins.localhost:9810 (stack status, DeepBook panel) |
-| DeepBook REST API  | [http://localhost:9008](http://localhost:9008)                                             |
-| Sandbox API        | [http://localhost:9009](http://localhost:9009) (`/manifest`, `/faucet`)                    |
-| Postgres           | `localhost:5432`                                                                           |
+| Endpoint           | URL                                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| Trading dashboard  | [http://localhost:5173](http://localhost:5173) (Health, Market Maker, Trading, Faucet, Deployment) |
+| devstack dashboard | http://api.deepbook-sandbox.devstack-plugins.localhost:9810 (stack status, DeepBook panel)         |
+| DeepBook REST API  | [http://localhost:9008](http://localhost:9008)                                                     |
+| Sandbox API        | [http://localhost:9009](http://localhost:9009) (`/manifest`, `/faucet`)                            |
+| Postgres           | `localhost:5432`                                                                                   |
 
 The fork's RPC port is **brokered** (random per boot) — the dashboard reaches
 it through its own `/api/sui` proxy; scripts resolve it with
