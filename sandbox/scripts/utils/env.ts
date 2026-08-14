@@ -1,8 +1,20 @@
 import { readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { z } from "zod";
-import { getEnvFileName } from "./docker-compose";
 import log from "./logger";
+
+/**
+ * Return the env filename to use for Docker Compose and env file I/O.
+ * Defaults to ".env"; tests set SANDBOX_ENV_FILE=".env.test" so the
+ * user's real .env is never touched.
+ *
+ * Lives here rather than in docker-compose.ts so the dependency runs one way:
+ * docker-compose.ts imports from env.ts. The reverse direction was a cycle
+ * waiting to happen the moment compose code needed to write an env value.
+ */
+export function getEnvFileName(): string {
+    return process.env.SANDBOX_ENV_FILE || ".env";
+}
 
 /** Keys that must be present with non-empty values after cleaning. */
 export const REQUIRED_ENV_KEYS = ["PRIVATE_KEY", "SUI_TOOLS_IMAGE"] as const;

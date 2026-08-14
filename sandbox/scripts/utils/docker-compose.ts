@@ -1,17 +1,12 @@
 import { spawnSync, execFileSync, type SpawnSyncReturns } from "child_process";
-import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { getEnvFileName, updateEnvFile } from "./env";
 import log from "./logger";
 
-/**
- * Return the env filename to use for Docker Compose and env file I/O.
- * Defaults to ".env"; tests set SANDBOX_ENV_FILE=".env.test" so the
- * user's real .env is never touched.
- */
-export function getEnvFileName(): string {
-    return process.env.SANDBOX_ENV_FILE || ".env";
-}
+// getEnvFileName now lives in ./env alongside the other env-file helpers. It is
+// re-exported here so existing importers keep working.
+export { getEnvFileName };
 
 /**
  * Run a docker compose command with visible output (logged via project logger).
@@ -168,28 +163,20 @@ export async function configureAndStartLocalnetServices(
     options?: { quick?: boolean },
 ): Promise<void> {
     const cwd = sandboxRoot ?? getSandboxRoot();
-    const envPath = path.join(cwd, getEnvFileName());
 
-    // Read existing env content (preserve other variables like SUI_TOOLS_IMAGE)
-    let envContent = "";
-    try {
-        envContent = await fs.readFile(envPath, "utf-8");
-    } catch {
-        // env file doesn't exist yet, that's fine
-    }
-
-    // Update or add CORE_PACKAGES and MARGIN_PACKAGES
-    const envLines = envContent.split("\n").filter((line) => {
-        const trimmed = line.trim();
-        return !trimmed.startsWith("CORE_PACKAGES=") && !trimmed.startsWith("MARGIN_PACKAGES=");
+    // Route through updateEnvFile rather than writing the file directly. It also
+    // syncs process.env, which is load-bearing here: docker-compose.yml
+    // interpolates `MARGIN_PACKAGES: ${MARGIN_PACKAGES:-}` for the indexer, and the
+    // compose call below inherits process.env. Writing only to disk would leave the
+    // previous deployment's value (loaded by dotenv at startup) outranking the one
+    // we just wrote — the same defect as SEDEFI-442, in a second place.
+    //
+    // The hand-rolled version this replaces also dropped every blank line from the
+    // env file, because it filtered falsy entries before joining.
+    updateEnvFile(cwd, {
+        CORE_PACKAGES: packages.corePackageId,
+        ...(packages.marginPackageId && { MARGIN_PACKAGES: packages.marginPackageId }),
     });
-
-    envLines.push(`CORE_PACKAGES=${packages.corePackageId}`);
-    if (packages.marginPackageId) {
-        envLines.push(`MARGIN_PACKAGES=${packages.marginPackageId}`);
-    }
-
-    await fs.writeFile(envPath, envLines.filter(Boolean).join("\n") + "\n");
 
     // Start the indexer (explicit service name to avoid starting other localnet services)
     // --force-recreate ensures containers are recreated with the new env.
