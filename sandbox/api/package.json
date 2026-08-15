@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "type": "module",
     "private": true,
+    "packageManager": "pnpm@10.29.2",
     "description": "Faucet service for distributing SUI and DEEP tokens on localnet",
     "scripts": {
         "dev": "tsx src/index.ts",

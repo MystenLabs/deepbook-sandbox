@@ -307,13 +307,13 @@ export class PoolCreator {
 
         const registry = this.findObjectByType(marginPkg.createdObjects, "MarginRegistry");
         const adminCap = this.findObjectByType(marginPkg.createdObjects, "MarginAdminCap");
-        const usdcReceivedCurrency = usdcPkg.createdObjects.find((obj) =>
-            obj.objectType.includes("Currency"),
+        const usdcCurrency = usdcPkg.createdObjects.find((obj) =>
+            obj.objectType.includes("::coin_registry::Currency<"),
         );
 
-        if (!registry || !adminCap || !usdcReceivedCurrency) {
+        if (!registry || !adminCap || !usdcCurrency) {
             throw new Error(
-                `Missing required objects: registry=${!!registry}, adminCap=${!!adminCap}, usdcCurrency=${!!usdcReceivedCurrency}`,
+                `Missing required objects: registry=${!!registry}, adminCap=${!!adminCap}, usdcCurrency=${!!usdcCurrency}`,
             );
         }
 
@@ -327,7 +327,7 @@ export class PoolCreator {
         log.detail("Finalizing USDC currency registration...");
         const usdcCurrencyId = await this.finalizeCurrencyRegistration(
             usdcType,
-            usdcReceivedCurrency.objectId,
+            usdcCurrency.objectId,
         );
 
         log.detail("Migrating Legacy Metadata for SUI...");
@@ -588,14 +588,29 @@ export class PoolCreator {
     /** Finalize a coin's registration in the CoinRegistry and return the new Currency object ID. */
     private async finalizeCurrencyRegistration(
         coinType: string,
-        receivedCurrencyId: string,
+        currencyId: string,
     ): Promise<string> {
+        const { object } = await this.client.getObject({ objectId: currencyId });
+        if (!object) {
+            throw new Error(`Currency object not found for ${coinType}: ${currencyId}`);
+        }
+        if (object.owner?.$kind === "Shared") {
+            return currencyId;
+        }
+
         const tx = new Transaction();
         tx.setGasBudget(200_000_000);
         tx.moveCall({
             target: "0x2::coin_registry::finalize_registration",
             typeArguments: [coinType],
-            arguments: [tx.object("0xc"), tx.object(receivedCurrencyId)],
+            arguments: [
+                tx.object("0xc"),
+                tx.receivingRef({
+                    objectId: object.objectId,
+                    version: object.version,
+                    digest: object.digest,
+                }),
+            ],
         });
 
         const result = await this.client.signAndExecuteTransaction({
@@ -631,6 +646,13 @@ export class PoolCreator {
         const { coinMetadata } = await this.client.getCoinMetadata({ coinType });
         if (!coinMetadata) {
             throw new Error(`Coin metadata not found for ${coinType}`);
+        }
+
+        const { object: metadataObject } = await this.client.getObject({
+            objectId: coinMetadata.id!,
+        });
+        if (metadataObject?.type?.includes("::coin_registry::Currency<")) {
+            return coinMetadata.id!;
         }
 
         const tx = new Transaction();
@@ -730,7 +752,7 @@ export class PoolCreator {
             arguments: [
                 tx.object(registryId),
                 protocolConfig,
-                tx.object(maintainerCap),
+                maintainerCap,
                 tx.object(SUI_CLOCK_OBJECT_ID),
             ],
         });

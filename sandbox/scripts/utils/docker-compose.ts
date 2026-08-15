@@ -190,6 +190,12 @@ export async function configureAndStartLocalnetServices(
     }
 
     await fs.writeFile(envPath, envLines.filter(Boolean).join("\n") + "\n");
+    process.env.CORE_PACKAGES = packages.corePackageId;
+    if (packages.marginPackageId) {
+        process.env.MARGIN_PACKAGES = packages.marginPackageId;
+    } else {
+        delete process.env.MARGIN_PACKAGES;
+    }
 
     // Start the indexer (explicit service name to avoid starting other localnet services)
     // --force-recreate ensures containers are recreated with the new env.
@@ -200,7 +206,7 @@ export async function configureAndStartLocalnetServices(
         upArgs.push("--build");
     }
     upArgs.push("deepbook-indexer", "deepbook-server");
-    const result = runDockerComposeVisible(upArgs, { cwd });
+    const result = runDockerComposeVisible(upArgs, { cwd, env: process.env });
 
     if (result.status !== 0) {
         const stderr = result.stderr?.trim() || "";

@@ -16,6 +16,9 @@ const EXTERNAL_SOURCE = "../external/deepbook/packages";
 /** Packages copied from the external submodule into the sandbox staging directory. */
 const EXTERNAL_PACKAGES = ["token", "deepbook", "deepbook_margin", "margin_liquidation"] as const;
 
+/** Local sandbox packages copied into staging before generated Move.toml rewrites. */
+const LOCAL_PACKAGES = ["pyth", "usdc"] as const;
+
 /** Packages that need Move.toml patching (environments / local deps) before publish. */
 const PACKAGES_NEED_MOVE_PATCH = [
     "token",
@@ -31,20 +34,26 @@ function getSandboxRoot(): string {
 }
 
 /**
- * Copy external deepbook packages into sandbox/.external-packages/ so we
- * never mutate the git submodule. Returns the staging directory path.
+ * Copy packages into sandbox/.external-packages/ so generated Move.toml
+ * rewrites never touch tracked package sources. Returns the staging directory path.
  */
-function stageExternalPackages(): string {
+function stagePackages(): string {
     const sandboxRoot = getSandboxRoot();
     const stagingDir = path.join(sandboxRoot, ".external-packages");
-    const sourceDir = path.resolve(sandboxRoot, EXTERNAL_SOURCE);
+    const externalSourceDir = path.resolve(sandboxRoot, EXTERNAL_SOURCE);
 
     // Wipe previous staging to ensure a clean copy
     rmSync(stagingDir, { recursive: true, force: true });
     mkdirSync(stagingDir, { recursive: true });
 
     for (const pkg of EXTERNAL_PACKAGES) {
-        cpSync(path.join(sourceDir, pkg), path.join(stagingDir, pkg), { recursive: true });
+        cpSync(path.join(externalSourceDir, pkg), path.join(stagingDir, pkg), { recursive: true });
+    }
+
+    for (const pkg of LOCAL_PACKAGES) {
+        cpSync(path.join(sandboxRoot, "packages", pkg), path.join(stagingDir, pkg), {
+            recursive: true,
+        });
     }
 
     return stagingDir;
@@ -172,6 +181,21 @@ export class MoveDeployer {
         execFileSync("docker", ["cp", resolved, `${CONTAINER_NAME}:${dest}`], { stdio: "pipe" });
     }
 
+    /**
+     * Remove the ephemeral publication manifest from previous localnet runs.
+     *
+     * `sui client test-publish --pubfile-path` rejects an existing Pub.localnet.toml
+     * when its recorded chain id differs from the currently running localnet.
+     */
+    private resetPublishManifest(): void {
+        rmSync(path.join(this.sandboxRoot, "Pub.localnet.toml"), { force: true });
+        execFileSync(
+            "docker",
+            ["exec", CONTAINER_NAME, "rm", "-f", `${CONTAINER_WORKSPACE}/Pub.localnet.toml`],
+            { stdio: "pipe" },
+        );
+    }
+
     async deployPackage(packagePath: string, packageName: string): Promise<DeploymentResult> {
         log.spin(`Publishing ${packageName} (sui client test-publish)`);
 
@@ -250,17 +274,14 @@ export class MoveDeployer {
     async deployAll(): Promise<Map<string, DeploymentResult>> {
         const { chainIdentifier: chainId } = await this.client.core.getChainIdentifier();
         const sandboxRoot = getSandboxRoot();
-        const stagingDir = stageExternalPackages();
-        log.success(`Staged external packages in ${path.relative(sandboxRoot, stagingDir)}/`);
-
-        const pythPath = path.join(sandboxRoot, "packages", "pyth");
-        const usdcPath = path.join(sandboxRoot, "packages", "usdc");
+        const stagingDir = stagePackages();
+        log.success(`Staged packages in ${path.relative(sandboxRoot, stagingDir)}/`);
 
         const packages: PackageInfo[] = [
             { name: "token", path: path.join(stagingDir, "token"), deps: [] },
             { name: "deepbook", path: path.join(stagingDir, "deepbook"), deps: ["token"] },
-            { name: "pyth", path: pythPath, deps: [] },
-            { name: "usdc", path: usdcPath, deps: [] },
+            { name: "pyth", path: path.join(stagingDir, "pyth"), deps: [] },
+            { name: "usdc", path: path.join(stagingDir, "usdc"), deps: [] },
             {
                 name: "deepbook_margin",
                 path: path.join(stagingDir, "deepbook_margin"),
@@ -274,6 +295,7 @@ export class MoveDeployer {
         ];
 
         this.setupContainerCli();
+        this.resetPublishManifest();
 
         const deployed = new Map<string, DeploymentResult>();
 
@@ -350,7 +372,7 @@ export class MoveDeployer {
             );
             patched = patched.replace(
                 /Pyth\s*=\s*\{[^}]*git[^}]*\}/g,
-                'pyth = { local = "../../packages/pyth" }',
+                'pyth = { local = "../pyth" }',
             );
             patched = patched.replace(
                 /\[addresses\]\s*\n\s*deepbook_margin\s*=\s*"0x0"\s*/,
@@ -359,7 +381,7 @@ export class MoveDeployer {
         }
 
         if (pkg.name === "margin_liquidation") {
-            const pythDep = 'pyth = { local = "../../packages/pyth" }';
+            const pythDep = 'pyth = { local = "../pyth" }';
             const extraDeps = [
                 ...(patched.includes("token") ? [] : ['token = { local = "../token" }']),
                 ...(patched.includes("pyth") ? [] : [pythDep]),
