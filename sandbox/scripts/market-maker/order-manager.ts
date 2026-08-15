@@ -81,11 +81,6 @@ export class OrderManager {
 
         const txData = result.Transaction!;
 
-        // Wait for the place transaction to finalize so object versions are updated
-        await this.client.waitForTransaction({
-            digest: txData.digest,
-        });
-
         // Extract order IDs from events
         const events = txData.events || [];
         const orderPlacedEvents = events.filter((e) => e.eventType.includes("::OrderPlaced"));
@@ -122,6 +117,7 @@ export class OrderManager {
 
         log.loopDetail(`Placed ${placedOrderIds.length} orders`);
         log.loopDetail(explorerTxUrl(txData.digest, this.network));
+        await this.waitForTransactionBestEffort(txData.digest, "place orders");
         return placedOrderIds;
     }
 
@@ -152,7 +148,7 @@ export class OrderManager {
         const result = await this.client.signAndExecuteTransaction({
             transaction: tx,
             signer: this.signer,
-            include: { effects: true },
+            include: { effects: true, events: true },
         });
 
         if (result.$kind === "FailedTransaction") {
@@ -162,23 +158,23 @@ export class OrderManager {
         }
 
         const txData = result.Transaction!;
-
-        // Wait for the cancel transaction to finalize so object versions are updated
-        await this.client.waitForTransaction({
-            digest: txData.digest,
-        });
-
         const canceledCount = this.activeOrders.size;
+        const events = txData.events || [];
+        const orderCanceledEvents = events.filter((e) => e.eventType.includes("::OrderCanceled"));
+        const chainCanceledCount = orderCanceledEvents.length;
         this.activeOrders.clear();
 
         // Update metrics
         updateMetrics({
-            ordersCanceled: canceledCount,
+            ordersCanceled: Math.max(canceledCount, chainCanceledCount),
             activeOrders: 0,
         });
 
-        log.loopDetail(`Canceled ${canceledCount} orders`);
+        const suffix =
+            chainCanceledCount > canceledCount ? ` (${chainCanceledCount} on-chain)` : "";
+        log.loopDetail(`Canceled ${canceledCount} tracked orders${suffix}`);
         log.loopDetail(explorerTxUrl(txData.digest, this.network));
+        await this.waitForTransactionBestEffort(txData.digest, "cancel orders");
         return txData.digest;
     }
 
@@ -194,6 +190,17 @@ export class OrderManager {
      */
     getActiveOrderCount(): number {
         return this.activeOrders.size;
+    }
+
+    private async waitForTransactionBestEffort(digest: string, action: string): Promise<void> {
+        try {
+            await this.client.waitForTransaction({ digest });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            log.warn(
+                `Timed out confirming ${action} transaction ${digest}; continuing from execution result: ${message}`,
+            );
+        }
     }
 }
 

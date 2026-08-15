@@ -3,6 +3,7 @@
     "version": "0.4.0",
     "type": "module",
     "private": true,
+    "packageManager": "pnpm@10.29.2",
     "description": "DeepBook V3 localnet deployment sandbox",
     "scripts": {
         "deploy-all": "tsx scripts/deploy-all.ts",
