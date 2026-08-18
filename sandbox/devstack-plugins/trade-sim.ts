@@ -279,6 +279,52 @@ const refreshedRef = (raw: unknown, ref: ObjectRef): ObjectRef => {
     return ref;
 };
 
+/** The fork's execution envelope for one impersonated tx. */
+type ImpersonationOutcome = {
+    readonly digest: string;
+    readonly success: boolean;
+    readonly raw: unknown;
+};
+
+/** Attempts for one impersonated tx: the first, plus retries after a
+ *  stale-ref refresh. Three covers the trading-dashboard member's boot burst
+ *  (a DEEP grant and a USDC grant, back to back on the shared gas coin). */
+const STALE_REF_ATTEMPTS = 3;
+
+/**
+ * Does this PRE-EXECUTION rejection mean "a ref you passed is no longer
+ * current"?
+ *
+ * The whale's gas coin is not ours alone: deep-funding, usdc-funding and the
+ * faucet all pay gas with the SAME pinned coin, so any of them can bump it
+ * between our last read and our execute. Boot is where it bites — the
+ * trading-dashboard member tops its dev wallet up with DEEP and USDC (both
+ * gas-paid by that coin) while this loop is placing its own first
+ * transactions, and a lost race there fails the member, and with it the whole
+ * `devstack up`.
+ *
+ * The fork resolves an owned input BY ID and tolerates a stale version, so a
+ * mismatched digest is the only symptom that actually surfaces (verified
+ * against a live fork: a stale version+digest pair is accepted; a current
+ * version with a stale digest is rejected exactly like this). The sibling
+ * "not available for consumption" covers the version-checked inputs — the
+ * BalanceManager and the DEEP source coin.
+ *
+ * The message arrives URL-encoded through the gRPC layer
+ * ("Invalid%20Object%20digest"), so match the decoded form as well as the raw.
+ */
+export const isStaleRefError = (cause: unknown): boolean => {
+    const raw = describeCause(cause);
+    let decoded = raw;
+    try {
+        decoded = decodeURIComponent(raw);
+    } catch {
+        // a lone '%' in the message — the raw form is still matched below.
+    }
+    const stale = /Invalid Object digest|not available for consumption/i;
+    return stale.test(decoded) || stale.test(raw);
+};
+
 /** Coin<SUI> balance from a Coin object's BCS content (u64 LE after the UID). */
 const coinBalanceFromContent = (content: Uint8Array | undefined): bigint => {
     if (!content || content.length < 40) return 0n;
@@ -544,6 +590,72 @@ export function tradeSimMember(opts: TradeSimOptions) {
                             fail("get-ref", `getObject(${objectId}): ${String(cause)}`, cause),
                     });
 
+                /** Re-read a gas payment from chain and re-track the gas coin.
+                 *  Only ever called after a stale-ref rejection — the happy
+                 *  path still advances `gasRef` from tx effects, so this costs
+                 *  nothing per tick. */
+                const refreshPayment = (
+                    payment: readonly ObjectRef[],
+                ): Effect.Effect<ObjectRef[], unknown> =>
+                    Effect.gen(function* () {
+                        const fresh: ObjectRef[] = [];
+                        for (const ref of payment) {
+                            const next = yield* getRef(ref.objectId);
+                            if (next.objectId === WHALE_GAS_COIN) gasRef = next;
+                            fresh.push(next);
+                        }
+                        return fresh;
+                    });
+
+                const impersonateOnce = (
+                    tx: Transaction,
+                    sender: string,
+                    gas: readonly ObjectRef[],
+                    label: string,
+                ): Effect.Effect<ImpersonationOutcome, unknown> =>
+                    Effect.gen(function* () {
+                        const bytes = yield* Effect.tryPromise({
+                            try: () => buildImpersonationBytes(tx, sender, gas, gasBudgetFor()),
+                            catch: (cause) =>
+                                fail("build-tx", `${label}: ${describeCause(cause)}`, cause),
+                        });
+                        return yield* fork.impersonate(sender, bytes);
+                    });
+
+                /** A rejected ref is not a dead end: another member spending
+                 *  the shared whale gas coin invalidates ours (isStaleRefError),
+                 *  and a re-read makes the very same tx land. */
+                const impersonateRetrying = (
+                    tx: Transaction,
+                    sender: string,
+                    gas: readonly ObjectRef[],
+                    label: string,
+                    attemptsLeft: number,
+                ): Effect.Effect<ImpersonationOutcome, unknown> =>
+                    impersonateOnce(tx, sender, gas, label).pipe(
+                        Effect.catch((cause) => {
+                            if (attemptsLeft > 1 && isStaleRefError(cause)) {
+                                beat(`${label}: stale ref, refreshing gas and retrying`);
+                                return refreshPayment(gas).pipe(
+                                    Effect.flatMap((fresh) =>
+                                        impersonateRetrying(
+                                            tx,
+                                            sender,
+                                            fresh,
+                                            label,
+                                            attemptsLeft - 1,
+                                        ),
+                                    ),
+                                );
+                            }
+                            return Effect.fail(
+                                (cause as { _tag?: string })?._tag === "ForkStackMemberError"
+                                    ? cause
+                                    : fail("execute", `${label}: ${describeCause(cause)}`, cause),
+                            );
+                        }),
+                    );
+
                 const impersonate = (
                     tx: Transaction,
                     sender: string,
@@ -551,20 +663,13 @@ export function tradeSimMember(opts: TradeSimOptions) {
                     label: string,
                 ): Effect.Effect<unknown, unknown> =>
                     Effect.gen(function* () {
-                        const bytes = yield* Effect.tryPromise({
-                            try: () => buildImpersonationBytes(tx, sender, gas, gasBudgetFor()),
-                            catch: (cause) =>
-                                fail("build-tx", `${label}: ${describeCause(cause)}`, cause),
-                        });
-                        const result = yield* fork
-                            .impersonate(sender, bytes)
-                            .pipe(
-                                Effect.catch((cause) =>
-                                    Effect.fail(
-                                        fail("execute", `${label}: ${describeCause(cause)}`, cause),
-                                    ),
-                                ),
-                            );
+                        const result = yield* impersonateRetrying(
+                            tx,
+                            sender,
+                            gas,
+                            label,
+                            STALE_REF_ATTEMPTS,
+                        );
                         if (!result.success) {
                             return yield* Effect.fail(
                                 fail(
