@@ -1,0 +1,29 @@
+{
+    "name": "devstack-plugins",
+    "private": true,
+    "type": "module",
+    "description": "Production devstack plugins for the DeepBook sandbox (fork-mode coin funding, etc.).",
+    "engines": {
+        "node": ">=24"
+    },
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run",
+        "test:e2e": "vitest run --config vitest.e2e.config.ts",
+        "verify:dashboard-faucet": "node scripts/verify-dashboard-faucet.mjs",
+        "verify:deepbook-ids": "node scripts/verify-deepbook-ids.mjs",
+        "verify:deepbook-member": "node scripts/verify-deepbook-member.mjs",
+        "verify:usdc-minter": "node scripts/verify-usdc-minter.mjs",
+        "dashboard:up": "node scripts/dashboard-up.mjs",
+        "smoke": "node scripts/stack-smoke.mjs"
+    },
+    "devDependencies": {
+        "@mysten-incubation/devstack": "0.7.0",
+        "@mysten/sui": "^2.18.0",
+        "@types/node": "^22",
+        "effect": "4.0.0-beta.65",
+        "typescript": "^5.8.3",
+        "vite": "^7.0.0",
+        "vitest": "^4.1.6"
+    }
+}

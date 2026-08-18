@@ -19,9 +19,93 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDAppKit, useCurrentClient } from "@mysten/dapp-kit-react";
 import { Transaction } from "@mysten/sui/transactions";
 import { OrderType, SelfMatchingOptions } from "@mysten/deepbook-v3";
-import type { Manifest, SandboxClient } from "@/hooks/use-deepbook-client";
-import { BALANCE_MANAGER_KEY, buildPackageIds } from "@/hooks/use-deepbook-client";
+import type { ForkManifest, Manifest, SandboxClient } from "@/hooks/use-deepbook-client";
+import {
+    BALANCE_MANAGER_KEY,
+    buildPackageIds,
+    isForkManifest,
+    useManifest,
+} from "@/hooks/use-deepbook-client";
+import {
+    FLOAT_SCALAR,
+    coreOf,
+    forkBmBalance,
+    forkCancelAllOrders,
+    forkCancelOrder,
+    forkDeposit,
+    forkLastPrice,
+    forkOpenOrders,
+    forkPlaceLimitOrder,
+    forkPlaceMarketOrder,
+    forkWithdraw,
+    listOwnedCoins,
+    setForkGas,
+} from "@/lib/fork";
 import type { PoolKey, CoinKey, OrderDetail } from "./types";
+
+const COIN_SCALARS: Record<string, number> = {
+    SUI: 1_000_000_000,
+    DEEP: 1_000_000,
+    USDC: 1_000_000,
+};
+const SUI_TYPE = "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI";
+
+/* --- post-trade order sync ------------------------------------------------
+ * Open orders are read from the indexer (server /orders), never from chain —
+ * `getAccountOrderDetails` simulates, which the fork cannot do. So a placed or
+ * cancelled order only appears once the indexer has ingested its checkpoint.
+ * That pipeline is fast (measured on the fork stack: the indexer runs ONE
+ * checkpoint behind the tip), but it is not instant, so the invalidation fired
+ * the moment a trade settles usually reads a table that does not have the
+ * order yet — and the next poll was a flat 10s away. That gap, not the
+ * indexer, is why a new order "took a while" to show up.
+ *
+ * Fix: poll every second for a short window after any settled trade, then drop
+ * back to the idle cadence. The window is generous relative to the real lag so
+ * a slow checkpoint still lands inside it. */
+const ORDERS_IDLE_POLL_MS = 10_000;
+const ORDERS_SYNC_POLL_MS = 1_000;
+const ORDERS_SYNC_WINDOW_MS = 20_000;
+
+/** Module-level so every hook instance (trading page, market-maker page)
+ *  shares one window — the same reason the BM selection uses a module store. */
+let lastSettledAt = 0;
+
+/** True while a just-settled trade is still expected to appear. Read at render
+ *  time; during the window renders happen ~1s apart, so a UI flag derived from
+ *  it stays steady rather than flickering. */
+export function isSyncingOrders(): boolean {
+    return Date.now() - lastSettledAt < ORDERS_SYNC_WINDOW_MS;
+}
+
+/** Fork-mode branch info for the hooks (react-query dedupes the manifest
+ *  fetch with useDeepBookClient's). null = localnet / not loaded yet.
+ *  Exported for the market-maker page, which branches the same way. */
+export function useForkManifest(): ForkManifest | null {
+    const manifest = useManifest();
+    return manifest.data && isForkManifest(manifest.data) ? manifest.data : null;
+}
+
+const forkCoinType = (fork: ForkManifest, coin: string): string => {
+    if (coin === "SUI") return SUI_TYPE;
+    if (coin === "DEEP") return fork.deepbook.pools.DEEP_SUI.baseType;
+    return fork.deepbook.pools.SUI_USDC.quoteType;
+};
+
+/** Fork execution is final when the response lands; waiting only serves the
+ *  indexer, so a hiccup there must not fail the whole action. */
+async function waitBestEffort(
+    suiClient: {
+        waitForTransaction: (args: { digest: string; signal?: AbortSignal }) => Promise<unknown>;
+    },
+    digest: string,
+): Promise<void> {
+    try {
+        await suiClient.waitForTransaction({ digest, signal: AbortSignal.timeout(5_000) });
+    } catch {
+        /* already final on-chain */
+    }
+}
 
 /* ------------------------------------------------------------------ */
 /*  READ hooks — direct SDK queries                                    */
@@ -29,17 +113,33 @@ import type { PoolKey, CoinKey, OrderDetail } from "./types";
 
 export function useWalletBalances(address: string | null) {
     const suiClient = useCurrentClient();
+    const fork = useForkManifest();
     return useQuery<{ address: string; balances: Record<string, string> }>({
-        queryKey: ["wallet-balances", address],
+        queryKey: ["wallet-balances", address, !!fork],
         queryFn: async () => {
             if (!address) throw new Error("Not ready");
-            const resp = await suiClient.listBalances({ owner: address });
             const balances: Record<string, string> = {};
-            for (const b of resp.balances) {
-                const name = b.coinType.split("::").pop() ?? b.coinType;
-                const key = name.toUpperCase();
-                const scalar = key === "SUI" ? 1_000_000_000 : 1_000_000;
-                balances[key] = String(Number(b.balance) / scalar);
+            if (fork) {
+                // The fork has no balance index — enumerate owned (fork-local)
+                // coins and read balances from their content.
+                const coins = await listOwnedCoins(coreOf(suiClient), address);
+                const totals = new Map<string, bigint>();
+                for (const c of coins) {
+                    const key = (c.coinType.split("::").pop() ?? c.coinType).toUpperCase();
+                    totals.set(key, (totals.get(key) ?? 0n) + c.balance);
+                }
+                for (const [key, total] of totals) {
+                    const scalar = COIN_SCALARS[key] ?? 1_000_000;
+                    balances[key] = String(Number(total) / scalar);
+                }
+            } else {
+                const resp = await suiClient.listBalances({ owner: address });
+                for (const b of resp.balances) {
+                    const name = b.coinType.split("::").pop() ?? b.coinType;
+                    const key = name.toUpperCase();
+                    const scalar = key === "SUI" ? 1_000_000_000 : 1_000_000;
+                    balances[key] = String(Number(b.balance) / scalar);
+                }
             }
             // Ensure all expected coins have a value
             for (const coin of ["SUI", "DEEP", "USDC"]) {
@@ -53,19 +153,33 @@ export function useWalletBalances(address: string | null) {
 }
 
 export function useBmBalances(client: SandboxClient | null, balanceManagerId: string | null) {
+    const suiClient = useCurrentClient();
+    const fork = useForkManifest();
     return useQuery<Record<string, string>>({
-        queryKey: ["bm-balances", balanceManagerId],
+        queryKey: ["bm-balances", balanceManagerId, !!fork],
         queryFn: async () => {
-            if (!client) throw new Error("Not ready");
+            if (!client || !balanceManagerId) throw new Error("Not ready");
             const coins = ["SUI", "DEEP", "USDC"];
             const results: Record<string, string> = {};
             for (const coin of coins) {
                 try {
-                    const { balance } = await client.deepbook.checkManagerBalance(
-                        BALANCE_MANAGER_KEY,
-                        coin,
-                    );
-                    results[coin] = String(balance);
+                    if (fork) {
+                        // checkManagerBalance simulates; read the manager's Bag
+                        // dynamic field directly instead.
+                        const raw = await forkBmBalance(
+                            coreOf(suiClient),
+                            balanceManagerId,
+                            fork.deepbook.packages.deepbook.originalId,
+                            forkCoinType(fork, coin),
+                        );
+                        results[coin] = String(Number(raw) / (COIN_SCALARS[coin] ?? 1_000_000));
+                    } else {
+                        const { balance } = await client.deepbook.checkManagerBalance(
+                            BALANCE_MANAGER_KEY,
+                            coin,
+                        );
+                        results[coin] = String(balance);
+                    }
                 } catch {
                     results[coin] = "0";
                 }
@@ -78,10 +192,14 @@ export function useBmBalances(client: SandboxClient | null, balanceManagerId: st
 }
 
 export function useMidPrice(client: SandboxClient | null, poolKey: PoolKey) {
+    const fork = useForkManifest();
     return useQuery<number>({
-        queryKey: ["mid-price", poolKey],
+        queryKey: ["mid-price", poolKey, !!fork],
         queryFn: async () => {
             if (!client) throw new Error("Not ready");
+            // Fork: no simulation ⇒ no on-chain mid; the server's last fill
+            // price is the sandbox's price view (trade-sim keeps it live).
+            if (fork) return forkLastPrice(poolKey);
             return client.deepbook.midPrice(poolKey);
         },
         enabled: !!client,
@@ -96,10 +214,25 @@ export interface PoolParams {
 }
 
 export function usePoolParams(client: SandboxClient | null, poolKey: PoolKey) {
+    const fork = useForkManifest();
     return useQuery<PoolParams>({
-        queryKey: ["pool-params", poolKey],
+        queryKey: ["pool-params", poolKey, !!fork],
         queryFn: async () => {
             if (!client) throw new Error("Not ready");
+            if (fork) {
+                // The raw params are pinned in the fork manifest; convert with
+                // the SDK's poolBookParams formulas (FLOAT_SCALAR = 1e9).
+                const pool = fork.deepbook.pools[poolKey];
+                if (!pool) throw new Error(`pool ${poolKey} not in the fork manifest`);
+                const [baseCoin, quoteCoin] = poolKey.split("_");
+                const baseScalar = COIN_SCALARS[baseCoin ?? ""] ?? 1_000_000;
+                const quoteScalar = COIN_SCALARS[quoteCoin ?? ""] ?? 1_000_000;
+                return {
+                    tickSize: (pool.tickSize * baseScalar) / quoteScalar / FLOAT_SCALAR,
+                    lotSize: pool.lotSize / baseScalar,
+                    minSize: pool.minSize / baseScalar,
+                };
+            }
             return client.deepbook.poolBookParams(poolKey);
         },
         enabled: !!client,
@@ -112,10 +245,28 @@ export function useOpenOrders(
     poolKey: PoolKey,
     balanceManagerId: string | null,
 ) {
+    const fork = useForkManifest();
     return useQuery<OrderDetail[]>({
-        queryKey: ["open-orders", poolKey, balanceManagerId],
+        queryKey: ["open-orders", poolKey, balanceManagerId, !!fork],
         queryFn: async () => {
             if (!client) throw new Error("Not ready");
+            if (fork) {
+                // getAccountOrderDetails simulates; the indexer's order_updates
+                // projection (server /orders) carries the same view. The
+                // client_order_id is not indexed — the UI tolerates "".
+                if (!balanceManagerId) return [];
+                const orders = await forkOpenOrders(poolKey, balanceManagerId);
+                return orders.map((o): OrderDetail => ({
+                    order_id: String(o.order_id),
+                    client_order_id: "",
+                    quantity: String(o.original_quantity),
+                    filled_quantity: String(o.filled_quantity),
+                    fee_is_deep: false,
+                    status: o.current_status,
+                    is_bid: o.type === "buy",
+                    price: String(o.price),
+                }));
+            }
             const raw = await client.deepbook.getAccountOrderDetails(poolKey, BALANCE_MANAGER_KEY);
             return raw.map((order) => {
                 try {
@@ -143,7 +294,9 @@ export function useOpenOrders(
             });
         },
         enabled: !!client && !!balanceManagerId,
-        refetchInterval: 10_000,
+        // Re-evaluated by react-query after each fetch, so the cadence tightens
+        // as soon as a trade settles and relaxes on its own afterwards.
+        refetchInterval: () => (isSyncingOrders() ? ORDERS_SYNC_POLL_MS : ORDERS_IDLE_POLL_MS),
     });
 }
 
@@ -158,10 +311,13 @@ export interface PoolDetails {
     ask_quantities: number[];
 }
 
-export function usePoolDetails(client: SandboxClient | null, poolKey: PoolKey) {
+export function usePoolDetails(client: SandboxClient | null, poolKey: PoolKey, enabled = true) {
     return useQuery<PoolDetails>({
         queryKey: ["pool-details", poolKey],
         queryFn: async () => {
+            // Every one of these helpers devInspects — dead on the fork
+            // (SUI-FORK-ISSUES #7); fork callers pass enabled=false and
+            // assemble the same view from manifest pins + the book read.
             if (!client) throw new Error("Not ready");
             const [midPrice, bookParams, depth] = await Promise.all([
                 client.deepbook.midPrice(poolKey),
@@ -170,7 +326,7 @@ export function usePoolDetails(client: SandboxClient | null, poolKey: PoolKey) {
             ]);
             return { midPrice, ...bookParams, ...depth };
         },
-        enabled: !!client,
+        enabled: !!client && enabled,
         refetchInterval: 10_000,
     });
 }
@@ -183,121 +339,265 @@ export function useTrading(
     client: SandboxClient | null,
     poolKey: PoolKey,
     withdrawAddress?: string | null,
+    balanceManagerId?: string | null,
 ) {
     const dAppKit = useDAppKit();
     const suiClient = useCurrentClient();
     const queryClient = useQueryClient();
+    const fork = useForkManifest();
 
     const invalidateAll = useCallback(() => {
+        // Opens the fast-poll window: this first refetch usually races the
+        // indexer and comes back without the order.
+        lastSettledAt = Date.now();
         queryClient.invalidateQueries({ queryKey: ["open-orders"] });
         queryClient.invalidateQueries({ queryKey: ["bm-balances"] });
         queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
     }, [queryClient]);
 
-    /** Wait for the chain to index the transaction, then invalidate caches. */
+    /** Wait for the chain to index the transaction, then invalidate caches.
+     *  On the fork the wait is best-effort — execution is already final. */
     const waitAndInvalidate = useCallback(
         async (digest: string) => {
-            await suiClient.waitForTransaction({ digest });
+            if (fork) await waitBestEffort(suiClient, digest);
+            else await suiClient.waitForTransaction({ digest });
             invalidateAll();
         },
-        [suiClient, invalidateAll],
+        [suiClient, invalidateAll, fork],
     );
+
+    /** Fork txs carry explicit gas so building never dry-runs (the fork has
+     *  no simulate_transaction) and never consults the dead coin index. */
+    const prepareGas = useCallback(
+        async (tx: Transaction) => {
+            if (!fork || !withdrawAddress) return;
+            await setForkGas(coreOf(suiClient), tx, withdrawAddress);
+        },
+        [fork, suiClient, withdrawAddress],
+    );
+
+    /** Common args for the raw fork order builders (the SDK thunks reference
+     *  objects via unresolved tx.object(id) inputs, whose build-time
+     *  resolution rides simulateTransaction — unavailable on the fork). */
+    const forkOrderCommon = useCallback(() => {
+        if (!fork) throw new Error("Not in fork mode");
+        if (!balanceManagerId) throw new Error("No BalanceManager");
+        const pool = fork.deepbook.pools[poolKey];
+        if (!pool) throw new Error(`pool ${poolKey} missing from the fork manifest`);
+        return {
+            deepbookPackageId: fork.deepbook.packages.deepbook.latestId,
+            pool,
+            balanceManagerId,
+        };
+    }, [fork, poolKey, balanceManagerId]);
+
+    const poolScalars = useCallback(() => {
+        const [baseSym, quoteSym] = poolKey.split("_");
+        return {
+            baseScalar: COIN_SCALARS[baseSym ?? ""] ?? 1_000_000,
+            quoteScalar: COIN_SCALARS[quoteSym ?? ""] ?? 1_000_000,
+        };
+    }, [poolKey]);
 
     const deposit = useCallback(
         async (coin: CoinKey, amount: number) => {
             if (!client) throw new Error("SDK client not ready");
             const tx = new Transaction();
-            client.deepbook.balanceManager.depositIntoManager(
-                BALANCE_MANAGER_KEY,
-                coin,
-                amount,
-            )(tx);
+            if (fork) {
+                // The SDK thunk's coinWithBalance intent resolves through the
+                // coin index — dead on the fork. Build the deposit from
+                // enumerable owned coins instead (SUI splits from gas).
+                if (!withdrawAddress) throw new Error("No wallet address");
+                if (!balanceManagerId) throw new Error("No BalanceManager");
+                await forkDeposit(coreOf(suiClient), tx, {
+                    sender: withdrawAddress,
+                    deepbookPackageId: fork.deepbook.packages.deepbook.latestId,
+                    balanceManagerId,
+                    coinType: forkCoinType(fork, coin),
+                    amount: BigInt(Math.round(amount * (COIN_SCALARS[coin] ?? 1_000_000))),
+                });
+                await prepareGas(tx);
+            } else {
+                client.deepbook.balanceManager.depositIntoManager(
+                    BALANCE_MANAGER_KEY,
+                    coin,
+                    amount,
+                )(tx);
+            }
             const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
             await waitAndInvalidate(result.Transaction!.digest);
             return result.Transaction!.digest;
         },
-        [client, dAppKit, waitAndInvalidate],
+        [
+            client,
+            dAppKit,
+            waitAndInvalidate,
+            fork,
+            suiClient,
+            withdrawAddress,
+            balanceManagerId,
+            prepareGas,
+        ],
     );
 
     const withdraw = useCallback(
         async (coin: CoinKey, amount: number) => {
             if (!client || !withdrawAddress) throw new Error("SDK client not ready");
             const tx = new Transaction();
-            client.deepbook.balanceManager.withdrawFromManager(
-                BALANCE_MANAGER_KEY,
-                coin,
-                amount,
-                withdrawAddress,
-            )(tx);
+            if (fork) {
+                if (!balanceManagerId) throw new Error("No BalanceManager");
+                await forkWithdraw(coreOf(suiClient), tx, {
+                    deepbookPackageId: fork.deepbook.packages.deepbook.latestId,
+                    balanceManagerId,
+                    coinType: forkCoinType(fork, coin),
+                    amount: BigInt(Math.round(amount * (COIN_SCALARS[coin] ?? 1_000_000))),
+                    recipient: withdrawAddress,
+                });
+                await prepareGas(tx);
+            } else {
+                client.deepbook.balanceManager.withdrawFromManager(
+                    BALANCE_MANAGER_KEY,
+                    coin,
+                    amount,
+                    withdrawAddress,
+                )(tx);
+            }
             const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
             await waitAndInvalidate(result.Transaction!.digest);
             return result.Transaction!.digest;
         },
-        [client, withdrawAddress, dAppKit, waitAndInvalidate],
+        [
+            client,
+            withdrawAddress,
+            dAppKit,
+            waitAndInvalidate,
+            prepareGas,
+            fork,
+            suiClient,
+            balanceManagerId,
+        ],
     );
 
     const placeLimitOrder = useCallback(
         async (params: { price: number; quantity: number; isBid: boolean }) => {
             if (!client) throw new Error("SDK client not ready");
             const tx = new Transaction();
-            client.deepbook.deepBook.placeLimitOrder({
-                poolKey,
-                balanceManagerKey: BALANCE_MANAGER_KEY,
-                clientOrderId: String(Date.now()),
-                price: params.price,
-                quantity: params.quantity,
-                isBid: params.isBid,
-                orderType: OrderType.NO_RESTRICTION,
-                selfMatchingOption: SelfMatchingOptions.SELF_MATCHING_ALLOWED,
-                payWithDeep: false,
-            })(tx);
+            if (fork) {
+                const { baseScalar, quoteScalar } = poolScalars();
+                await forkPlaceLimitOrder(coreOf(suiClient), tx, {
+                    ...forkOrderCommon(),
+                    clientOrderId: String(Date.now()),
+                    priceRaw: BigInt(
+                        Math.round((params.price * FLOAT_SCALAR * quoteScalar) / baseScalar),
+                    ),
+                    quantityRaw: BigInt(Math.round(params.quantity * baseScalar)),
+                    isBid: params.isBid,
+                });
+                await prepareGas(tx);
+            } else {
+                client.deepbook.deepBook.placeLimitOrder({
+                    poolKey,
+                    balanceManagerKey: BALANCE_MANAGER_KEY,
+                    clientOrderId: String(Date.now()),
+                    price: params.price,
+                    quantity: params.quantity,
+                    isBid: params.isBid,
+                    orderType: OrderType.NO_RESTRICTION,
+                    selfMatchingOption: SelfMatchingOptions.SELF_MATCHING_ALLOWED,
+                    payWithDeep: false,
+                })(tx);
+            }
             const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
             await waitAndInvalidate(result.Transaction!.digest);
             return result.Transaction!.digest;
         },
-        [client, poolKey, dAppKit, waitAndInvalidate],
+        [
+            client,
+            poolKey,
+            dAppKit,
+            waitAndInvalidate,
+            prepareGas,
+            fork,
+            suiClient,
+            forkOrderCommon,
+            poolScalars,
+        ],
     );
 
     const placeMarketOrder = useCallback(
         async (params: { quantity: number; isBid: boolean }) => {
             if (!client) throw new Error("SDK client not ready");
             const tx = new Transaction();
-            client.deepbook.deepBook.placeMarketOrder({
-                poolKey,
-                balanceManagerKey: BALANCE_MANAGER_KEY,
-                clientOrderId: String(Date.now()),
-                quantity: params.quantity,
-                isBid: params.isBid,
-                selfMatchingOption: SelfMatchingOptions.SELF_MATCHING_ALLOWED,
-                payWithDeep: false,
-            })(tx);
+            if (fork) {
+                const { baseScalar } = poolScalars();
+                await forkPlaceMarketOrder(coreOf(suiClient), tx, {
+                    ...forkOrderCommon(),
+                    clientOrderId: String(Date.now()),
+                    quantityRaw: BigInt(Math.round(params.quantity * baseScalar)),
+                    isBid: params.isBid,
+                });
+                await prepareGas(tx);
+            } else {
+                client.deepbook.deepBook.placeMarketOrder({
+                    poolKey,
+                    balanceManagerKey: BALANCE_MANAGER_KEY,
+                    clientOrderId: String(Date.now()),
+                    quantity: params.quantity,
+                    isBid: params.isBid,
+                    selfMatchingOption: SelfMatchingOptions.SELF_MATCHING_ALLOWED,
+                    payWithDeep: false,
+                })(tx);
+            }
             const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
             await waitAndInvalidate(result.Transaction!.digest);
             return result.Transaction!.digest;
         },
-        [client, poolKey, dAppKit, waitAndInvalidate],
+        [
+            client,
+            poolKey,
+            dAppKit,
+            waitAndInvalidate,
+            prepareGas,
+            fork,
+            suiClient,
+            forkOrderCommon,
+            poolScalars,
+        ],
     );
 
     const cancelOrder = useCallback(
         async (orderId: string) => {
             if (!client) throw new Error("SDK client not ready");
             const tx = new Transaction();
-            client.deepbook.deepBook.cancelOrder(poolKey, BALANCE_MANAGER_KEY, orderId)(tx);
+            if (fork) {
+                await forkCancelOrder(coreOf(suiClient), tx, {
+                    ...forkOrderCommon(),
+                    orderId,
+                });
+                await prepareGas(tx);
+            } else {
+                client.deepbook.deepBook.cancelOrder(poolKey, BALANCE_MANAGER_KEY, orderId)(tx);
+            }
             const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
             await waitAndInvalidate(result.Transaction!.digest);
             return result.Transaction!.digest;
         },
-        [client, poolKey, dAppKit, waitAndInvalidate],
+        [client, poolKey, dAppKit, waitAndInvalidate, prepareGas, fork, suiClient, forkOrderCommon],
     );
 
     const cancelAllOrders = useCallback(async () => {
         if (!client) throw new Error("SDK client not ready");
         const tx = new Transaction();
-        client.deepbook.deepBook.cancelAllOrders(poolKey, BALANCE_MANAGER_KEY)(tx);
+        if (fork) {
+            await forkCancelAllOrders(coreOf(suiClient), tx, forkOrderCommon());
+            await prepareGas(tx);
+        } else {
+            client.deepbook.deepBook.cancelAllOrders(poolKey, BALANCE_MANAGER_KEY)(tx);
+        }
         const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
         await waitAndInvalidate(result.Transaction!.digest);
         return result.Transaction!.digest;
-    }, [client, poolKey, dAppKit, invalidateAll]);
+    }, [client, poolKey, dAppKit, waitAndInvalidate, prepareGas, fork, suiClient, forkOrderCommon]);
 
     return { deposit, withdraw, placeLimitOrder, placeMarketOrder, cancelOrder, cancelAllOrders };
 }
@@ -340,18 +640,39 @@ export function useCreateBalanceManager(
 
         const bm = client.deepbook.balanceManager.createBalanceManagerWithOwner(address)(tx);
 
+        // Fork: reference the registry by its pinned initial shared version so
+        // building needs no object resolution, and set explicit gas (the fork
+        // can neither dry-run nor gas-select).
+        let registryArg;
+        if (isForkManifest(manifest)) {
+            registryArg = tx.sharedObjectRef({
+                objectId: registryId,
+                initialSharedVersion: String(manifest.deepbook.registry.initialSharedVersion),
+                mutable: true,
+            });
+        } else {
+            registryArg = tx.object(registryId);
+        }
+
         tx.moveCall({
             target: `${deepbookPkgId}::balance_manager::register_balance_manager`,
-            arguments: [bm, tx.object(registryId)],
+            arguments: [bm, registryArg],
         });
 
         client.deepbook.balanceManager.shareBalanceManager(bm)(tx);
+        if (isForkManifest(manifest)) {
+            await setForkGas(coreOf(suiClient), tx, address);
+        }
 
         const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
         if (result.$kind === "FailedTransaction") {
             throw new Error(result.FailedTransaction.status.error?.message ?? "Transaction failed");
         }
-        await suiClient.waitForTransaction({ digest: result.Transaction!.digest });
+        if (isForkManifest(manifest)) {
+            await waitBestEffort(suiClient, result.Transaction!.digest);
+        } else {
+            await suiClient.waitForTransaction({ digest: result.Transaction!.digest });
+        }
         queryClient.invalidateQueries({ queryKey: ["balance-manager-id"] });
         return result.Transaction!.digest;
     }, [client, manifest, address, dAppKit, suiClient, queryClient]);

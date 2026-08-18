@@ -88,7 +88,7 @@ export function OrderBook({
                     <Skeleton className="h-[420px] w-full bg-zinc-800" />
                 ) : isError ? (
                     <div className="flex h-[420px] items-center justify-center text-sm text-zinc-500">
-                        Market maker offline
+                        Market maker not deployed in this sandbox
                     </div>
                 ) : !data || (data.asks.length === 0 && data.bids.length === 0) ? (
                     <div className="flex h-[420px] items-center justify-center text-sm text-zinc-500">

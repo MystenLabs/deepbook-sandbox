@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { ShoppingCart, BookOpen, XCircle, ExternalLink, Loader2 } from "lucide-react";
+import { ShoppingCart, BookOpen, XCircle, Loader2 } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { TxResultLink } from "@/components/tx-result-link";
 import { SdkCodeBlock } from "./sdk-code-block";
 import {
     placeMarketOrderSnippet,
@@ -23,16 +24,65 @@ function roundToTick(price: number, tick: number): number {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Pool constraint checks                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `order_info::validate_inputs` asserts three things on-chain: quantity >=
+ * min_size (abort 1), quantity % lot_size == 0 (abort 2) and, for limit
+ * orders, price % tick_size == 0 (abort 0). The cards used to show min size
+ * as a hint only, so a smaller quantity was signed, spent gas and came back
+ * as a raw "MoveAbort … abort code: 1" — check the same rules here instead.
+ */
+
+/** Float-tolerant "is a whole multiple of step" (0.3 / 0.1 is not exact). */
+function isMultipleOf(value: number, step: number): boolean {
+    if (!(step > 0)) return true;
+    const ratio = value / step;
+    return Math.abs(ratio - Math.round(ratio)) < 1e-6;
+}
+
+/** Drop binary-float noise (0.30000000000000004) from a displayed number. */
+const trim = (n: number): string => String(Number(n.toPrecision(12)));
+
+function quantityIssue(
+    qty: number,
+    unit: string,
+    minSize?: number,
+    lotSize?: number,
+): string | null {
+    if (!(qty > 0)) return "Enter a valid quantity";
+    if (minSize != null && qty < minSize) {
+        return `This pool's minimum order size is ${trim(minSize)} ${unit} — enter at least that much.`;
+    }
+    if (lotSize != null && !isMultipleOf(qty, lotSize)) {
+        const nearest = Math.floor(qty / lotSize) * lotSize;
+        return `Size must be a multiple of the ${trim(lotSize)} ${unit} lot size — try ${trim(nearest)}.`;
+    }
+    return null;
+}
+
+function priceIssue(price: number, unit: string, tickSize?: number): string | null {
+    if (!(price > 0)) return "Enter a valid price";
+    if (tickSize != null && !isMultipleOf(price, tickSize)) {
+        const nearest = Math.floor(price / tickSize) * tickSize;
+        return `Price must be a multiple of the ${trim(tickSize)} ${unit} tick size — try ${trim(nearest)}.`;
+    }
+    return null;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Market Order Card                                                  */
 /* ------------------------------------------------------------------ */
 
 interface MarketOrderCardProps {
     poolKey: PoolKey;
     minSize?: number;
+    lotSize?: number;
     onPlace: (params: { quantity: number; isBid: boolean }) => Promise<string>;
 }
 
-export function MarketOrderCard({ poolKey, minSize, onPlace }: MarketOrderCardProps) {
+export function MarketOrderCard({ poolKey, minSize, lotSize, onPlace }: MarketOrderCardProps) {
     const [quantity, setQuantity] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -44,8 +94,9 @@ export function MarketOrderCard({ poolKey, minSize, onPlace }: MarketOrderCardPr
     const handleSubmit = async (isBid: boolean) => {
         setError(null);
         setSuccess(null);
-        if (qty <= 0) {
-            setError("Enter a valid quantity");
+        const issue = quantityIssue(qty, pair.base, minSize, lotSize);
+        if (issue) {
+            setError(issue);
             return;
         }
         setSubmitting(true);
@@ -80,6 +131,12 @@ export function MarketOrderCard({ poolKey, minSize, onPlace }: MarketOrderCardPr
                         {minSize != null && (
                             <span className="text-[11px] text-zinc-500">
                                 Min: <span className="font-mono text-zinc-400">{minSize}</span>
+                                {lotSize != null && (
+                                    <>
+                                        {" · step "}
+                                        <span className="font-mono text-zinc-400">{lotSize}</span>
+                                    </>
+                                )}
                             </span>
                         )}
                     </div>
@@ -92,8 +149,8 @@ export function MarketOrderCard({ poolKey, minSize, onPlace }: MarketOrderCardPr
                             setSuccess(null);
                         }}
                         placeholder={minSize != null ? String(minSize) : "0"}
-                        min="0"
-                        step="any"
+                        min={minSize ?? 0}
+                        step={lotSize ?? "any"}
                         className="w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
                 </div>
@@ -133,15 +190,10 @@ export function MarketOrderCard({ poolKey, minSize, onPlace }: MarketOrderCardPr
                 {success && (
                     <p className="text-xs text-emerald-400 flex items-center gap-1.5">
                         {success.message}
-                        <a
-                            href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <TxResultLink
+                            digest={success.digest}
                             className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
-                        >
-                            View tx
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
+                        />
                     </p>
                 )}
             </CardContent>
@@ -158,6 +210,7 @@ interface LimitOrderCardProps {
     midPrice?: number;
     tickSize?: number;
     minSize?: number;
+    lotSize?: number;
     onPlace: (params: { price: number; quantity: number; isBid: boolean }) => Promise<string>;
 }
 
@@ -166,6 +219,7 @@ export function LimitOrderCard({
     midPrice,
     tickSize,
     minSize,
+    lotSize,
     onPlace,
 }: LimitOrderCardProps) {
     const [price, setPrice] = useState("");
@@ -182,12 +236,10 @@ export function LimitOrderCard({
     const handleSubmit = async (isBid: boolean) => {
         setError(null);
         setSuccess(null);
-        if (p <= 0) {
-            setError("Enter a valid price");
-            return;
-        }
-        if (qty <= 0) {
-            setError("Enter a valid quantity");
+        const issue =
+            priceIssue(p, pair.quote, tickSize) ?? quantityIssue(qty, pair.base, minSize, lotSize);
+        if (issue) {
+            setError(issue);
             return;
         }
         setSubmitting(true);
@@ -280,6 +332,12 @@ export function LimitOrderCard({
                         {minSize != null && (
                             <span className="text-[11px] text-zinc-500">
                                 Min: <span className="font-mono text-zinc-400">{minSize}</span>
+                                {lotSize != null && (
+                                    <>
+                                        {" · step "}
+                                        <span className="font-mono text-zinc-400">{lotSize}</span>
+                                    </>
+                                )}
                             </span>
                         )}
                     </div>
@@ -292,8 +350,8 @@ export function LimitOrderCard({
                             setSuccess(null);
                         }}
                         placeholder={minSize != null ? String(minSize) : "0"}
-                        min="0"
-                        step="any"
+                        min={minSize ?? 0}
+                        step={lotSize ?? "any"}
                         className="w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
                 </div>
@@ -333,15 +391,10 @@ export function LimitOrderCard({
                 {success && (
                     <p className="text-xs text-emerald-400 flex items-center gap-1.5">
                         {success.message}
-                        <a
-                            href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <TxResultLink
+                            digest={success.digest}
                             className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
-                        >
-                            View tx
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
+                        />
                     </p>
                 )}
             </CardContent>
@@ -421,15 +474,10 @@ export function CancelOrdersCard({ poolKey, orderCount, onCancelAll }: CancelOrd
                 {success && (
                     <p className="text-xs text-emerald-400 flex items-center gap-1.5">
                         {success.message}
-                        <a
-                            href={`https://explorer.polymedia.app/txblock/${success.digest}?network=local`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <TxResultLink
+                            digest={success.digest}
                             className="inline-flex items-center gap-0.5 text-emerald-500 hover:text-emerald-300 underline"
-                        >
-                            View tx
-                            <ExternalLink className="h-3 w-3" />
-                        </a>
+                        />
                     </p>
                 )}
             </CardContent>

@@ -7,6 +7,7 @@ import {
     useTrading,
     useOpenOrders,
     useCreateBalanceManager,
+    isSyncingOrders,
 } from "./hooks";
 import { BalanceManagerSetup } from "./balance-manager-setup";
 import { MarketOrderCard, LimitOrderCard, CancelOrdersCard } from "./action-cards";
@@ -17,13 +18,22 @@ const DISPLAY_COINS = ["SUI", "DEEP"];
 const POOL_KEY = "DEEP_SUI" as const;
 
 export function TradingPage() {
-    const { client, isReady, address, isSetup, balanceManagerId, manifest } = useDeepBookClient();
+    const {
+        client,
+        isReady,
+        address,
+        isSetup,
+        balanceManagerId,
+        balanceManagerIds,
+        selectBalanceManager,
+        manifest,
+    } = useDeepBookClient();
 
     const walletBalances = useWalletBalances(address);
     const bmBalances = useBmBalances(client, balanceManagerId);
     const midPrice = useMidPrice(client, POOL_KEY);
     const poolParams = usePoolParams(client, POOL_KEY);
-    const trading = useTrading(client, POOL_KEY, address);
+    const trading = useTrading(client, POOL_KEY, address, balanceManagerId);
     const openOrders = useOpenOrders(client, POOL_KEY, balanceManagerId);
     const createBm = useCreateBalanceManager(client, manifest, address);
 
@@ -73,6 +83,8 @@ export function TradingPage() {
             <BalanceManagerSetup
                 isSetup={isSetup}
                 balanceManagerId={balanceManagerId}
+                balanceManagerIds={balanceManagerIds}
+                onSelectBalanceManager={selectBalanceManager}
                 balances={bmBalances.data}
                 walletBalances={walletBalances.data?.balances}
                 canCreate={!!client && !!manifest && !!address}
@@ -87,6 +99,7 @@ export function TradingPage() {
                     <MarketOrderCard
                         poolKey={POOL_KEY}
                         minSize={poolParams.data?.minSize}
+                        lotSize={poolParams.data?.lotSize}
                         onPlace={trading.placeMarketOrder}
                     />
                     <LimitOrderCard
@@ -94,12 +107,16 @@ export function TradingPage() {
                         midPrice={midPrice.data}
                         tickSize={poolParams.data?.tickSize}
                         minSize={poolParams.data?.minSize}
+                        lotSize={poolParams.data?.lotSize}
                         onPlace={trading.placeLimitOrder}
                     />
                     <OpenOrders
                         poolKey={POOL_KEY}
                         orders={openOrders.data ?? []}
                         isLoading={openOrders.isLoading}
+                        // Gated on the post-trade window so the indicator never
+                        // flickers on the idle 10s poll.
+                        isSyncing={openOrders.isFetching && isSyncingOrders()}
                         onCancelOrder={trading.cancelOrder}
                     />
                     <CancelOrdersCard

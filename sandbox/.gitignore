@@ -1,0 +1,2 @@
+# seed-trades runtime state (BM reuse; invalid after a fork wipe)
+.seed-trades-state.json

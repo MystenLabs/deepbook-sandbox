@@ -1,0 +1,131 @@
+{
+    "$comment": "Mainnet object IDs the fork sandbox references (DBSF-016). The fork inherits mainnet state, so these are MAINNET identities — not localnet deploys. Verified live against mainnet gRPC on the date below; re-verify with `pnpm verify:deepbook-ids` (from sandbox/devstack-plugins), which also detects packages upgraded past their pin (listPackageVersions). `originalId` is forever and is what type tags are stamped with; `latestId` (a new id per upgrade) is the moveCall target. Pool tickSize/lotSize/minSize were originally captured from the deepbook indexer and drifted (SUI_USDC tickSize was 100 vs the chain's 10, which the Trading page's order validation would have enforced against users); all nine values were re-read from the chain on 2026-08-13 and now match. `pnpm verify:deepbook-ids` does NOT cover them — they live in the pool's PoolInner dynamic field (pool -> Versioned inner df -> allowed_versions/pool_id, then book.tick_size/lot_size/min_size), so re-verify by reading that field. Note: @mysten/deepbook-v3 1.5.0's mainnetPackageIds lags mainnet for margin (pins v5, mainnet is v6) — trust the verify script over the SDK constants.",
+    "network": {
+        "type": "fork",
+        "upstream": "mainnet"
+    },
+    "verifiedAt": "2026-07-29",
+    "deepbook": {
+        "packages": {
+            "deepbook": {
+                "originalId": "0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809",
+                "latestId": "0x0e735f8c93a95722efd73521aca7a7652c0bb71ed1daf41b26dfd7d1ff71f748",
+                "latestVersion": 8
+            },
+            "deepbookMargin": {
+                "originalId": "0x97d9473771b01f77b0940c589484184b49f6444627ec121314fae6a6d36fb86b",
+                "latestId": "0x8af25e44bcdfb8b19ceffef5a1bd457a89a4270b8237e1025f30cd26acb4edbe",
+                "latestVersion": 6
+            },
+            "marginLiquidation": {
+                "originalId": "0x73c593882cdb557703e903603f20bd373261fe6ba6e1a40515f4b62f10553e6a",
+                "latestId": "0xf17bff1bf21e9587acc5708714e520aa967f82f256f626938a33c4109b08adb9",
+                "latestVersion": 4
+            }
+        },
+        "registry": {
+            "objectId": "0xaf16199a2dff736e9f07a845f23c5da6df6f756eddb631aed9d24a93efc4549d",
+            "initialSharedVersion": "336155480",
+            "type": "0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809::registry::Registry"
+        },
+        "marginRegistry": {
+            "objectId": "0x0e40998b359a9ccbab22a98ed21bd4346abf19158bc7980c8291908086b3a742",
+            "initialSharedVersion": "749938941",
+            "type": "0x97d9473771b01f77b0940c589484184b49f6444627ec121314fae6a6d36fb86b::margin_registry::MarginRegistry"
+        },
+        "adminWallet": "0xd0ec0b201de6b4e7f425918bbd7151c37fc1b06c59b3961a2a00db74f6ea865e",
+        "deepbookAdminCap": {
+            "objectId": "0xada554b8b712556b8509be47ac1bc04db9505c3532049a543721aca0c010a840",
+            "owner": "0xd0ec0b201de6b4e7f425918bbd7151c37fc1b06c59b3961a2a00db74f6ea865e",
+            "type": "0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809::registry::DeepbookAdminCap"
+        },
+        "marginAdminCap": {
+            "objectId": "0x3ec65d06f0be30905cc1742b903aa497791c702820331db263176b74e74c95c8",
+            "owner": "0xd0ec0b201de6b4e7f425918bbd7151c37fc1b06c59b3961a2a00db74f6ea865e",
+            "type": "0x97d9473771b01f77b0940c589484184b49f6444627ec121314fae6a6d36fb86b::margin_registry::MarginAdminCap"
+        },
+        "pools": {
+            "DEEP_SUI": {
+                "objectId": "0xb663828d6217467c8a1838a03793da896cbe745b150ebd57d82f814ca579fc22",
+                "initialSharedVersion": "389750321",
+                "baseType": "0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270::deep::DEEP",
+                "quoteType": "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
+                "tickSize": 10000000,
+                "lotSize": 1000000,
+                "minSize": 10000000
+            },
+            "SUI_USDC": {
+                "objectId": "0xe05dafb5133bcffb8d59f4e12465dc0e9faeaa05e3e342a08fe135800e3e4407",
+                "initialSharedVersion": "389750322",
+                "baseType": "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI",
+                "quoteType": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+                "tickSize": 10,
+                "lotSize": 100000000,
+                "minSize": 1000000000
+            },
+            "DEEP_USDC": {
+                "objectId": "0xf948981b806057580f91622417534f491da5f61aeaf33d0ed8e69fd5691c95ce",
+                "initialSharedVersion": "389750321",
+                "baseType": "0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270::deep::DEEP",
+                "quoteType": "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC",
+                "tickSize": 10000,
+                "lotSize": 1000000,
+                "minSize": 10000000
+            }
+        }
+    },
+    "pyth": {
+        "$comment": "Pyth/Wormhole identities for the oracle loop (SEDEFI-317 / DBSF-013). The package ids here were verified CURRENT at the fork pin — wormhole has never been upgraded (UpgradeCap version 1, latest == original) and pyth is at version 2 — so an `assert_version` abort is NOT package skew. It is SUI-FORK-ISSUES #2: `wormhole::vaa::parse_and_verify` and `package_utils::assert_version` read CHILD objects, which the fork's execution path never lazy-fetches. Every id under `prewarm` must be read once by id (a plain gRPC getObject materializes it) before the first update PTB of a fresh chain, or the update aborts. Re-derive them by enumerating the State objects' dynamic fields against MAINNET (the fork's dynamic_field_iter is a patched-out todo!() stub and returns empty); ids are parent+key derived, so they are identical on the fork.",
+        "packages": {
+            "wormhole": {
+                "originalId": "0x5306f64e312b581766351c07af79c72fcb1cd25147157fdc2f8ad76de9a3fb6a",
+                "latestId": "0x5306f64e312b581766351c07af79c72fcb1cd25147157fdc2f8ad76de9a3fb6a",
+                "latestVersion": 1
+            },
+            "pyth": {
+                "originalId": "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e",
+                "latestId": "0x04e20ddf36af412a4096f9014f4a565af9e812db9a05cc40254846cf6ed0ad91",
+                "latestVersion": 2
+            }
+        },
+        "state": {
+            "wormholeStateId": "0xaeab97f96cf9877fee2883315d459552b2b921edc16d7ceac6eab944dd88919c",
+            "pythStateId": "0x1f9310238ee9298fb703c3419030b35b22bb1cc37113e3bb5007c99aec79e5b8",
+            "guardianSetIndex": 7,
+            "guardianSetsTableId": "0xbe2b4aa736d1294bdd43f7ea33540ccdbb910d934ff2d541c4d4464bf91b2cfb"
+        },
+        "prewarm": [
+            {
+                "objectId": "0x05c376f80be7818a3e55aecbf463125f2680189132246b45ecc24f34eb1ba25b",
+                "what": "wormhole State -> Field<package_utils::CurrentPackage, PackageInfo>",
+                "neededBy": "package_utils::assert_version inside vaa::parse_and_verify"
+            },
+            {
+                "objectId": "0x9091354651edb856a44c2ed1d080889b60e78ff84425f096418f9d8b312698c4",
+                "what": "wormhole State -> guardian_sets Table entry, key u32 7 (the ACTIVE set)",
+                "neededBy": "vaa::parse_and_verify signature check"
+            },
+            {
+                "objectId": "0x48685372bb5866ab8b21a70dec17669b7694a70c72a99320454a914ad3bee03b",
+                "what": "pyth State -> Field<package_utils::CurrentPackage, PackageInfo>",
+                "neededBy": "pyth's own assert_version on the update path"
+            },
+            {
+                "objectId": "0x474210f87e3f9be8014d457754b8f8e91b644d3472fa5754ce57cde24014cc90",
+                "what": "pyth State -> second package_utils field (empty-struct key)",
+                "neededBy": "warmed alongside the above; cheap and avoids a second round trip"
+            },
+            {
+                "objectId": "0x8d97f1cd6ac663735be08d1d2b6d02a159e711586461306ce60a2b7a6a565a9e",
+                "what": "pyth ORIGINAL package (the type-tag address)",
+                "neededBy": "input-object checking: 'Dependent package not found on-chain' without it"
+            }
+        ],
+        "verified": {
+            "at": "2026-08-14",
+            "how": "scripts/spikes/pyth/advance-clock-and-update-pyth.mjs run — update tx Efb7Ud4oYK1UkTmnZCtutLkmR7KVBi4TDecsVUxRMbvw succeeded and the verify PTB 9woKJBNJt2WsQGHL4PxVZMZ4yJi8db8NobzDXzig8o1d passed pyth::get_price_no_older_than(clock, 60) with clockAdvancedByMs=0 (the clock-driver member holds the Clock at wall).",
+            "guardianSet": "The fork's guardian_set_index (7) MATCHES the index today's Hermes VAAs are signed with, so no rotation recovery (SEDEFI-319) is needed at this pin.",
+            "suiPriceInfoObject": "0x801dbc2f0053d34734814b2d6df491ce7807a725fe9a01ad74a07e9c51396c37 (feed 0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744) — the only feed exercised end to end; DEEP/USDC resolve from devstack's known table and are unverified on this path."
+        }
+    }
+}

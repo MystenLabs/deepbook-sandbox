@@ -1,4 +1,8 @@
-exclude: 'sandbox/localnet/crates/|^packages/|(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|Cargo\.lock|bun\.lockb|\.lock)$'
+# .patch excluded: diff context lines are whitespace-significant — the
+# trailing-whitespace hook would corrupt space-only context lines.
+# devstack-plugins/dashboard-ui/ excluded: vendored minified vite build —
+# end-of-file-fixer and the editorconfig hook would rewrite generated output.
+exclude: 'sandbox/localnet/crates/|^packages/|sandbox/devstack-plugins/dashboard-ui/|(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|Cargo\.lock|bun\.lockb|\.lock|\.patch)$'
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -14,7 +18,7 @@ repos:
     hooks:
       - id: editorconfig-checker
         alias: ec
-        exclude: '(LICENSE|\.gitmodules|\.bru|\.md)$'
+        exclude: '(LICENSE|\.gitmodules|\.bru|\.md)$|/src/generated/'
   - repo: local
     hooks:
       - id: prettier

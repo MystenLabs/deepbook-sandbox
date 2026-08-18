@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { explorerObjectUrl } from "@/lib/explorer";
 
 /* ------------------------------------------------------------------ */
 /*  Types (matching deployment manifest shape)                         */
@@ -60,13 +61,58 @@ const PACKAGE_LABELS: Record<string, string> = {
 /*  DeploymentPage                                                     */
 /* ------------------------------------------------------------------ */
 
+/** The fork manifest (deployments/mainnet-fork.json) nests everything under
+ *  `deepbook` — normalize it into this page's display shape. */
+function normalizeManifest(raw: unknown): DeploymentManifest {
+    const m = raw as {
+        network?: { type?: string };
+        verifiedAt?: string;
+        deepbook?: {
+            packages: Record<string, { latestId: string }>;
+            pools: Record<string, { objectId: string; baseType: string; quoteType: string }>;
+            adminWallet: string;
+        };
+    };
+    if (m.network?.type === "fork" && m.deepbook) {
+        return {
+            network: {
+                type: "fork",
+                rpcUrl: "/api/sui (brokered fork RPC)",
+                faucetUrl: "/api/faucet",
+            },
+            packages: Object.fromEntries(
+                Object.entries(m.deepbook.packages).map(([key, pkg]) => [
+                    key,
+                    { packageId: pkg.latestId, transactionDigest: "", objects: [] },
+                ]),
+            ),
+            pools: Object.fromEntries(
+                Object.entries(m.deepbook.pools).map(([key, pool]) => [
+                    key,
+                    {
+                        poolId: pool.objectId,
+                        baseCoinType: pool.baseType,
+                        quoteCoinType: pool.quoteType,
+                    },
+                ]),
+            ),
+            marginPools: {},
+            deploymentTime: m.verifiedAt ?? new Date(0).toISOString(),
+            deployerAddress: m.deepbook.adminWallet,
+        };
+    }
+    return raw as DeploymentManifest;
+}
+
 export function DeploymentPage() {
     const manifest = useQuery<DeploymentManifest>({
-        queryKey: ["deployment-manifest"],
+        // NOT ["deployment-manifest"] — that key caches the RAW manifest for
+        // useDeepBookClient; this page caches a normalized display shape.
+        queryKey: ["deployment-manifest-display"],
         queryFn: async () => {
             const r = await fetch("/api/manifest");
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.json();
+            return normalizeManifest(await r.json());
         },
         refetchInterval: REFETCH_INTERVAL,
         retry: false,
@@ -309,8 +355,10 @@ function AddressCell({
         setCopied(true);
     };
 
-    const net = network === "localnet" ? "local" : network;
-    const explorerUrl = `https://explorer.polymedia.app/${kind}/${value}?network=${net}`;
+    // These ids come from the manifest, i.e. they are mainnet-inherited — so on
+    // a fork they resolve on the MAINNET explorer, which is the useful target.
+    // (The old code emitted `?network=fork` here and simply 404'd.)
+    const explorerUrl = explorerObjectUrl(network, kind, value, "mainnet-inherited");
 
     return (
         <span className="inline-flex items-center gap-1.5">
@@ -321,14 +369,17 @@ function AddressCell({
             >
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </button>
-            <a
-                href={explorerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded p-0.5 text-zinc-500 transition-colors hover:text-zinc-200"
-            >
-                <ExternalLink className="h-3.5 w-3.5" />
-            </a>
+            {explorerUrl !== null && (
+                <a
+                    href={explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="View on the mainnet explorer — the fork inherits this object from mainnet"
+                    className="rounded p-0.5 text-zinc-500 transition-colors hover:text-zinc-200"
+                >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+            )}
         </span>
     );
 }

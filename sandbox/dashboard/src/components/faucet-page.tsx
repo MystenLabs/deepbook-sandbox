@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import { useState, useEffect } from "react";
-import { useCurrentAccount, useCurrentNetwork } from "@mysten/dapp-kit-react";
+import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Copy, Check, ExternalLink } from "lucide-react";
+import { Copy, Check } from "lucide-react";
 import { CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { TxResultLink } from "@/components/tx-result-link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWalletBalances } from "@/components/trading/hooks";
 
@@ -26,7 +27,6 @@ async function requestFaucet(address: string, token: Token) {
 }
 
 export function FaucetPage() {
-    const network = useCurrentNetwork();
     const account = useCurrentAccount();
     const queryClient = useQueryClient();
 
@@ -140,7 +140,7 @@ export function FaucetPage() {
                         >
                             {suiFaucet.isPending ? "Requesting..." : "Request SUI"}
                         </Button>
-                        <FaucetFeedback faucet={suiFaucet} token="SUI" network={network} />
+                        <FaucetFeedback faucet={suiFaucet} token="SUI" />
                     </CardContent>
                 </LinesCard>
 
@@ -164,7 +164,7 @@ export function FaucetPage() {
                         >
                             {deepFaucet.isPending ? "Requesting..." : "Request DEEP"}
                         </Button>
-                        <FaucetFeedback faucet={deepFaucet} token="DEEP" network={network} />
+                        <FaucetFeedback faucet={deepFaucet} token="DEEP" />
                     </CardContent>
                 </LinesCard>
 
@@ -188,7 +188,7 @@ export function FaucetPage() {
                         >
                             {usdcFaucet.isPending ? "Requesting..." : "Request USDC"}
                         </Button>
-                        <FaucetFeedback faucet={usdcFaucet} token="USDC" network={network} />
+                        <FaucetFeedback faucet={usdcFaucet} token="USDC" />
                     </CardContent>
                 </LinesCard>
             </div>
@@ -215,7 +215,6 @@ function LinesCard({ children }: { children: ReactNode }) {
 function FaucetFeedback({
     faucet,
     token,
-    network,
 }: {
     faucet: {
         isSuccess: boolean;
@@ -224,21 +223,16 @@ function FaucetFeedback({
         error?: Error | null;
     };
     token: Token;
-    network: string;
 }) {
     if (faucet.isSuccess) {
         return (
             <div className="flex items-center gap-2">
                 <Badge variant="success">{token} requested</Badge>
                 {faucet.data?.digest && (
-                    <a
-                        href={explorerTxUrl(network, faucet.data.digest)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    <TxResultLink
+                        digest={faucet.data.digest}
                         className="inline-flex items-center gap-1 text-xs text-zinc-500 transition-colors hover:text-zinc-200"
-                    >
-                        View tx <ExternalLink className="h-3 w-3" />
-                    </a>
+                    />
                 )}
             </div>
         );
@@ -268,9 +262,4 @@ function BalanceValue({ loading, value }: { loading: boolean; value: string }) {
 
 function truncateAddress(addr: string) {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-}
-
-function explorerTxUrl(network: string, digest: string) {
-    const net = network === "localnet" ? "local" : network;
-    return `https://explorer.polymedia.app/txblock/${digest}?network=${net}`;
 }

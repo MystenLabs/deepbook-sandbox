@@ -1,1 +1,7 @@
 external/
+# devstack-emitted projection trees: tab-indented by the emitter, rewritten on
+# every `devstack up` — formatting them just creates churn
+sandbox/devstack-plugins/src/generated/
+sandbox/devstack-plugins/__tests__/src/generated/
+# Vendored dashboard SPA build (SEDEFI-444) — minified vite output.
+sandbox/devstack-plugins/dashboard-ui/

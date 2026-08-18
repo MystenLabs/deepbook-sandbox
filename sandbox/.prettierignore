@@ -1,0 +1,8 @@
+# Mirror of the repo-root .prettierignore entries for the devstack-emitted
+# projection trees. Prettier only loads .prettierignore from its CWD, so any
+# prettier run (or editor format-on-save) rooted in sandbox/ bypasses the root
+# file and reformats the tab-indented emitter output — this mirror closes that
+# hole. Keep in sync with the repo-root .prettierignore.
+devstack-plugins/src/generated/
+devstack-plugins/__tests__/src/generated/
+devstack-plugins/dashboard-ui/
