@@ -137,7 +137,14 @@ stack:up` in its own terminal still works — `deploy-all` detects the live
 supervisor and skips the boot, and `down` refuses to wipe under a
 terminal-attached supervisor it doesn't own (Ctrl-C it first, then re-run
 `pnpm down`). Orphaned supervisors (no terminal — e.g. a dead session's
-background process) are stopped automatically.
+background process) are stopped automatically — including WEDGED ones (alive
+and holding devstack's per-stack lock but unserving, e.g. their router
+container died), which fail the readiness probe and used to dead-end both
+commands on `supervisor live` / exit 40; `deploy-all` never kills, it names
+the lock holder and points at `pnpm down`. Process discovery/teardown lives
+in `scripts/stack-supervisors.ts` (unit-tested; the pgrep pattern also
+matches the bare devstack `main.mjs up` entry — the actual lock holder,
+which can outlive its pnpm wrappers).
 
 ## Development Commands
 

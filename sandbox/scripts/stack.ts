@@ -22,7 +22,13 @@
 // live supervisor and skips the spawn; `down` refuses to wipe under a
 // terminal-attached supervisor it doesn't own and says how to finish the
 // teardown. A foreign supervisor with NO terminal (an orphaned background
-// process — nothing to Ctrl-C) is stopped automatically instead.
+// process — nothing to Ctrl-C) is stopped automatically instead — and that
+// check runs even when the supervisor fails the readiness probe: a WEDGED
+// supervisor (alive, holding devstack's per-stack lock, but unserving — e.g.
+// its router container died) is exactly the one that must be reaped, or both
+// `devstack up` and `devstack wipe` die on its lock ("supervisor live",
+// exit 40). `up` never kills: it detects the lock holder and points at
+// `pnpm down`. Process discovery/teardown lives in ./stack-supervisors.ts.
 
 import { spawn, spawnSync } from "node:child_process";
 import { openSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
@@ -30,6 +36,14 @@ import { request } from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pc from "picocolors";
+
+import {
+    SUPERVISOR_PATTERN,
+    foreignSupervisors,
+    pidAlive,
+    reapOrphanedSupervisors,
+    sleep,
+} from "./stack-supervisors";
 
 const SANDBOX_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STACK = process.env.SANDBOX_STACK ?? "deepbook-sandbox";
@@ -130,17 +144,6 @@ const memberRows = async (): Promise<MemberRow[] | null> => {
     return edges.map((e) => e.node);
 };
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const pidAlive = (pid: number): boolean => {
-    try {
-        process.kill(pid, 0);
-        return true;
-    } catch {
-        return false;
-    }
-};
-
 const ownPid = (): number | null => {
     if (!existsSync(PID_FILE)) return null;
     const pid = Number(readFileSync(PID_FILE, "utf8").trim());
@@ -169,25 +172,6 @@ const killGroup = (pid: number, sig: NodeJS.Signals) => {
 const run = (cmd: string, args: string[]) => {
     const r = spawnSync(cmd, args, { cwd: SANDBOX_DIR, stdio: "inherit" });
     if (r.status !== 0) fail(`${cmd} ${args.join(" ")} exited with ${r.status ?? "signal"}`);
-};
-
-/** Foreign `devstack up` supervisors, split by whether a terminal owns them.
- *  Orphans (tty `??`: a dead session's background process) have no Ctrl-C to
- *  press, so `down` stops them itself; attached ones stay the user's call. */
-const foreignSupervisors = (): { attached: number[]; orphaned: number[] } => {
-    const found: { attached: number[]; orphaned: number[] } = { attached: [], orphaned: [] };
-    const pgrep = spawnSync("pgrep", ["-f", "devstack up"], { encoding: "utf8" });
-    for (const line of (pgrep.stdout ?? "").split("\n")) {
-        const pid = Number(line.trim());
-        if (!Number.isInteger(pid) || pid <= 0) continue;
-        const tty = spawnSync("ps", ["-o", "tty=", "-p", `${pid}`], {
-            encoding: "utf8",
-        }).stdout?.trim();
-        if (tty === undefined || tty === "") continue; // exited between pgrep and ps
-        // "??" is BSD/macOS ps for "no controlling terminal"; procps prints "?".
-        (tty === "??" || tty === "?" || tty === "-" ? found.orphaned : found.attached).push(pid);
-    }
-    return found;
 };
 
 const logTail = () => {
@@ -262,6 +246,21 @@ async function up(): Promise<void> {
         // the owned-kill path against the wrong process — drop it now.
         if (existsSync(PID_FILE) && ownPid() === null) rmSync(PID_FILE, { force: true });
     } else {
+        // A supervisor can hold devstack's per-stack lock while failing the
+        // readiness probe above (wedged mid-boot, or its router container
+        // died) — spawning another would only die on that lock ("supervisor
+        // live", exit 40). Detect and say so; killing is `down`'s job, since
+        // an attached or legitimately-still-booting supervisor isn't ours to
+        // stop from here.
+        const { attached, orphaned } = foreignSupervisors(SUPERVISOR_PATTERN);
+        const holders = [...attached, ...orphaned];
+        if (holders.length > 0) {
+            fail(
+                `a devstack supervisor is running but not serving (pid ${holders.join(", ")}) — ` +
+                    "either it is still booting (give it a minute and re-run) or it is " +
+                    "wedged; `pnpm down` stops it and wipes, then re-run `pnpm deploy-all`",
+            );
+        }
         log(`booting devstack fork stack (logs: ${LOG_FILE})`);
         const out = openSync(LOG_FILE, "w");
         const child = spawn("pnpm", ["stack:up"], {
@@ -326,41 +325,38 @@ async function down(): Promise<void> {
             }
             await sleep(1_000);
         }
-    } else if (await supervisorReady()) {
-        const { attached, orphaned } = foreignSupervisors();
+    } else {
+        // NOT gated on supervisorReady(): a wedged supervisor (alive and
+        // holding devstack's per-stack lock, but unserving — e.g. its router
+        // container died) fails the GraphQL probe, and the wipe below would
+        // then die on its lock ("supervisor live", exit 40). Hunt the
+        // processes directly instead.
+        const { attached } = foreignSupervisors(SUPERVISOR_PATTERN);
         if (attached.length > 0) {
             fail(
                 `an attached devstack supervisor is running (pid ${attached.join(", ")}) — ` +
                     "Ctrl-C it in its terminal, then re-run `pnpm down` for the wipe",
             );
         }
-        if (attached.length === 0 && orphaned.length === 0) {
+        const { reaped, survivors } = await reapOrphanedSupervisors(
+            SUPERVISOR_PATTERN,
+            STOP_TIMEOUT_MS,
+        );
+        if (survivors.length > 0) {
+            fail(
+                `orphaned devstack supervisor (pid ${survivors.join(", ")}) ignored SIGINT ` +
+                    "and SIGTERM — kill it manually, then re-run `pnpm down`",
+            );
+        }
+        if (reaped.length > 0) {
+            log(`stopped orphaned devstack supervisor (pid ${reaped.join(", ")}, no terminal)`);
+        }
+        if (await supervisorReady()) {
             fail(
                 "a devstack supervisor is serving but its process couldn't be identified — " +
                     "find its pid in devstack-plugins/.devstack/port-locks/*.json (holder.pid), " +
                     "stop it, then re-run `pnpm down`",
             );
-        }
-        if (orphaned.length > 0) {
-            log(`stopping orphaned devstack supervisor (pid ${orphaned.join(", ")}, no terminal)`);
-            for (const p of orphaned) {
-                try {
-                    process.kill(p, "SIGINT");
-                } catch {
-                    // already gone
-                }
-            }
-        }
-        const deadline = Date.now() + STOP_TIMEOUT_MS;
-        while (await supervisorReady()) {
-            if (Date.now() > deadline) {
-                fail(
-                    "supervisor still serving after stop attempt — find its pid in " +
-                        "devstack-plugins/.devstack/port-locks/*.json (holder.pid), kill it, " +
-                        "then re-run `pnpm down`",
-                );
-            }
-            await sleep(1_000);
         }
     }
     rmSync(PID_FILE, { force: true });
