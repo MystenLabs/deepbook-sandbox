@@ -6,7 +6,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 // config — `pnpm test:e2e`).
 export default defineConfig({
     test: {
-        include: ["__tests__/**/*.test.ts"],
+        include: ["__tests__/**/*.test.ts", "exercises/**/*.test.ts"],
         exclude: [...configDefaults.exclude, "**/*.e2e.test.ts"],
     },
 });

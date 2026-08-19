@@ -4,3 +4,8 @@ node_modules/
 *.log
 .trade-sim-state.json
 .trading-dashboard-key.json
+
+# Exercise 3 scratch stores (exercises/README.md section 5)
+exercises/*.db
+exercises/*.sqlite*
+exercises/*.duckdb

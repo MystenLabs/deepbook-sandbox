@@ -304,3 +304,15 @@ If the donor's default coin ids ever go stale (the whale spent them), set
 
 For the full manual shakedown (devstack stack + Pyth loop + the exploratory
 compose-services-on-fork pass), see [`../SMOKE-TEST.md`](../SMOKE-TEST.md).
+
+## `exercises/` — write your own plugin (teaching material)
+
+A fill-in scaffold for the "Create your own plugin!" exercise in
+[Intro to devstack & the Sui fork](https://app.notion.com/p/mystenlabs/Intro-to-devstack-the-Sui-fork-3c06d9dcb4e980108d93df5b6deb8f89):
+an inert-but-compiling `definePlugin` skeleton with eight numbered decisions,
+a starter unit test, and a worksheet that points at the members above rather
+than answering for you. See [`exercises/README.md`](./exercises/README.md).
+
+Not wired into `devstack.config.ts` — wiring it in is the last step of the
+exercise. It IS in the `tsconfig`/`vitest` includes, so `pnpm typecheck` and
+`pnpm test` cover it (both green on the untouched skeleton).
