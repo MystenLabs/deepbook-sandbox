@@ -54,9 +54,35 @@ git clone --recurse-submodules https://github.com/MystenLabs/deepbook-sandbox.gi
 cd deepbook-sandbox/sandbox
 pnpm install
 
-pnpm deploy-all   # boot everything, wait for every member to settle
-pnpm down         # stop + wipe (removes member containers, resets the chain)
+pnpm deploy-all   # = devstack up (detached) + wait for every member to settle
+pnpm down         # stop + devstack wipe (removes member containers, resets the chain)
 ```
+
+`pnpm deploy-all` is a wrapper around devstack's own `devstack up` (see
+`sandbox/scripts/stack.ts`). To keep the devstack supervisor attached to your
+terminal instead, run `pnpm stack:up`. That's `devstack up` run from
+`sandbox/devstack-plugins/`, where the config lives. `deploy-all` sees the live
+supervisor and doesn't boot a second one.
+
+### Connect a wallet
+
+Open the trading dashboard at **[http://localhost:5173](http://localhost:5173)**.
+A **dev wallet** is already connected and funded with SUI, DEEP and USDC. Its
+key is generated on the first boot and persisted, gitignored, in
+`sandbox/devstack-plugins/.trading-dashboard-key.json`. No browser extension
+is needed.
+
+- **Use the dev wallet. External wallets won't work.** The connect modal hides
+  extension wallets such as Slush. If one is restored from an earlier session,
+  it can't sign, because it rejects the `sui:localnet` chain ID. The dashboard
+  shows a warning banner when that happens. Only the bundled dev wallet can
+  sign on the fork.
+- **Need more funds?** Use the dashboard's **Faucet** page, or call
+  `POST localhost:9009/faucet` (see below).
+- **Using your own address from a script?** Fund it through the faucet. Don't
+  rely on its mainnet balance: the fork can't list an address's upstream coins
+  (no owner index; see "Fork-State Mental Model" in
+  [`CLAUDE.md`](./CLAUDE.md)).
 
 > **The first run builds the indexer image from source — a full Rust release
 > build that can take an hour.** Later boots reuse the cached images and take
@@ -172,7 +198,8 @@ sui move build && sui move test
 
 ## Digging deeper
 
-- [`CLAUDE.md`](./CLAUDE.md) — full stack architecture, member wiring, commands
+- [`CLAUDE.md`](./CLAUDE.md) — fork-state mental model, impersonation, every devstack member, escape hatches for unreleased DeepBook/Pyth
+- [DeepBook & Local Forking](https://linear.app/mysten-labs/project/deepbook-and-local-forking-6fa84aaea188) (Linear) — history of the localnet → fork + devstack migration (DBSF tickets)
 - [`sandbox/devstack-plugins/README.md`](./sandbox/devstack-plugins/README.md) — the plugin implementations
 - [`sandbox/dashboard/CLAUDE.md`](./sandbox/dashboard/CLAUDE.md) — dashboard fork-mode internals
 - [`sandbox/SUI-FORK-ISSUES.md`](./sandbox/SUI-FORK-ISSUES.md) — the fork defect catalog / upstream hand-off list
